@@ -1,0 +1,15 @@
+**.pyc
+.idea/
+.vscode/
+.venv/
+.pytest_cache/
+.coverage
+unit_test_coverage/
+.mypy_cache/
+venv
+*.egg-info
+*venv*
+.tox/
+dist/
+build/
+%LOCALAPPDATA%

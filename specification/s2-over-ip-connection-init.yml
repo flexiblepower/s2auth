@@ -1,0 +1,165 @@
+openapi: 3.0.3
+info:
+  version: "1.0-beta"
+  title: s2-over-ip pairing and connection initiation
+  description: "The HTTP API specification of the pairing process for S2 over IP connections, as well as initiating connections. For more information, please find the specification at [S2 documentation](https://docs.s2standard.org)."
+  license:
+    name: Apache-2.0
+    url: https://raw.githubusercontent.com/flexiblepower/s2-ws-json/refs/heads/main/LICENSE
+servers: 
+  - url: /v1
+tags:
+  - name: Connection initiation
+    description: API endpoints to obtain connection details for opening a communication channel.
+  - name: Unpairing
+    description: API endpoint to enable the communication client to unpair.
+  
+paths:
+  /initiateConnection:
+    post:
+      summary: Initiate an S2 communication session
+      operationId: initiateConnection
+      tags:
+        - Connection initiation
+      security:
+        - accessToken: []
+      description: Get a new access token for the S2 message communication channel.
+      requestBody:
+        description: A json message with the identifier of the client that needs an access token (and the connection URL) for opening the S2 message communication channel.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - s2ClientNodeId
+                - supportedS2MessageVersions
+                - supportedCommunicationProtocols
+              properties:
+                s2ClientNodeId:
+                  $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeId'
+                supportedS2MessageVersions:
+                  type: array
+                  items:
+                    type: string
+                  description: List of supported protocols versions by the client. The server will pick one of the supported protocols versions and return it in the connection details. If no common protocol can be found, an error is returned.
+                supportedCommunicationProtocols:
+                  type: array
+                  items:
+                    $ref: 's2-over-ip-common.yml#/components/schemas/CommunicationProtocol'
+      responses:
+        '200':
+          description: Connection details to open a communication channel to the S2ServerNode.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - selectedCommunicationProtocol
+                  - selectedS2MessageVersion
+                  - accessToken
+                properties:
+                  selectedCommunicationProtocol:
+                    $ref: 's2-over-ip-common.yml#/components/schemas/CommunicationProtocol'
+                  selectedS2MessageVersion:
+                    type: string
+                    description: The protocol version selected by the server from the list of supported protocol versions provided by the client.
+                  accessToken:
+                    $ref: 's2-over-ip-common.yml#/components/schemas/AccessToken'
+        '400':
+          description: Message that gives information what went wrong.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunicationDetailsErrorMessage'
+        '401':
+          description: Unauthorized, combination of s2ClientNodeId and accessToken not accepted
+  
+  /confirmAccessToken:
+    post: 
+      summary: Client confirms that is has stored a new accessToken
+      security:
+        - accessToken: []
+      tags:
+        - Connection initiation
+      description: An accessToken to authenticate at the initiateConnection endpoint can only be used one time so it crucial that the server knows certainly that client has properly stored it's access token. By calling this endpoint the client informs the server that it has done so after which the server shares the communication details.
+      responses: 
+        '200':
+          description: Confirmation received. Sharing the communication details.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/WebSocketCommunicationDetails'
+                discriminator:
+                  propertyName: communicationProtocol
+                  mapping:
+                    WebSocket: '#/components/schemas/WebSocketCommunicationDetails'
+        '401':
+          description: Unauthorized
+
+  /unpair:
+    post:
+      summary: Unpair two S2Nodes.
+      operationId: unpair
+      tags:
+        - Unpairing
+      security:
+        - accessToken: []
+      description: Perform unpair operation for a specific client.
+      requestBody:
+        description: A json message with the identifier of the client that should be unpaired.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                s2ClientNodeId:
+                  $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeId'
+      responses:
+        '204':
+          description: Unpairing successful.
+        '401':
+          description: Unauthorized, S2ClientNodeId not found or accessToken not accepted (this could be because the nodes are already unpaired).
+
+components:
+  schemas:
+    CommunicationDetails:
+      type: object
+      required: 
+        -  communicationProtocol
+      properties:
+        communicationProtocol:
+          $ref: "s2-over-ip-common.yml#/components/schemas/CommunicationProtocol"
+    WebSocketCommunicationDetails:
+      allOf: 
+        - $ref: "#/components/schemas/CommunicationDetails"
+        - type: object
+          required: 
+            - websocketToken
+            - websocketUrl
+          properties:
+            websocketToken:
+              $ref: "s2-over-ip-common.yml#/components/schemas/CommunicationToken"
+            websocketUrl:
+              description: The URL of the communication channel endpoint
+              type: string
+              format: url
+    CommunicationDetailsErrorMessage:
+      type: object
+      required:
+        - errorMessage
+      properties:
+        errorMessage:
+          type: string
+          enum:
+            - "No common S2 message version"
+            - "No longer paired"
+            - "Parsing error"
+            - "Other"
+        additionalInfo:
+          type: string
+  securitySchemes:
+    accessToken:
+      description: "One-time access token for secure access to the S2 message communication channel. It must be renewed every time a client wants to access the S2 message communication channel by calling the requestToken endpoint."
+      type: http
+      scheme: bearer
