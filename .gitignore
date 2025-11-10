@@ -13,3 +13,4 @@ venv
 dist/
 build/
 %LOCALAPPDATA%
+src/s2auth/gen_protocol/main.py

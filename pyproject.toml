@@ -46,9 +46,9 @@ testing = [
 ]
 development = [
     "pip-tools",
-    "datamodel-code-generator",
+    "fastapi-code-generator",
     "pre-commit",
-    "setuptools_scm",
+    "setuptools-git-versioning",
 ]
 docs = [
     "sphinx",
