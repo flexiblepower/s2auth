@@ -1,10 +1,8 @@
 from fastapi import FastAPI
 
-from __future__ import annotations
-
 from typing import Optional, Union
 
-from s2auth.gen_protocol.models import (
+from s2auth.gen_protocol.server.models import (
     ConnectionDetails,
     FinalizePairingPostRequest,
     PairingResponseErrorMessage,
