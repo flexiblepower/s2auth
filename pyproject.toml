@@ -18,6 +18,7 @@ dependencies = [
     "pytz",
     "click",
     "typing-extensions",
+    "fastapi",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

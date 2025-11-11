@@ -13,4 +13,7 @@ venv
 dist/
 build/
 %LOCALAPPDATA%
-src/s2auth/gen_protocol/main.py
+src/s2auth/gen_protocol/connection_init/main.py
+src/s2auth/gen_protocol/connection_init/models.py
+src/s2auth/gen_protocol/pairing/main.py
+src/s2auth/gen_protocol/pairing/models.py

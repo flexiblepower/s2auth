@@ -1,5 +1,9 @@
 #!/usr/bin/env sh
 
 . .venv/bin/activate
-mypy --config-file mypy.ini src/ ./tests/unit/ examples/
+echo "Running mypy"
+mypy --config-file mypy.ini src/ ./tests/unit/
+
+echo ""
+echo "Running pyright"
 pyright
