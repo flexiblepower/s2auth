@@ -1,6 +1,10 @@
-import base64, datetime, os
+import base64, datetime, os, sqlite3
 from typing import Optional, List
 import httpx
+from abc import ABC
+
+# Single, shared SQLite DB path for client connection details
+DB_PATH = os.path.join(os.path.dirname(__file__), "connection_details.db")
 
 def main() -> None:
     print('Hello world!')
@@ -85,7 +89,7 @@ class PairingClient:
                         if self.role=="CEM":
                             connection_details=await request_connection_details(attempt_id,response_data.get("serverHmacChallenge"))
                             # Store connection details in the database
-                            self.storage.store_connection_details(s2_client_description.id,connection_details)
+                         #   self.storage.store_connection_details(s2_client_description.id,connection_details)
                         else:
                             await post_connection_details(attempt_id, {}, response_data.get("serverHmacChallenge"))
                             # Post connection details logic for RM role
@@ -151,7 +155,7 @@ class ConnectionClient:
         
 
     def get_access_token(self):
-        pass
+        return self.storage.load_connection_details(s2_node_id)
     
     async def confirmToken(pendingToken: str):
         async with httpx.AsyncClient() as client:
@@ -163,3 +167,36 @@ class ConnectionClient:
         async with httpx.AsyncClient() as client:
             response = await client.post("https://s2server.example.com/unpair", json={pairing_s2_node_id})
             return response.json()
+
+class Dao(ABC):
+
+
+    
+    def store_connection_details(s2_node_id, connection_details):
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+
+        token_value = connection_details.get("accessToken") | None
+        cur.execute(
+            f"INSERT INTO connection_details (s2_node_id, auth_token) VALUES (?, ?)",
+            (str(s2_node_id), token_value),
+        )
+        conn.commit()
+        conn.close()
+
+    
+    def load_connection_details(s2_node_id):
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT auth_token
+            FROM connection_details
+            WHERE s2_node_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (str(s2_node_id)),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
