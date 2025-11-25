@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from pydantic import AnyUrl, AwareDatetime, BaseModel, Field, RootModel, constr
@@ -39,7 +39,7 @@ class UnpairPostRequest(BaseModel):
 
 
 class CommunicationDetails(BaseModel):
-    communicationProtocol: CommunicationProtocol
+    communicationProtocol: Literal['WebSocket']
 
 
 class WebSocketCommunicationDetails(CommunicationDetails):
