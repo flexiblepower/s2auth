@@ -130,6 +130,8 @@ components:
       properties:
         communicationProtocol:
           $ref: "s2-over-ip-common.yml#/components/schemas/CommunicationProtocol"
+      discriminator:
+        propertyName: communicationProtocol
     WebSocketCommunicationDetails:
       allOf: 
         - $ref: "#/components/schemas/CommunicationDetails"
