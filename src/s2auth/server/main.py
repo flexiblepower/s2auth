@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from typing import Optional, Union
 
-from s2auth.gen_protocol.server.models import (
+from s2auth.common.models import (
     ConnectionDetails,
     FinalizePairingPostRequest,
     PairingResponseErrorMessage,
