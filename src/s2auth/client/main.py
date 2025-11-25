@@ -118,18 +118,18 @@ class PairingClient:
 
     async def request_connection_details(attempt_id: str,serverHmacChallangeResponse) -> dict:
         async with httpx.AsyncClient() as client:
-            response = await client.post("https://s2server.example.com/requestConnectionDetails", json={attempt_id,serverHmacChallangeResponse})
+            response = await client.post("https://s2server.example.com/requestConnectionDetails", headers=add_header(attempt_id), json={serverHmacChallangeResponse})
             return response.json()
         
     async def post_connection_details(attempt_id: str, connection_details: dict, server_hmac_challenge: dict) -> None:
         async with httpx.AsyncClient() as client:
-            response = await client.post("https://s2server.example.com/postConnectionDetails", json={attempt_id,connection_details,server_hmac_challenge})
+            response = await client.post("https://s2server.example.com/postConnectionDetails", headers=add_header(attempt_id), json={connection_details,server_hmac_challenge})
             return response.json()
 
     async def finalize_pairing(attempt_id: str, success: Optional[bool] = None) -> None:
         async with httpx.AsyncClient() as client:
             body = {"attemptId": attempt_id, "success": success}
-            response = await client.post("https://s2server.example.com/finalizePairing", json=body)
+            response = await client.post("https://s2server.example.com/finalizePairing", headers=add_header(attempt_id), json=body)
             return response.json()
         
 
@@ -200,3 +200,6 @@ class Dao(ABC):
         )
         row = cur.fetchone()
         return row[0] if row else None
+
+def add_header(token: str):
+    return {"Authorization": f"Bearer {token}"}
