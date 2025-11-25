@@ -2,6 +2,19 @@ import base64, datetime, os, sqlite3
 from typing import Optional, List
 import httpx
 from abc import ABC
+from s2auth.common.models import (
+    S2NodeDescription,
+    S2EndpointDescription,
+    S2Role,
+    Deployment,
+    CommunicationProtocol,
+    HmacChallenge,
+    HmacChallengeResponse,
+    RequestPairingPostRequest,
+    RequestConnectionDetailsPostRequest,
+    PostConnectionDetailsPostRequest,
+    InitiateConnectionPostRequest,
+)
 
 # Single, shared SQLite DB path for client connection details
 DB_PATH = os.path.join(os.path.dirname(__file__), "connection_details.db")
@@ -49,34 +62,21 @@ class PairingClient:
         # Depending on the client/server role in the connection initiation of other S2 node either requestConnectionDetails or postConnectionDetails
         # In any case, store the connection details in the database.
         client_hmac_challenge = make_client_hmac_challenge()
-        body = {
-        "s2ClientNodeDescription": {
-            "id": f"{s2_client_description.id}",
-            "brand": f"{s2_client_description.brand}",
-            "logoUri": f"{s2_client_description.logoUri}",
-            "type": f"{s2_client_description.type}",
-            "modelName": f"{s2_client_description.modelName}",
-            "userDefinedName": f"{s2_client_description.userDefinedName}",
-            "role": f"{self.role}"
-        },
-        "s2ClientEndpointDescription": {
-            "name": "string",
-            "logoUri": "string",
-            "deployment": "WAN"
-        },
-        "pairingS2NodeId": f"{pairing_s2_node_id}",
-        "supportedCommunicationProtocols": [
-            self.supported_communication_protocols
-        ],
-        "supportedS2MessageVersions": [
-            self.supported_communication_protocols
-        ],
-        "supportedHmacHashingAlgorithms": [
-            "SHA256"
-        ],
-        "clientHmacChallenge": client_hmac_challenge,
-        "forcePairing": False
-        }
+        request_payload = RequestPairingPostRequest(
+            s2ClientNodeDescription=s2_client_description,
+            s2ClientEndpointDescription=S2EndpointDescription(
+                name="string",
+                logoUri="string",
+                deployment=self.deployment,
+            ),
+            pairingS2NodeId=pairing_s2_node_id,
+            supportedCommunicationProtocols=self.supported_communication_protocols,
+            supportedS2MessageVersions=self.supported_s2_message_versions,
+            supportedHmacHashingAlgorithms=["SHA256"],
+            clientHmacChallenge=client_hmac_challenge,
+            forcePairing=False,
+        )
+        body = request_payload.model_dump()
 
         try:
             async with httpx.AsyncClient() as client:
@@ -107,10 +107,7 @@ class PairingClient:
         expiration = (datetime.datetime.utcnow()
                     + datetime.timedelta(minutes=5)).isoformat() + "Z"
 
-        return {
-            "hmacChallenge": challenge,
-            "expirationTime": expiration
-        }
+        return HmacChallenge(hmacChallenge=challenge, expirationTime=expiration)
 
     def check_client_hmac_challenge_response(challenge, response):
         # Implement HMAC challenge response verification logic here
@@ -118,12 +115,27 @@ class PairingClient:
 
     async def request_connection_details(attempt_id: str,serverHmacChallangeResponse) -> dict:
         async with httpx.AsyncClient() as client:
-            response = await client.post("https://s2server.example.com/requestConnectionDetails", headers=add_header(attempt_id), json={serverHmacChallangeResponse})
+            payload = RequestConnectionDetailsPostRequest(
+                serverHmacChallengeResponse=serverHmacChallangeResponse
+            )
+            response = await client.post(
+                "https://s2server.example.com/requestConnectionDetails",
+                headers=add_header(attempt_id),
+                json=payload.model_dump(),
+            )
             return response.json()
         
     async def post_connection_details(attempt_id: str, connection_details: dict, server_hmac_challenge: dict) -> None:
         async with httpx.AsyncClient() as client:
-            response = await client.post("https://s2server.example.com/postConnectionDetails", headers=add_header(attempt_id), json={connection_details,server_hmac_challenge})
+            payload = PostConnectionDetailsPostRequest(
+                serverHmacChallengeResponse=server_hmac_challenge,
+                connectionDetails=connection_details,
+            )
+            response = await client.post(
+                "https://s2server.example.com/postConnectionDetails",
+                headers=add_header(attempt_id),
+                json=payload.model_dump(),
+            )
             return response.json()
 
     async def finalize_pairing(attempt_id: str, success: Optional[bool] = None) -> None:
@@ -144,7 +156,15 @@ class ConnectionClient:
 
     async def connect(self, s2_client_description, pairing_s2_node_id=None):
         async with httpx.AsyncClient() as client:
-            response = await httpx.post("https://s2server.example.com/initiateConnection", json={"s2ClientNodeId": pairing_s2_node_id, "supportedS2MessageVersions": self.supported_s2_message_versions,"supportedCommunicationProtocols": self.supported_communication_protocols})
+            init_payload = InitiateConnectionPostRequest(
+                s2ClientNodeId=pairing_s2_node_id,
+                supportedS2MessageVersions=self.supported_s2_message_versions,
+                supportedCommunicationProtocols=self.supported_communication_protocols,
+            )
+            response = await httpx.post(
+                "https://s2server.example.com/initiateConnection",
+                json=init_payload.model_dump(),
+            )
             if response.status_code == 200:
                 confirmation = await self.confirmToken(response.json().get("pendingToken"))
                 if confirmation.status_code == 200:
