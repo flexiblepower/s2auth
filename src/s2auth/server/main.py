@@ -68,20 +68,6 @@ def unpair(body: UnpairPostRequest = None) -> None:
     pass
 
 
-
-
-app = FastAPI(
-    version='1.0-beta',
-    title='s2-over-ip pairing and connection initiation',
-    description='The HTTP API specification of the pairing process for S2 over IP connections, as well as initiating connections. For more information, please find the specification at [S2 documentation](https://docs.s2standard.org).',
-    license={
-        'name': 'Apache-2.0',
-        'url': 'https://raw.githubusercontent.com/flexiblepower/s2-ws-json/refs/heads/main/LICENSE',
-    },
-    servers=[{'url': '/v1'}],
-)
-
-
 @app.post('/cancelPreparePairing', response_model=None, tags=['LAN-LAN only extensions'])
 def cancel_prepare_pairing(body: S2NodeId = None) -> None:
     """
