@@ -86,7 +86,7 @@ class PairingClient:
                     # Process successful response
                     attempt_id=response_data.get("attemptId")
                     if(check_client_hmac_challenge_response(client_hmac_challenge,response.get("clientHmacChallengeResponse"))):
-                        if self.role=="CEM":
+                        if self.role=="RM":
                             connection_details=await request_connection_details(attempt_id,response_data.get("serverHmacChallenge"))
                             # Store connection details in the database
                          #   self.storage.store_connection_details(s2_client_description.id,connection_details)
