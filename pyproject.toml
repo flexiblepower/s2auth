@@ -10,8 +10,7 @@ authors = [
 description = "S2 Protocol Python Wrapper"
 dynamic = ["version"]
 readme = "README.rst"
-license = "Apache-2.0"
-license-files = ["LICENSE"]
+license = { text = "Apache-2.0" }
 requires-python = ">=3.9, < 3.14"
 dependencies = [
     "pydantic>=2.8.2",
@@ -62,3 +61,12 @@ docs = [
 
 [tool.black]
 line-length=100
+
+[tool.pytest.ini_options]
+testpaths = "tests"
+addopts = [
+	"--cov=s2auth",
+	"--cov-report=html:./unit_test_coverage/",
+	"-v",
+	"tests/unit/"
+]
