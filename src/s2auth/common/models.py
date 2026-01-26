@@ -19,6 +19,7 @@ class CommunicationDetailsErrorMessage(BaseModel):
 class InitiateConnectionPostRequest(BaseModel):
     s2ClientNodeId: S2NodeId
     supportedS2MessageVersions: List[str] = Field(
+        ...,
         description='List of supported protocols versions by the client. The server will pick one of the supported protocols versions and return it in the connection details. If no common protocol can be found, an error is returned.',
     )
     supportedCommunicationProtocols: List[CommunicationProtocol]
