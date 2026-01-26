@@ -28,9 +28,17 @@ or for a dev dependency
 
 * `poetry add -G dev <dependency>`
 
-# Commit without running pre-commit checks
-* `git commit --no-verify`
-* `git push --no-verify`
+
+# What to do on pre-commit errors
+
+* If the error is auto fixed, you can just `git add` the changed files, and commit again.
+* If they are ruff errors, see https://docs.astral.sh/ruff/rules/ for the rule explanation
+* If they are pyright errors, fix your typing
+* If they are pytest errors, fix your code or the tests.
+* Last case resort to skip the checks:
+  * `git commit --no-verify`
+  * `git push --no-verify`
+
 
 # Generate openapi client and server
 ```bash
