@@ -6,6 +6,9 @@ Shell scripts are linux compatible.
 ci/setup_dev_environment.sh
 ```
 
+# Install as regular python package
+* `pip install .` or from pypi should just work
+
 # Run Developer tooling
 ```bash
 ci/lint.sh
