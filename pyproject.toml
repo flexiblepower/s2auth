@@ -97,4 +97,4 @@ exclude_also = [
 show_missing = true
 
 [tool.ruff]
-extend-exclude = ["typings/*"]
+extend-exclude = ["typings/*", "./src/s2auth/common/models.py"]
