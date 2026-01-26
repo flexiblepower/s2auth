@@ -1,10 +1,9 @@
 # Setup dev environment
-Requires: python3.8 with virtualenv installed on system.
+Requires: pyenv with python 3.9 installed on the system.
 Shell scripts are linux compatible.
 
 ```bash
 ci/setup_dev_environment.sh
-ci/install_dependencies.sh
 ```
 
 # Run Developer tooling
@@ -14,14 +13,24 @@ ci/test_unit.sh
 ci/typecheck.sh
 ```
 
-# Update dependencies
-Change the dependency list in pyproject.toml. Then:
+# Run python
+* `poetry run python`
 
-```bash
-ci/update_dependencies.sh
-ci/install_dependencies.sh
-```
-This changes the locked versions in `dev-requirements.txt` and installs the new dependencies.
+_or_
+
+* `poetry shell`
+* `python`
+
+# Update dependencies
+* `poetry add <dependency>`
+
+or for a dev dependency
+
+* `poetry add -G dev <dependency>`
+
+# Commit without running pre-commit checks
+* `git commit --no-verify`
+* `git push --no-verify`
 
 # Generate openapi client and server
 ```bash
