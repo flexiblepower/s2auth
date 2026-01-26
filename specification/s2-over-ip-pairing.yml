@@ -27,23 +27,25 @@ paths:
           application/json:
             schema:
               type: object
-              required: 
-                - s2NodeDescription
-                - s2EndpointDescription
+              required:
+                - clientS2NodeDescription
+                - clientS2EndpointDescription
               properties:
-                s2NodeDescription:
-                  $ref: '#/components/schemas/S2NodeDescription'
-                s2EndpointDescription:
-                  $ref: '#/components/schemas/S2EndpointDescription'
+                clientS2NodeDescription:
+                  $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeDescription'
+                clientS2EndpointDescription:
+                  $ref: 's2-over-ip-common.yml#/components/schemas/S2EndpointDescription'
+                serverS2PairingNodeId:
+                  $ref: '#/components/schemas/PairingS2NodeId'
       responses:
         '204':
-          description: Notification received.
+          description: Notification received (also used when provided targetS2Node is not known).
         '400':
-          description: Based on the provided information, the server already notifies the client it is not willing to pair with the client.
+          description: Based on the provided information, the server already notifies the client it is not willing to pair with the S2 node.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PairingResponseErrorMessage' 
+                $ref: '#/components/schemas/PairingResponseErrorMessage'
   /cancelPreparePairing:
     post:
       summary: Cancel a previous call to preparePairing
@@ -52,14 +54,21 @@ paths:
         - LAN-LAN only extensions
       description: Cancel a previous notification of the preparePairing. This happens when the end user has stopped the process to pair a S2Node on the client with a S2Node on the server. It is up to the server implementation to decide what to do with this signal, but it can for example be used to close the pop-up showing the pairing token that was opened after preparePairing was called.
       requestBody:
-        description: The s2ClientNodeId of the client cancelling the pairing.
+        description: The clientS2NodeId of the client cancelling the pairing.
         content:
           application/json:
             schema:
-              $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeId"
+              type: object
+              required: 
+                -  clientS2NodeId
+              properties:
+                clientS2NodeId:
+                  $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeId"
+                serverS2PairingNodeId:
+                  $ref: '#/components/schemas/PairingS2NodeId'                
       responses:
         '204':
-          description: Cancellation received (also the response when the server does not recognize the S2ClientNodeId).
+          description: Cancellation received (also the response when the server does not recognize the clientS2NodeId).
   /requestPairing:
     post:
       summary: Initiate the pairing process.
@@ -68,23 +77,23 @@ paths:
         - Pairing process
       description: Initiate pairing from the client. This is meant to check compatibility of the S2Nodes, to determine the deployment of the other S2Node, and to provide the client challenge to the server. When compatible, the server provides information about the S2Node and assigns the pairing attempt a PairingAttemptId. The PairingAttemptId must be used by the client as authentication token for further request during the pairing process. Even if a node with the RM role is already paired, a new pairing attempt is started. Only if the pairing attempt is successful, the existing pairing shall be unpaired.
       requestBody:
-        description: A Json message with the S2Node information of the client and the client challenge.
+        description: A JSON message with the S2Node information of the client and the client challenge.
         content:
           application/json:
             schema:
               type: object
               required:
-                - s2ClientNodeDescription
-                - s2ClientEndpointDescription
+                - clientS2NodeDescription
+                - clientS2EndpointDescription
                 - supportedCommunicationProtocols
                 - supportedS2MessageVersions
                 - supportedHmacHashingAlgorithms
                 - clientHmacChallenge
               properties:
-                s2ClientNodeDescription:
-                  $ref: "#/components/schemas/S2NodeDescription"
-                s2ClientEndpointDescription:
-                  $ref: "#/components/schemas/S2EndpointDescription"
+                clientS2NodeDescription:
+                  $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeDescription"
+                clientS2EndpointDescription:
+                  $ref: "s2-over-ip-common.yml#/components/schemas/S2EndpointDescription"
                 pairingS2NodeId:
                   description: This is a server-assigned identifier of the S2Node that this server represents (which can be part of the pairing token that needs to be entered by the end user). When the server represents only one S2Node (which can be the case for LAN deployment) no pairingS2NodeId has to be provided.
                   $ref: '#/components/schemas/PairingS2NodeId'
@@ -116,18 +125,18 @@ paths:
                 type: object
                 required:
                   - pairingAttemptId
-                  - s2ServerNodeDescription
-                  - s2ServerEndpointDescription
+                  - serverS2NodeDescription
+                  - serverS2EndpointDescription
                   - selectedHmacHashingAlgorithm
                   - clientHmacChallengeResponse
                   - serverHmacChallenge
                 properties:
                   pairingAttemptId:
                     $ref: '#/components/schemas/PairingAttemptId'
-                  s2ServerNodeDescription:
-                    $ref: "#/components/schemas/S2NodeDescription"              
-                  s2ServerEndpointDescription:
-                    $ref: "#/components/schemas/S2EndpointDescription"              
+                  serverS2NodeDescription:
+                    $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeDescription"              
+                  serverS2EndpointDescription:
+                    $ref: "s2-over-ip-common.yml#/components/schemas/S2EndpointDescription"              
                   selectedHmacHashingAlgorithm:
                     $ref: '#/components/schemas/HmacHashingAlgorithm'
                   clientHmacChallengeResponse:
@@ -140,6 +149,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PairingResponseErrorMessage'
+        '503':
+          description: The server is temporarily not able to process the pairing request, try again soon.
 
   /requestConnectionDetails:
     post:
@@ -227,7 +238,7 @@ paths:
                   type: boolean
       responses:
         '204':
-          description: The server confirms that it received all the necessary information for pairing and that the pairing was successful.
+          description: The server confirms that the pairing attempt was completed (with or without success).
         '400':
           description: The request was not understood or the server is not yet satisfied with the pairing process ().
         '401':
@@ -241,7 +252,7 @@ paths:
       - LAN-LAN only extensions
       description: Long polling path for indicating to a server that a client is available for pairing. The client calls this operation on the server. The server will wait with its response until it wants the client to take action, or when a predetermined timer is exceeded. Once the server responds, the client immediately stars a new request to the server. The client does this even when it is already paired. Note that the client can represent multiple S2Nodes so the request body and the response contains a list.
       requestBody:
-        description: By default the only data that is provided in the request is the s2ClientNodeId. Only when the server has responded with the 'sendS2NodeDescription' action, the client must provide the s2NodeDescription and the s2EndpointDescription data in the next request.
+        description: By default the only data that is provided in the request is the clientS2NodeId. Only when the server has responded with the 'sendS2NodeDescription' action, the client must provide the s2NodeDescription and the s2EndpointDescription data in the next request.
         content:
           application/json:
             schema:
@@ -249,14 +260,14 @@ paths:
               items:
                 type: object
                 required: 
-                  -  s2ClientNodeId
+                  -  clientS2NodeId
                 properties: 
-                  s2ClientNodeId:
+                  clientS2NodeId:
                     $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeId'
-                  s2NodeDescription:
-                    $ref: '#/components/schemas/S2NodeDescription'
-                  s2EndpointDescription:
-                    $ref: '#/components/schemas/S2EndpointDescription'
+                  clientS2NodeDescription:
+                    $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeDescription'
+                  clientS2EndpointDescription:
+                    $ref: 's2-over-ip-common.yml#/components/schemas/S2EndpointDescription'
                   errorMessage:
                     type: string
                     enum:
@@ -272,10 +283,10 @@ paths:
                 items:
                   type: object
                   required: 
-                    - s2ClientNodeId
+                    - clientS2NodeId
                     - action
                   properties: 
-                    s2ClientNodeId:
+                    clientS2NodeId:
                       $ref:  "s2-over-ip-common.yml#/components/schemas/S2NodeId"
                     action:
                       type: string
@@ -302,6 +313,7 @@ components:
             - "Invalid combination of roles"
             - "Incompatible S2 message versions"
             - "Incompatible HMAC hashing algorithms"
+            - "Incompatible communication protocols"
             - "S2Node not found"
             - "No S2Node provided"
             - "No valid pairingToken on PairingServer"
@@ -323,71 +335,17 @@ components:
           format: uri
         accessToken:
           $ref: 's2-over-ip-common.yml#/components/schemas/AccessToken'
-    S2EndpointDescription:
-      description: Information about the pairing endpoint of a S2 node
-      properties:
-        name:
-          type: string
-        logoUri:
-          type: string
-          format: uri
-        deployment:
-          $ref: "#/components/schemas/Deployment"
-    S2NodeDescription:
-      required:
-        - "id"
-        - "brand"
-        - "type"
-        - "modelName"
-        - "role"
-      type: object
-      description: Information about the S2 node
-      properties:
-        id:
-          $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeId"
-        brand:
-          type: string
-        logoUri:
-          type: string
-          format: uri
-        type:
-          type: string
-        modelName:
-          type: string
-        userDefinedName:
-          type: string
-        role:
-          $ref: "#/components/schemas/S2Role"
-    S2Role:
-      type: string
-      enum:
-        - CEM
-        - RM
-    Deployment:
-      type: string
-      enum:
-        - WAN
-        - LAN
     HmacHashingAlgorithm:
       type: string
       enum:
       - "SHA256"
     HmacChallenge:
-      type: object
-      required:
-        - hmacChallenge
-        - expirationTime
-      properties:
-        hmacChallenge:
-          type: string
-          description: "A base64 encoded HMAC challenge that should be signed by the S2 Node using the pairing token secret as key. The signed challenge should be send to the other S2 Node as part of the pairing process."
-        expirationTime:
-          type: string
-          format: date-time
-          description: "The time until the HMAC challenge is valid."
+      type: string
+      format: byte
+      description: "Random generated binary data encoded using Base64, used as the challenge for the HMAC based challenge response process. The challenge should be send to the other S2 Node as part of the pairing process. It must have a length of at least 32 bytes."
     HmacChallengeResponse:
       type: string
-      description: "The base64 encoded signed HMAC challenge that was calculated by the S2 Node."
+      description: "The Base64 encoded response to the challenge that was calculated by the S2 endpoint."
       format: byte
     PairingAttemptId:
       description: "An identifier that is generated by the server for each pairing attempt. It is used as authentication of the client and to keep track of the client requests through the several steps of the pairing process. Once the pairing process is finished (with or without success) the identifier can be discarded."

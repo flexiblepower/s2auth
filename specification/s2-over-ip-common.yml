@@ -19,3 +19,48 @@ components:
                      This token is valid for maximum 30 seconds, and should have a minimum length of 32 bytes."
       type: string
       format: byte
+    S2EndpointDescription:
+      description: Information about the pairing endpoint of a S2 node
+      properties:
+        name:
+          type: string
+        logoUri:
+          type: string
+          format: uri
+        deployment:
+          $ref: "#/components/schemas/Deployment"
+    S2NodeDescription:
+      required:
+        - "id"
+        - "brand"
+        - "type"
+        - "modelName"
+        - "role"
+      type: object
+      description: Information about the S2 node
+      properties:
+        id:
+          $ref: "#/components/schemas/S2NodeId"
+        brand:
+          type: string
+        logoUri:
+          type: string
+          format: uri
+        type:
+          type: string
+        modelName:
+          type: string
+        userDefinedName:
+          type: string
+        role:
+          $ref: "#/components/schemas/S2Role"
+    S2Role:
+      type: string
+      enum:
+        - CEM
+        - RM
+    Deployment:
+      type: string
+      enum:
+        - WAN
+        - LAN
