@@ -16,7 +16,7 @@ repos:
   - id: requirements-txt-fixer
   - id: mixed-line-ending
     args: ['--fix=auto']  # replace 'auto' with 'lf' to enforce Linux/Mac line endings or 'crlf' for Windows
-- repo: local
+- repo: local # use local hooks for everything that can be run with poetry, to make sure we don't get version conflicts between this file and pyproject.toml
   hooks:
     - id: ruff
       name: ruff
