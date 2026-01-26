@@ -5,7 +5,7 @@ if ! command -v pyenv >/dev/null 2>&1; then
     echo "Please install pyenv: https://github.com/pyenv/pyenv?tab=readme-ov-file#a-getting-pyenv"
 fi
 if command -v pipx >/dev/null 2>&1; then
-    if ! command -v pyenv >/dev/null 2>&1; then
+    if ! command -v poetry >/dev/null 2>&1; then
     	pipx install poetry
     fi
     pipx upgrade poetry
