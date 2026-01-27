@@ -1,3 +1,3 @@
 #!/usr/bin/env sh
 
-poetry install
+poetry install --all-extras
