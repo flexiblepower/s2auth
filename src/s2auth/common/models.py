@@ -232,4 +232,3 @@ class WaitForPairingPostRequestItem(BaseModel):
 
 class WaitForPairingPostRequest(RootModel[List[WaitForPairingPostRequestItem]]):
     root: List[WaitForPairingPostRequestItem]
-

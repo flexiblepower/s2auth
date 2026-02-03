@@ -1,15 +1,18 @@
+
 [build-system]
-requires = [ "setuptools>=42", "wheel", "setuptools-git-versioning>=2.0,<3", ]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
 
 [project]
-name = "s2-auth"
+name = "s2auth"
+version = "0.1.0a0"
 authors = [
-    {name = "Flexiblepower", email = "info@info.nl"}
+    {name = "Flexiblepower", email = "info@info.nl"},
+    {name = "Dolf Andringa", email = "dolf@wepositive.energy"},
 ]
 description = "S2 Protocol Python Wrapper"
-dynamic = ["version"]
-readme = "README.rst"
+readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.9, < 3.14"
 dependencies = [
@@ -28,28 +31,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 
-[tool.setuptools-git-versioning]
-enabled = true
-
 [project.urls]
     "Source code" = "https://github.com/flexiblepower/s2-ws-json-python"
 
-[project.optional-dependencies]
-testing = [
-    "pytest",
-    "pytest-coverage",
-    "pytest-timer",
-    "mypy",
-    "types-pytz",
-    "pylint",
-    "pyright",
-]
-development = [
-    "pip-tools",
-    "fastapi-code-generator",
-    "pre-commit",
-    "setuptools-git-versioning",
-]
+[dependency-groups]
 docs = [
     "sphinx",
     "sphinx-rtd-theme >= 1.2",
@@ -58,9 +43,20 @@ docs = [
     "sphinx_fontawesome",
     "sphinxcontrib.httpdomain",
 ]
+dev = [
+    "pytest (<9)", # because we want to support python 3.9
+    "pytest-coverage",
+    "pytest-timer",
+    "types-pytz",
+    "pyright",
+    "ruff",
+    "fastapi-code-generator",
+    "pre-commit",
+]
 
-[tool.black]
-line-length=100
+[tool.poetry.requires-plugins]
+poetry-plugin-shell = "*"
+
 
 [tool.pytest.ini_options]
 testpaths = "tests"
@@ -70,3 +66,35 @@ addopts = [
 	"-v",
 	"tests/unit/"
 ]
+
+[tool.pyright]
+stubPath = "./typings/"
+reportImportCycles = false
+typeCheckingMode = "strict"
+exclude = [
+    "./src/s2auth/common/models.py",
+    "./typings/*",
+    "**/__pycache__",
+    "**/.*",
+]
+venv = ".venv"
+venvPath = "."
+
+
+[tool.coverage.run]
+branch = true
+source = ["./src"]
+
+[tool.coverage.report]
+exclude_also = [
+    "if .*TYPE_CHECKING:",
+    "@overload",
+    "@typing.overload",
+    "class .*\\(Protocol\\):",
+    "@abc.abstractmethod",
+    "@abstractmethod",
+]
+show_missing = true
+
+[tool.ruff]
+extend-exclude = ["typings/*", "./src/s2auth/common/models.py"]

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import s2auth
 
 from typing import Optional, Union
 
@@ -22,7 +23,7 @@ from s2auth.common.models import (
 )
 
 app = FastAPI(
-    version='1.0-beta',
+    version=s2auth.__version__,
     title='s2-over-ip pairing and connection initiation',
     description='The HTTP API specification of the pairing process for S2 over IP connections, as well as initiating connections. For more information, please find the specification at [S2 documentation](https://docs.s2standard.org).',
     license={
