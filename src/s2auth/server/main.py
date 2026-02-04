@@ -145,7 +145,7 @@ def request_pairing(
     tags=["LAN-LAN only extensions"],
 )
 def wait_for_pairing(
-    body: WaitForPairingPostRequest = None, # pyright: ignore[reportArgumentType]
+    body: WaitForPairingPostRequest = None,  # pyright: ignore[reportArgumentType]
 ) -> WaitForPairingPostResponse:  # pyright: ignore[reportReturnType]
     """
     Long polling operation to indicate to the server that the client is available for pairing.
