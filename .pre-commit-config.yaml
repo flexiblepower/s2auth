@@ -1,4 +1,4 @@
-exclude: '^docs/conf.py'
+exclude: '^(docs/conf\.py|specification/.*|src/s2auth/common/models\.py)$'
 
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
