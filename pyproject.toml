@@ -21,6 +21,7 @@ dependencies = [
     "click",
     "typing-extensions",
     "fastapi",
+    "pydantic-settings (>=2.5,<3.0)",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -34,6 +35,12 @@ classifiers = [
 [project.urls]
     "Source code" = "https://github.com/flexiblepower/s2-ws-json-python"
 
+[project.scripts]
+server = "s2auth.server.run:main"
+
+[project.optional-dependencies]
+db = ["asyncpg (>=0.31.0,<0.32.0)", "sqlalchemy[asyncio] (>=2.0.46,<3.0.0)"]
+server = ["asyncpg (>=0.31.0,<0.32.0)", "sqlalchemy[asyncio] (>=2.0.46,<3.0.0)", "fastapi (>=0.128.0,<0.129.0)", "uvicorn[standard] (>=0.32.1,<1.0.0)"]
 [dependency-groups]
 docs = [
     "sphinx",
@@ -52,6 +59,8 @@ dev = [
     "ruff",
     "fastapi-code-generator",
     "pre-commit",
+    "pytest-asyncio (<1.3.0)",
+    "aiosqlite (>=0.22.1,<0.23.0)",
 ]
 
 [tool.poetry.requires-plugins]
@@ -60,12 +69,16 @@ poetry-plugin-shell = "*"
 
 [tool.pytest.ini_options]
 testpaths = "tests"
+markers = []
 addopts = [
 	"--cov=s2auth",
 	"--cov-report=html:./unit_test_coverage/",
 	"-v",
-	"tests/unit/"
+	"tests/unit/",
 ]
+asyncio_mode = "auto"
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"
 
 [tool.pyright]
 stubPath = "./typings/"

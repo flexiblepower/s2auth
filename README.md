@@ -9,6 +9,22 @@ ci/setup_dev_environment.sh
 # Install as regular python package
 * `pip install .` or from pypi should just work
 
+# Run the FastAPI server
+```bash
+poetry run server
+```
+
+This starts the development server with auto-reload enabled at `http://0.0.0.0:8000`.
+
+The API documentation is available at:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+**Note**: Requires the `server` optional dependencies. Install with:
+```bash
+poetry install --all-extras
+```
+
 # Run Developer tooling
 ```bash
 ci/lint.sh
@@ -30,6 +46,22 @@ _or_
 or for a dev dependency
 
 * `poetry add -G dev <dependency>`
+
+or for the server optional dependencies
+
+* `poetry add --optional=server <dependency>`
+
+# View installed dependencies
+```bash
+# List all installed packages
+poetry show
+
+# Show dependency tree
+poetry show --tree
+
+# Show specific package details
+poetry show <package-name>
+```
 
 
 # What to do on pre-commit errors
