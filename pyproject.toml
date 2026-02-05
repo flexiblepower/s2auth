@@ -79,8 +79,9 @@ markers = [
 addopts = [
 	"--cov=s2auth",
 	"--cov-report=term-missing",
-	"--cov-report=html:./unit_test_coverage/",
-	"-v",
+	"--cov-report=html:./unit_test_coverage/html/",
+    	"--cov-report=xml:./unit_test_coverage/coverage.xml",
+    	"-v",
 	"tests/unit/",
 ]
 asyncio_mode = "auto"
