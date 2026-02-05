@@ -1,5 +1,5 @@
 # Setup dev environment
-Requires: pyenv with python 3.9 installed on the system.
+Requires: pyenv with python 3.10 installed on the system.
 Shell scripts are linux compatible.
 
 ```bash

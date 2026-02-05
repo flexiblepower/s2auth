@@ -104,7 +104,7 @@ Files excluded from type-checking and linting:
 - `typings/*` directory
 
 ### Python Version
-Supports Python 3.9-3.13, configured in `pyproject.toml` and `.python-version`
+Supports Python 3.10-3.13, configured in `pyproject.toml` and `.python-version`
 
 ### Configuration
 Uses `pydantic-settings` with environment variables. Config reads from `.env` and `.env.docker` files. Nested env vars use double underscore: `SECTION__KEY`
