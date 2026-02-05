@@ -1,8 +1,6 @@
 from fastapi import FastAPI
 import s2auth
 
-from typing import Optional, Union
-
 from s2auth.common.models import (
     ConnectionDetails,
     FinalizePairingPostRequest,
@@ -54,7 +52,7 @@ def post_confirm_access_token() -> ConfirmAccessTokenPostResponse:  # pyright: i
 )
 def initiate_connection(
     body: InitiateConnectionPostRequest = None,  # pyright: ignore[reportArgumentType]
-) -> Union[InitiateConnectionPostResponse, CommunicationDetailsErrorMessage]:  # pyright: ignore[reportReturnType]
+) -> InitiateConnectionPostResponse | CommunicationDetailsErrorMessage:  # pyright: ignore[reportReturnType]
     """
     Initiate an S2 communication session
     """
@@ -101,7 +99,7 @@ def post_connection_details(body: PostConnectionDetailsPostRequest = None) -> No
 )
 def prepare_pairing(
     body: PreparePairingPostRequest = None,  # pyright: ignore[reportArgumentType]
-) -> Optional[PairingResponseErrorMessage]:
+) -> PairingResponseErrorMessage | None:
     """
     Inform the server that a S2Node on the client is planning to attempt pairing with a S2Node on the server.
     """
@@ -126,7 +124,7 @@ def request_connection_details(
 )
 def request_pairing(
     body: RequestPairingPostRequest = None,  # pyright: ignore[reportArgumentType]
-) -> Union[RequestPairingPostResponse, PairingResponseErrorMessage]:  # pyright: ignore[reportReturnType]
+) -> RequestPairingPostResponse | PairingResponseErrorMessage:  # pyright: ignore[reportReturnType]
     """
     Initiate the pairing process.
     """

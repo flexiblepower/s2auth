@@ -3,7 +3,8 @@ import hmac
 import secrets
 from base64 import b64decode, b64encode
 from enum import Enum
-from typing import Any, Callable, List
+from typing import Any
+from collections.abc import Callable
 
 from s2auth.common.exceptions import VerificationError
 
@@ -13,7 +14,7 @@ class SupportedHashingAlgorithms(Enum):
     SHA512 = hashlib.sha512
 
     @classmethod
-    def keys(cls) -> List[str]:
+    def keys(cls) -> list[str]:
         return [i.name for i in cls]
 
 
