@@ -603,7 +603,7 @@ validation = ["openapi-spec-validator (>=0.2.8,<0.8)", "prance (>=0.18.2)"]
 watch = ["watchfiles (>=1.1)"]
 
 [[package]]
-name = "dependency-gor"
+name = "dependency-injector"
 version = "4.49.0"
 description = "Dependency injection framework for Python"
 optional = false
