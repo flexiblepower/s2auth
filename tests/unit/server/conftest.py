@@ -8,3 +8,4 @@ def wire_dependencies(request: pytest.FixtureRequest):
         yield
         return
     setup()
+    yield
