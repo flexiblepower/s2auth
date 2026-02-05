@@ -46,7 +46,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 if [ "$GEN_MODELS" = true ]; then
-	poetry run datamodel-codegen --input specification/ --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output src/s2auth/common/model/ --formatters=ruff-format --use-annotated --use-exact-imports
+	poetry run datamodel-codegen --input specification/ --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output src/s2auth/common/model/ --formatters=ruff-format --use-annotated --use-exact-imports  --openapi-scopes schemas parameters paths
 fi
 
 # TODO: replace by another way to generate fastAPI server stubs; fastapi-codegen is unmaintained
