@@ -1,3 +1,72 @@
+"""Dependency injection system with generator provider support.
+
+This module provides a custom DI wrapper around dependency-injector that supports:
+- Regular function providers (sync and async)
+- Generator providers for resource management (sync and async)
+- Dependency resolution via Depends[] markers
+- Provider overrides for testing
+
+## Generator Provider Patterns
+
+Generator providers use the setup/yield/teardown pattern for resource management.
+The system uses a HYBRID cleanup strategy:
+- On SUCCESS: Calls next()/anext() to run cleanup normally
+- On EXCEPTION: Calls throw()/athrow() to pass exception to generator
+
+### CRITICAL: All generators MUST use try-finally or try-except
+
+When throw() is called, the exception is raised AT the yield point.
+Without try-finally, cleanup code after yield will NOT execute.
+
+### Failure Behavior
+
+If a generator provider's cleanup fails (e.g., missing try-finally), the DI system:
+- Logs a warning with the exception details (enabling debugging of resource leaks)
+- Continues cleanup of other providers (robust error handling)
+- Does NOT break the DI system as a whole
+- The cleanup code in that specific provider won't run (potential resource leak)
+
+### ✅ CORRECT Pattern 1 - Simple cleanup (REQUIRED):
+```python
+@register_provider()
+async def resource_provider():
+    resource = await create_resource()
+    try:
+        yield resource
+    finally:
+        await resource.cleanup()  # Always runs, even with throw()
+```
+
+### ✅ CORRECT Pattern 2 - Exception-aware cleanup (for transactions):
+```python
+@register_provider()
+async def async_session(cfg: Config = Depends[config]):
+    engine = create_async_engine(cfg.sqlalchemy_db_uri.get_secret_value())
+    session = AsyncSession(engine)
+    try:
+        yield session
+        await session.commit()  # Success: runs with anext()
+    except Exception:
+        await session.rollback()  # Failure: runs with athrow()
+        raise
+```
+
+### ❌ INCORRECT Pattern - Without try-finally (BROKEN):
+```python
+@register_provider()
+async def broken_provider():
+    resource = await create_resource()
+    yield resource
+    await resource.cleanup()  # WON'T run when throw() is called! ❌
+```
+
+### Rules:
+1. Always use try-finally or try-except for cleanup in generator providers
+2. Put cleanup code in the finally block or except block
+3. Never rely on code after yield without try-finally
+4. The try-finally pattern works for both success and failure cases
+"""
+
 from typing import (
     Any,
     Callable,
@@ -14,8 +83,11 @@ from dependency_injector import containers, providers
 from contextlib import contextmanager
 import functools
 import inspect
+import logging
 
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 _registered_modules: Set[Any] = set()
 _provider_overrides: Dict[str, Callable[..., Any]] = {}
@@ -38,6 +110,7 @@ def register_provider(name: Optional[str] = None, singleton: bool = False):
         sig = inspect.signature(func)
         is_async_gen = inspect.isasyncgenfunction(func)
         is_async_func = inspect.iscoroutinefunction(func)
+        is_sync_gen = inspect.isgeneratorfunction(func)
         is_async = is_async_gen or is_async_func
 
         if is_async:
@@ -49,8 +122,8 @@ def register_provider(name: Optional[str] = None, singleton: bool = False):
                 )
 
             if is_async_gen:
-                # For async generators, we wrap them to return the first yielded value
-                # This allows them to work as context managers (yield, then cleanup on exception)
+                # For async generators, we wrap them to return the generator itself
+                # The @inject decorator will manage the generator lifecycle
                 async def async_gen_wrapper():
                     # Resolve Depends markers
                     bound = sig.bind_partial()
@@ -67,9 +140,9 @@ def register_provider(name: Optional[str] = None, singleton: bool = False):
                                 result = await result
                             bound.arguments[param_name] = result
 
-                    # Call original generator and return the first yielded value
-                    gen = func(**bound.arguments)
-                    return await gen.__anext__()
+                    # Return the generator itself, not the first yielded value
+                    # The @inject decorator will call __anext__() and handle cleanup
+                    return func(**bound.arguments)
 
                 setattr(registry, provider_name, providers.Coroutine(async_gen_wrapper))
             else:
@@ -97,41 +170,81 @@ def register_provider(name: Optional[str] = None, singleton: bool = False):
                     registry, provider_name, providers.Coroutine(async_func_wrapper)
                 )
         else:
-            # Create a sync wrapper that resolves dependencies
-            def sync_wrapper():
-                # Resolve Depends markers
-                bound = sig.bind_partial()
-                bound.apply_defaults()
+            # Sync providers (functions or generators)
+            if is_sync_gen:
+                # For sync generators, we wrap them to return the generator itself
+                # The @inject decorator will manage the generator lifecycle
+                def sync_gen_wrapper():
+                    # Resolve Depends markers
+                    bound = sig.bind_partial()
+                    bound.apply_defaults()
 
-                for param_name in list(bound.arguments.keys()):
-                    value = bound.arguments[param_name]
-                    if isinstance(value, _DependsMarker):
-                        if value.name in _provider_overrides:
-                            result = _provider_overrides[value.name]()
-                        else:
-                            result = getattr(registry, value.name)()
-                        if asyncio.iscoroutine(result):
-                            try:
-                                asyncio.get_running_loop()
-                                raise RuntimeError(
-                                    f"Cannot resolve async dependency '{param_name}' in sync provider "
-                                    f"'{provider_name}' from an async context. "
-                                    f"Make your provider async instead: async def {func.__name__}(...)"
-                                )
-                            except RuntimeError as e:
-                                if "Cannot resolve async dependency" in str(e):
-                                    raise
-                                # No running event loop, safe to use asyncio.run()
-                                result = asyncio.run(result)
-                        bound.arguments[param_name] = result
+                    for param_name in list(bound.arguments.keys()):
+                        value = bound.arguments[param_name]
+                        if isinstance(value, _DependsMarker):
+                            if value.name in _provider_overrides:
+                                result = _provider_overrides[value.name]()
+                            else:
+                                result = getattr(registry, value.name)()
+                            if asyncio.iscoroutine(result):
+                                try:
+                                    asyncio.get_running_loop()
+                                    raise RuntimeError(
+                                        f"Cannot resolve async dependency '{param_name}' in sync provider "
+                                        f"'{provider_name}' from an async context. "
+                                        f"Make your provider async instead: async def {func.__name__}(...)"
+                                    )
+                                except RuntimeError as e:
+                                    if "Cannot resolve async dependency" in str(e):
+                                        raise
+                                    # No running event loop, safe to use asyncio.run()
+                                    result = asyncio.run(result)
+                            bound.arguments[param_name] = result
 
-                # Call original sync function
-                return func(**bound.arguments)
+                    # Return the generator itself, not the first yielded value
+                    # The @inject decorator will call __next__() and handle cleanup
+                    return func(**bound.arguments)
 
-            if singleton:
-                setattr(registry, provider_name, providers.Singleton(sync_wrapper))
+                if singleton:
+                    setattr(registry, provider_name, providers.Singleton(sync_gen_wrapper))
+                else:
+                    setattr(registry, provider_name, providers.Factory(sync_gen_wrapper))  # type:ignore[reportArgumentType]
             else:
-                setattr(registry, provider_name, providers.Factory(sync_wrapper))  # type:ignore[reportArgumentType]
+                # Create a sync wrapper that resolves dependencies
+                def sync_wrapper():
+                    # Resolve Depends markers
+                    bound = sig.bind_partial()
+                    bound.apply_defaults()
+
+                    for param_name in list(bound.arguments.keys()):
+                        value = bound.arguments[param_name]
+                        if isinstance(value, _DependsMarker):
+                            if value.name in _provider_overrides:
+                                result = _provider_overrides[value.name]()
+                            else:
+                                result = getattr(registry, value.name)()
+                            if asyncio.iscoroutine(result):
+                                try:
+                                    asyncio.get_running_loop()
+                                    raise RuntimeError(
+                                        f"Cannot resolve async dependency '{param_name}' in sync provider "
+                                        f"'{provider_name}' from an async context. "
+                                        f"Make your provider async instead: async def {func.__name__}(...)"
+                                    )
+                                except RuntimeError as e:
+                                    if "Cannot resolve async dependency" in str(e):
+                                        raise
+                                    # No running event loop, safe to use asyncio.run()
+                                    result = asyncio.run(result)
+                            bound.arguments[param_name] = result
+
+                    # Call original sync function
+                    return func(**bound.arguments)
+
+                if singleton:
+                    setattr(registry, provider_name, providers.Singleton(sync_wrapper))
+                else:
+                    setattr(registry, provider_name, providers.Factory(sync_wrapper))  # type:ignore[reportArgumentType]
 
         module = inspect.getmodule(func)
         if module is not None:
@@ -300,19 +413,30 @@ def inject(func: T) -> T:
                     provider = getattr(registry, value.name)
                     result = provider()
 
-                # If the provider returns a coroutine, await it
-                if asyncio.iscoroutine(result):
-                    result = await result
-
-                # If the provider returns an async generator, get the first yielded value
-                # and track it for cleanup
+                # Check for generators first (before checking iscoroutine)
+                # because asyncio.iscoroutine() can incorrectly identify generators as coroutines
                 if hasattr(result, "__anext__"):
+                    # Async generator - get the first yielded value and track for cleanup
                     generators_to_cleanup.append(result)
                     result = await result.__anext__()
-                # If it's a regular generator, get the first yielded value
                 elif hasattr(result, "__next__"):
+                    # Sync generator - get the first yielded value and track for cleanup
                     generators_to_cleanup.append(result)
                     result = result.__next__()
+                elif asyncio.iscoroutine(result):
+                    # If the provider returns a coroutine, await it first
+                    # (this handles Coroutine providers that wrap generators)
+                    result = await result
+
+                    # After awaiting, check if we got a generator
+                    if hasattr(result, "__anext__"):
+                        # Async generator - get the first yielded value and track for cleanup
+                        generators_to_cleanup.append(result)
+                        result = await result.__anext__()
+                    elif hasattr(result, "__next__"):
+                        # Sync generator - get the first yielded value and track for cleanup
+                        generators_to_cleanup.append(result)
+                        result = result.__next__()
 
                 bound.arguments[param_name] = result
 
@@ -340,8 +464,14 @@ def inject(func: T) -> T:
                     provider = getattr(registry, value.name)
                     result = provider()
 
-                # If the provider returns a coroutine, handle it
-                if asyncio.iscoroutine(result):
+                # Check for generators first (before checking for coroutines)
+                # to avoid treating generators as coroutines
+                if hasattr(result, "__next__"):
+                    # Sync generator - get the first yielded value and track for cleanup
+                    generators_to_cleanup.append(result)
+                    result = result.__next__()
+                elif asyncio.iscoroutine(result):
+                    # Handle async dependency in sync context
                     # Check if there's already a running event loop
                     try:
                         asyncio.get_running_loop()
@@ -358,11 +488,6 @@ def inject(func: T) -> T:
                         # No running event loop, safe to use asyncio.run()
                         result = asyncio.run(result)
 
-                # If it's a generator, get the first yielded value and track for cleanup
-                if hasattr(result, "__next__"):
-                    generators_to_cleanup.append(result)
-                    result = result.__next__()
-
                 bound.arguments[param_name] = result
 
         return bound.arguments, generators_to_cleanup
@@ -375,68 +500,61 @@ def inject(func: T) -> T:
         Generators should yield exactly once for dependency injection.
         This function runs the cleanup code after the yield.
 
-        If an exception occurred, it's sent to the generator via throw().
+            If an exception occurred, it's sent to the generator via throw()/athrow()
+            so exception-aware generators (like async_session) can handle rollback.
+            If no exception occurred, generators are continued normally with next()/anext().
         """
         for gen in generators:
             try:
                 if hasattr(gen, "__anext__"):
                     # Async generator
-                    if exception:
-                        # Send the exception into the generator
-                        try:
-                            await gen.athrow(
-                                type(exception), exception, exception.__traceback__
-                            )
-                        except StopAsyncIteration:
-                            # Generator handled the exception and finished
-                            pass
-                        except Exception:
-                            # Generator raised a different exception during cleanup
-                            pass
-                    else:
-                        # No exception, just continue the generator
-                        try:
+                    try:
+                        if exception is not None:
+                            # Send exception to generator so it can handle rollback
+                            await gen.athrow(type(exception), exception, exception.__traceback__)
+                        else:
+                            # No exception - continue normally
                             await gen.__anext__()
-                            # If we get here, the generator yielded more than once - this is an error
-                            raise RuntimeError(
-                                "Dependency generator yielded more than once. "
-                                "Generators used as dependencies should only yield once (setup, yield, teardown pattern)."
-                            )
-                        except StopAsyncIteration:
-                            # This is the expected case - generator is exhausted after cleanup
-                            pass
+                        # If we get here, the generator yielded more than once - this is an error
+                        raise RuntimeError(
+                            "Dependency generator yielded more than once. "
+                            "Generators used as dependencies should only yield once (setup, yield, teardown pattern)."
+                        )
+                    except StopAsyncIteration:
+                        # This is the expected case - generator is exhausted after cleanup
+                        pass
                 else:
                     # Sync generator
-                    if exception:
-                        # Send the exception into the generator
-                        try:
-                            gen.throw(
-                                type(exception), exception, exception.__traceback__
-                            )
-                        except StopIteration:
-                            # Generator handled the exception and finished
-                            pass
-                        except Exception:
-                            # Generator raised a different exception during cleanup
-                            pass
-                    else:
-                        # No exception, just continue the generator
-                        try:
+                    try:
+                        if exception is not None:
+                            # Send exception to generator so it can handle rollback
+                            gen.throw(type(exception), exception, exception.__traceback__)
+                        else:
+                            # No exception - continue normally
                             gen.__next__()
-                            # If we get here, the generator yielded more than once - this is an error
-                            raise RuntimeError(
-                                "Dependency generator yielded more than once. "
-                                "Generators used as dependencies should only yield once (setup, yield, teardown pattern)."
-                            )
-                        except StopIteration:
-                            # This is the expected case - generator is exhausted after cleanup
-                            pass
-            except RuntimeError:
-                # Re-raise our custom errors
-                raise
-            except Exception:
-                # Ignore other cleanup errors (but maybe log them in production)
-                pass
+                        # If we get here, the generator yielded more than once - this is an error
+                        raise RuntimeError(
+                            "Dependency generator yielded more than once. "
+                            "Generators used as dependencies should only yield once (setup, yield, teardown pattern)."
+                        )
+                    except StopIteration:
+                        # This is the expected case - generator is exhausted after cleanup
+                        pass
+            except RuntimeError as e:
+                # Only re-raise our specific "yielded more than once" error
+                if "yielded more than once" in str(e):
+                    raise
+                # Log warning for other RuntimeErrors during cleanup
+                logger.warning(
+                    f"RuntimeError during cleanup of generator dependency: {e}",
+                    exc_info=True
+                )
+            except Exception as e:
+                # Log warning for other cleanup errors to help debug resource leaks
+                logger.warning(
+                    f"Exception during cleanup of generator dependency: {e}",
+                    exc_info=True
+                )
 
     def _cleanup_generators_sync(
         generators: List[Any], exception: Optional[Exception] = None
@@ -446,35 +564,32 @@ def inject(func: T) -> T:
         Generators should yield exactly once for dependency injection.
         This function runs the cleanup code after the yield.
 
-        If an exception occurred, it's sent to the generator via throw().
+        If an exception occurred, it's sent to the generator via throw()
+        so exception-aware generators can handle it appropriately.
+        If no exception occurred, generators are continued normally with next().
         """
         for gen in generators:
             try:
-                if exception:
-                    # Send the exception into the generator
-                    try:
+                try:
+                    if exception is not None:
+                        # Send exception to generator so it can handle it
                         gen.throw(type(exception), exception, exception.__traceback__)
-                    except StopIteration:
-                        # Generator handled the exception and finished
-                        pass
-                    except Exception:
-                        # Generator raised a different exception during cleanup
-                        pass
-                else:
-                    # No exception, just continue the generator
-                    try:
+                    else:
+                        # No exception - continue normally
                         gen.__next__()
-                        # If we get here, the generator yielded more than once - this is an error
-                        raise RuntimeError(
-                            "Dependency generator yielded more than once. "
-                            "Generators used as dependencies should only yield once (setup, yield, teardown pattern)."
-                        )
-                    except StopIteration:
-                        # This is the expected case - generator is exhausted after cleanup
-                        pass
-            except RuntimeError:
-                # Re-raise our custom errors
-                raise
+                    # If we get here, the generator yielded more than once - this is an error
+                    raise RuntimeError(
+                        "Dependency generator yielded more than once. "
+                        "Generators used as dependencies should only yield once (setup, yield, teardown pattern)."
+                    )
+                except StopIteration:
+                    # This is the expected case - generator is exhausted after cleanup
+                    pass
+            except RuntimeError as e:
+                # Only re-raise our specific "yielded more than once" error
+                if "yielded more than once" in str(e):
+                    raise
+                # Ignore other RuntimeErrors during cleanup
             except Exception:
                 # Ignore other cleanup errors (but maybe log them in production)
                 pass
