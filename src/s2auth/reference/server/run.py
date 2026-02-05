@@ -1,4 +1,5 @@
 """Run the S2Auth FastAPI server with uvicorn."""
+
 import sys
 
 
@@ -8,14 +9,13 @@ def main() -> None:
         import uvicorn
     except ImportError:
         print(
-            "Error: uvicorn is not installed. "
-            "Install with: pip install s2auth[server]",
+            "Error: uvicorn is not installed. Install with: pip install s2auth[server]",
             file=sys.stderr,
         )
         sys.exit(1)
 
     uvicorn.run(
-        "s2auth.server.main:app",
+        "s2auth.reference.server.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
