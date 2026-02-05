@@ -12,12 +12,12 @@ from .s2_over_ip_common import (
     S2NodeDescription,
     S2NodeId,
 )
-from typing import Annotated
+from typing import Annotated, Literal
 from enum import Enum
 
 
 class CommunicationDetails(BaseModel):
-    communicationProtocol: CommunicationProtocol
+    communicationProtocol: Literal['Websocket']
 
 
 class WebSocketCommunicationDetails(CommunicationDetails):
