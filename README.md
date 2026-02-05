@@ -22,7 +22,11 @@ The API documentation is available at:
 
 **Note**: Requires the `server` optional dependencies. Install with:
 ```bash
-poetry install --all-extras
+# For development (with Poetry)
+poetry install --extras server
+
+# Or install from PyPI
+pip install s2auth[server]
 ```
 
 # Run Developer tooling
