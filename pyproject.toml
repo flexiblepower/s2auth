@@ -36,7 +36,7 @@ classifiers = [
     "Source code" = "https://github.com/flexiblepower/s2-ws-json-python"
 
 [project.scripts]
-server = "s2auth.server.run:main"
+server = "s2auth.reference.server.run:main"
 
 [project.optional-dependencies]
 db = ["asyncpg (>=0.31.0,<0.32.0)", "sqlalchemy[asyncio] (>=2.0.46,<3.0.0)"]
@@ -77,6 +77,7 @@ markers = [
 ]
 addopts = [
 	"--cov=s2auth",
+	"--cov-report=term-missing",
 	"--cov-report=html:./unit_test_coverage/",
 	"-v",
 	"tests/unit/",
