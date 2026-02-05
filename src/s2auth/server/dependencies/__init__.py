@@ -589,10 +589,17 @@ def inject(func: T) -> T:
                 # Only re-raise our specific "yielded more than once" error
                 if "yielded more than once" in str(e):
                     raise
-                # Ignore other RuntimeErrors during cleanup
-            except Exception:
-                # Ignore other cleanup errors (but maybe log them in production)
-                pass
+                # Log warning for other RuntimeErrors during cleanup
+                logger.warning(
+                    f"RuntimeError during cleanup of generator dependency: {e}",
+                    exc_info=True
+                )
+            except Exception as e:
+                # Log warning for other cleanup errors to help debug resource leaks
+                logger.warning(
+                    f"Exception during cleanup of generator dependency: {e}",
+                    exc_info=True
+                )
 
     if is_async:
 
