@@ -36,60 +36,14 @@ The repository uses pre-commit hooks that run ruff, pyright, poetry checks, and 
 - **`src/s2auth/server/`** - S2 server implementation with FastAPI endpoints
 - **`specification/`** - OpenAPI YAML specs for S2 protocol (connection-init, pairing, common)
 
-### Dependency Injection System
-This project uses a custom dependency injection wrapper around `dependency-injector`:
-
-**Register providers** with `@register_provider()`:
-```python
-from s2auth.server.dependencies import register_provider
-
-@register_provider()  # Default: creates new instance each time
-async def my_provider() -> MyType:
-    return MyType()
-
-@register_provider(singleton=True)  # Singleton: caches instance (sync only)
-def my_singleton() -> MyType:
-    return MyType()
-```
-
-**Important**: Async providers cannot be singletons due to `dependency-injector` limitations.
-
-**Inject dependencies** with `@inject` and `Depends[]`:
-```python
-from s2auth.server.dependencies import inject, Depends
-from s2auth.server.config import config
-
-@inject
-async def my_function(cfg: Config = Depends[config]):
-    # cfg is automatically injected
-    pass
-```
-
-**Setup**: Call `setup()` from `s2auth.server.dependencies` to wire all registered modules before using injected functions.
-
 ### Database
 - Uses SQLAlchemy async with PostgreSQL (via asyncpg)
 - Connection configured via `Config` class (reads from `.env` or `.env.docker`)
 - Default URI: `postgresql://postgres:postgres@localhost/s2auth`
-- Session management: `async_session` provider yields sessions with auto-commit/rollback
 
 ### Testing
 - Tests use pytest with `asyncio_mode = "auto"`
-- Dependency injection is auto-wired in tests via `conftest.py` fixture
 - Test coverage reports generated in `unit_test_coverage/`
-
-**Override providers in tests**:
-```python
-from s2auth.server.dependencies import provider_overrides
-from s2auth.server.config import config
-
-async def test_config() -> Config:
-    return Config(sqlalchemy_db_uri=SecretStr("sqlite:///:memory:"))
-
-with provider_overrides({config: test_config}):
-    # Your test code here - uses test_config instead of config
-    pass
-```
 
 ## Key Conventions
 
