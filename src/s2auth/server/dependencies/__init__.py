@@ -187,18 +187,13 @@ def register_provider(name: Optional[str] = None, singleton: bool = False):
                             else:
                                 result = getattr(registry, value.name)()
                             if asyncio.iscoroutine(result):
-                                try:
-                                    asyncio.get_running_loop()
-                                    raise RuntimeError(
-                                        f"Cannot resolve async dependency '{param_name}' in sync provider "
-                                        f"'{provider_name}' from an async context. "
-                                        f"Make your provider async instead: async def {func.__name__}(...)"
-                                    )
-                                except RuntimeError as e:
-                                    if "Cannot resolve async dependency" in str(e):
-                                        raise
-                                    # No running event loop, safe to use asyncio.run()
-                                    result = asyncio.run(result)
+                                # Close the coroutine to avoid RuntimeWarning about unawaited coroutine
+                                result.close()
+                                raise RuntimeError(
+                                    f"Cannot resolve async dependency '{param_name}' in sync provider "
+                                    f"'{provider_name}'. Sync providers cannot have async dependencies. "
+                                    f"Make your provider async instead: async def {func.__name__}(...)"
+                                )
                             bound.arguments[param_name] = result
 
                     # Return the generator itself, not the first yielded value
@@ -224,18 +219,13 @@ def register_provider(name: Optional[str] = None, singleton: bool = False):
                             else:
                                 result = getattr(registry, value.name)()
                             if asyncio.iscoroutine(result):
-                                try:
-                                    asyncio.get_running_loop()
-                                    raise RuntimeError(
-                                        f"Cannot resolve async dependency '{param_name}' in sync provider "
-                                        f"'{provider_name}' from an async context. "
-                                        f"Make your provider async instead: async def {func.__name__}(...)"
-                                    )
-                                except RuntimeError as e:
-                                    if "Cannot resolve async dependency" in str(e):
-                                        raise
-                                    # No running event loop, safe to use asyncio.run()
-                                    result = asyncio.run(result)
+                                # Close the coroutine to avoid RuntimeWarning about unawaited coroutine
+                                result.close()
+                                raise RuntimeError(
+                                    f"Cannot resolve async dependency '{param_name}' in sync provider "
+                                    f"'{provider_name}'. Sync providers cannot have async dependencies. "
+                                    f"Make your provider async instead: async def {func.__name__}(...)"
+                                )
                             bound.arguments[param_name] = result
 
                     # Call original sync function
@@ -471,22 +461,15 @@ def inject(func: T) -> T:
                     generators_to_cleanup.append(result)
                     result = result.__next__()
                 elif asyncio.iscoroutine(result):
-                    # Handle async dependency in sync context
-                    # Check if there's already a running event loop
-                    try:
-                        asyncio.get_running_loop()
-                        # We're in an async context - this is not supported!
-                        raise RuntimeError(
-                            f"Cannot resolve async dependency '{param_name}' in sync function "
-                            f"'{func.__name__}' from an async context. "
-                            f"Make your function async instead: async def {func.__name__}(...)"
-                        )
-                    except RuntimeError as e:
-                        # If it's our custom error, re-raise it
-                        if "Cannot resolve async dependency" in str(e):
-                            raise
-                        # No running event loop, safe to use asyncio.run()
-                        result = asyncio.run(result)
+                    # Close the coroutine to avoid RuntimeWarning about unawaited coroutine
+                    result.close()
+                    # Sync functions cannot resolve async dependencies
+                    # (we always assume async context exists, but sync functions can't await)
+                    raise RuntimeError(
+                        f"Cannot resolve async dependency '{param_name}' in sync function "
+                        f"'{func.__name__}'. Sync functions cannot have async dependencies. "
+                        f"Make your function async instead: async def {func.__name__}(...)"
+                    )
 
                 bound.arguments[param_name] = result
 

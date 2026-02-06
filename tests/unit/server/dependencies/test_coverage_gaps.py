@@ -546,10 +546,10 @@ async def test_async_function_with_async_dependency_coroutine_resolution() -> No
 
 @pytest.mark.skip_wire
 async def test_sync_function_with_async_dependency_outside_event_loop() -> None:
-    """Test sync function resolving an async dependency when NO event loop is running.
+    """Test sync function with async dependency raises error (no asyncio.run fallback).
 
-    This tests lines 221->219, 250->252 where we use asyncio.run() to await
-    the dependency because there's no running event loop.
+    With the new behavior, sync providers cannot resolve async dependencies
+    regardless of whether there's an event loop or not.
     """
 
     @register_provider()
@@ -562,19 +562,21 @@ async def test_sync_function_with_async_dependency_outside_event_loop() -> None:
 
     # Need to call this in a sync context (no event loop)
     # But we're already in an async test, so we need to run it in a thread
-    def run_in_thread() -> int:
+    def run_in_thread() -> None:
         # This will be called in a new thread with no event loop
         @inject
         def consumer(value: int = Depends[sync_func_with_async_dep]) -> int:
             return value
 
-        return consumer()
+        with pytest.raises(
+            RuntimeError,
+            match=r"Cannot resolve async dependency 'val' in sync provider 'sync_func_with_async_dep'\. Sync providers cannot have async dependencies\. Make your provider async instead: async def sync_func_with_async_dep\(\.\.\.\)",
+        ):
+            consumer()
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(run_in_thread)
-        result = future.result()
-
-    assert result == 1998  # 999 * 2
+        future.result()
 
     clear_overrides()
 
@@ -842,10 +844,10 @@ def test_sync_gen_with_multiple_dependencies() -> None:
 
 @pytest.mark.skip_wire
 def test_inject_sync_func_with_async_dep_no_event_loop() -> None:
-    """Test @inject decorator on sync function with async dep, no event loop (lines 476-489).
+    """Test @inject decorator on sync function with async dep raises error (no asyncio.run fallback).
 
-    This tests the _resolve_dependencies_sync path where a sync function decorated with
-    @inject has async dependencies and there's no running event loop.
+    With the new behavior, sync functions cannot resolve async dependencies
+    regardless of whether there's an event loop or not.
     """
 
     @register_provider()
@@ -857,14 +859,16 @@ def test_inject_sync_func_with_async_dep_no_event_loop() -> None:
         return value * 2
 
     # Call from thread with no event loop
-    def call_in_thread() -> int:
-        return sync_consumer()
+    def call_in_thread() -> None:
+        with pytest.raises(
+            RuntimeError,
+            match=r"Cannot resolve async dependency 'value' in sync function 'sync_consumer'\. Sync functions cannot have async dependencies\. Make your function async instead: async def sync_consumer\(\.\.\.\)",
+        ):
+            sync_consumer()
 
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(call_in_thread)
-        result = future.result()
-
-    assert result == 1776  # 888 * 2
+        future.result()
 
     clear_overrides()
