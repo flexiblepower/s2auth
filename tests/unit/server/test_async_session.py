@@ -20,7 +20,7 @@ class _TestUser(Base):
 
 
 # Type alias for the test fixture return type
-TestDbConfigType = tuple[
+DbConfigFixture = tuple[
     Callable[[], Coroutine[Any, Any, Config]],  # test_config_provider
     Callable[..., AsyncGenerator[AsyncSession, None]],  # test_async_session_provider
 ]
@@ -57,7 +57,7 @@ async def test_engine() -> AsyncGenerator[AsyncEngine, None]:
 
 
 @pytest.fixture
-async def test_db_config(test_engine: AsyncEngine) -> TestDbConfigType:
+async def test_db_config(test_engine: AsyncEngine) -> DbConfigFixture:
     """Fixture that provides config and async_session provider override."""
     # Clean up database before each test
     async with test_engine.begin() as conn:
@@ -90,7 +90,7 @@ async def test_db_config(test_engine: AsyncEngine) -> TestDbConfigType:
 
 @pytest.mark.skip_wire
 async def test_async_session_commits_on_success(
-    test_db_config: TestDbConfigType,
+    test_db_config: DbConfigFixture,
 ) -> None:
     """Test that async_session commits when no exception is raised."""
     test_config_provider, test_async_session_provider = test_db_config
@@ -129,7 +129,7 @@ async def test_async_session_commits_on_success(
 
 @pytest.mark.skip_wire
 async def test_async_session_rollback_on_error(
-    test_db_config: TestDbConfigType,
+    test_db_config: DbConfigFixture,
 ) -> None:
     """Test that async_session rolls back when an exception is raised."""
     test_config_provider, test_async_session_provider = test_db_config
@@ -171,7 +171,7 @@ async def test_async_session_rollback_on_error(
 
 @pytest.mark.skip_wire
 async def test_async_session_runs_query_successfully(
-    test_db_config: TestDbConfigType,
+    test_db_config: DbConfigFixture,
 ) -> None:
     """Test that a function can run a single query using async_session."""
     test_config_provider, test_async_session_provider = test_db_config
@@ -217,7 +217,7 @@ async def test_async_session_runs_query_successfully(
 
 @pytest.mark.skip_wire
 async def test_async_session_multiple_operations(
-    test_db_config: TestDbConfigType,
+    test_db_config: DbConfigFixture,
 ) -> None:
     """Test that multiple database operations work correctly within a session."""
     test_config_provider, test_async_session_provider = test_db_config

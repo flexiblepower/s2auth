@@ -51,7 +51,7 @@ async def test_sync_provider_with_async_dependency_in_event_loop(
     # when called from an event loop context
     with pytest.raises(
         RuntimeError,
-        match="Cannot resolve async dependency 'cfg' in sync provider 'sync_provider_needs_async' from an async context"
+        match=r"Cannot resolve async dependency 'cfg' in sync provider 'sync_provider_needs_async'\. Sync providers cannot have async dependencies\. Make your provider async instead: async def sync_provider_needs_async\(\.\.\.\)"
     ):
         await use_sync_provider()
 
@@ -60,9 +60,10 @@ async def test_sync_provider_with_async_dependency_in_event_loop(
 def test_sync_provider_with_async_dependency_no_event_loop(
     mocker: MockerFixture, mock_config: MagicMock
 ) -> None:
-    """Test sync provider resolving async dependency without event loop.
+    """Test sync provider with async dependency raises error (no asyncio.run fallback).
 
-    This tests lines 122-125, 137-139: asyncio.run() fallback path.
+    With the new behavior, sync providers cannot resolve async dependencies
+    regardless of whether there's an event loop or not.
     """
 
     @register_provider()
@@ -80,10 +81,12 @@ def test_sync_provider_with_async_dependency_no_event_loop(
 
     setup()
 
-    # Execute from sync context (no event loop)
-    # This should work because asyncio.run() can be used
-    result = use_sync_provider()
-    assert result == "test_config"
+    # Should raise an error because sync provider can't resolve async dependency
+    with pytest.raises(
+        RuntimeError,
+        match=r"Cannot resolve async dependency 'cfg' in sync provider 'sync_provider_needs_async'\. Sync providers cannot have async dependencies\. Make your provider async instead: async def sync_provider_needs_async\(\.\.\.\)",
+    ):
+        use_sync_provider()  # pyright: ignore[reportUnusedCoroutine]
 
 
 @pytest.mark.skip_wire
@@ -195,7 +198,7 @@ async def test_sync_dependency_error_handling_in_event_loop(mocker: MockerFixtur
 
     with pytest.raises(
         RuntimeError,
-        match="Cannot resolve async dependency 'val' in sync function 'sync_func_with_async_dep' from an async context"
+        match=r"Cannot resolve async dependency 'val' in sync function 'sync_func_with_async_dep'\. Sync functions cannot have async dependencies\. Make your function async instead: async def sync_func_with_async_dep\(\.\.\.\)"
     ):
         await caller()
 

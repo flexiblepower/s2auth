@@ -13,7 +13,7 @@ from s2auth.server.dependencies import Depends, provider_overrides, setup
 
 
 # Type alias for the test fixture return type
-TestStorageDbType = tuple[
+StorageDbFixture = tuple[
     Callable[[], Coroutine[Any, Any, Config]],  # test_config_provider
     Callable[..., AsyncGenerator[AsyncSession, None]],  # test_async_session_provider
     AsyncEngine,  # test_storage_engine
@@ -46,7 +46,7 @@ async def test_storage_engine() -> AsyncGenerator[AsyncEngine, None]:
 
 
 @pytest.fixture
-async def test_storage_db(test_storage_engine: AsyncEngine) -> TestStorageDbType:
+async def test_storage_db(test_storage_engine: AsyncEngine) -> StorageDbFixture:
     """Fixture that provides clean database for each storage test."""
     # Clean up database before each test
     async with test_storage_engine.begin() as conn:
@@ -79,7 +79,7 @@ async def test_storage_db(test_storage_engine: AsyncEngine) -> TestStorageDbType
 
 
 @pytest.mark.skip_wire
-async def test_store_object(test_storage_db: TestStorageDbType) -> None:
+async def test_store_object(test_storage_db: StorageDbFixture) -> None:
     """Test that store_object correctly stores a pydantic object as JSON in the database."""
     test_config_provider, test_async_session_provider, engine = test_storage_db
 
