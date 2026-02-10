@@ -6,14 +6,14 @@ info:
   license:
     name: Apache-2.0
     url: https://raw.githubusercontent.com/flexiblepower/s2-ws-json/refs/heads/main/LICENSE
-servers: 
+servers:
   - url: /v1
 tags:
   - name: Connection initiation
     description: API endpoints to obtain connection details for opening a communication channel.
   - name: Unpairing
     description: API endpoint to enable the communication client to unpair.
-  
+
 paths:
   /initiateConnection:
     post:
@@ -32,7 +32,7 @@ paths:
               type: object
               required:
                 - clientS2NodeId
-                - serverS2NodeId                
+                - serverS2NodeId
                 - supportedS2MessageVersions
                 - supportedCommunicationProtocols
               properties:
@@ -88,16 +88,16 @@ paths:
                 $ref: '#/components/schemas/CommunicationDetailsErrorMessage'
         '401':
           description: Unauthorized, combination of clientS2NodeId and accessToken not accepted
-  
+
   /confirmAccessToken:
-    post: 
+    post:
       summary: Client confirms that is has stored a new accessToken
       security:
         - accessToken: []
       tags:
         - Connection initiation
       description: An accessToken to authenticate at the initiateConnection endpoint can only be used one time so it crucial that the server knows certainly that client has properly stored it's access token. By calling this endpoint the client informs the server that it has done so after which the server shares the communication details.
-      responses: 
+      responses:
         '200':
           description: Confirmation received. Sharing the communication details.
           content:
@@ -142,7 +142,7 @@ components:
   schemas:
     CommunicationDetails:
       type: object
-      required: 
+      required:
         -  communicationProtocol
       properties:
         communicationProtocol:
@@ -150,10 +150,10 @@ components:
       discriminator:
         propertyName: communicationProtocol
     WebSocketCommunicationDetails:
-      allOf: 
+      allOf:
         - $ref: "#/components/schemas/CommunicationDetails"
         - type: object
-          required: 
+          required:
             - websocketToken
             - websocketUrl
           properties:
@@ -171,10 +171,10 @@ components:
         errorMessage:
           type: string
           enum:
-            - "Incompatible S2 message versions"
-            - "Incompatible communication protocols"
-            - "No longer paired"
-            - "Parsing error"
+            - "IncompatibleS2MessageVersions"
+            - "IncompatibleCommunicationProtocols"
+            - "NoLongerPaired"
+            - "ParsingError"
             - "Other"
         additionalInfo:
           type: string
