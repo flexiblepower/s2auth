@@ -1,5 +1,5 @@
 components:
-  schemas:  
+  schemas:
     S2NodeId:
       description: Unique identifier of the S2 node
       type: string
@@ -8,7 +8,7 @@ components:
       type: string
       description: The type of communication protocol supported by the S2 node
       enum:
-        - WebSocket
+        - "WebSocket"
     AccessToken:
       description: "One-time access token for secure access to the S2 message communication channel. It must be renewed every time a client wants to access the S2 message communication channel by calling the requestToken endpoint.\
                      This token is valid for one time login, with a maximum 5 years, and should have a minimum length of 32 bytes."
@@ -24,7 +24,7 @@ components:
       properties:
         name:
           type: string
-        logoUri:
+        logoUrl:
           type: string
           format: uri
         deployment:
@@ -43,7 +43,7 @@ components:
           $ref: "#/components/schemas/S2NodeId"
         brand:
           type: string
-        logoUri:
+        logoUrl:
           type: string
           format: uri
         type:
@@ -57,10 +57,10 @@ components:
     S2Role:
       type: string
       enum:
-        - CEM
-        - RM
+        - "CEM"
+        - "RM"
     Deployment:
       type: string
       enum:
-        - WAN
-        - LAN
+        - "WAN"
+        - "LAN"

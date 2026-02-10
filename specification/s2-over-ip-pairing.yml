@@ -6,7 +6,7 @@ info:
   license:
     name: Apache-2.0
     url: https://raw.githubusercontent.com/flexiblepower/s2-ws-json/refs/heads/main/LICENSE
-servers: 
+servers:
   - url: /v1
 tags:
   - name: Pairing process
@@ -14,61 +14,6 @@ tags:
   - name: LAN-LAN only extensions
     description: API endpoints used in the case the S2 Resource Manager and Customer Energy Manger are both deployed in a LAN.
 paths:
-  /preparePairing:
-    post:
-      summary: Inform the server that a S2Node on the client is planning to attempt pairing with a S2Node on the server.
-      operationId: preparePairing
-      tags:
-        - LAN-LAN only extensions
-      description: Notify the server that the end user has started the process on the client to pair with a S2Node on this server. It is up to the server implementation to decide what to do with this signal, but it can be used to display a pop-up with the pairing token in its UI to improve the user experience. It must be implemented by the client, but only when there is a clear distinction between the moment preparePairing is called and when requestPairing is called. When a preparePairing is called, it is not guaranteed that a call to pairingRequest or cancelPreparePairing will follow.
-      requestBody:
-        description: A JSON message to inform the server which client is preparing to pair.
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - clientS2NodeDescription
-                - clientS2EndpointDescription
-              properties:
-                clientS2NodeDescription:
-                  $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeDescription'
-                clientS2EndpointDescription:
-                  $ref: 's2-over-ip-common.yml#/components/schemas/S2EndpointDescription'
-                serverS2PairingNodeId:
-                  $ref: '#/components/schemas/PairingS2NodeId'
-      responses:
-        '204':
-          description: Notification received (also used when provided targetS2Node is not known).
-        '400':
-          description: Based on the provided information, the server already notifies the client it is not willing to pair with the S2 node.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PairingResponseErrorMessage'
-  /cancelPreparePairing:
-    post:
-      summary: Cancel a previous call to preparePairing
-      operationId: cancelPreparePairing
-      tags:
-        - LAN-LAN only extensions
-      description: Cancel a previous notification of the preparePairing. This happens when the end user has stopped the process to pair a S2Node on the client with a S2Node on the server. It is up to the server implementation to decide what to do with this signal, but it can for example be used to close the pop-up showing the pairing token that was opened after preparePairing was called.
-      requestBody:
-        description: The clientS2NodeId of the client cancelling the pairing.
-        content:
-          application/json:
-            schema:
-              type: object
-              required: 
-                -  clientS2NodeId
-              properties:
-                clientS2NodeId:
-                  $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeId"
-                serverS2PairingNodeId:
-                  $ref: '#/components/schemas/PairingS2NodeId'                
-      responses:
-        '204':
-          description: Cancellation received (also the response when the server does not recognize the clientS2NodeId).
   /requestPairing:
     post:
       summary: Initiate the pairing process.
@@ -134,9 +79,9 @@ paths:
                   pairingAttemptId:
                     $ref: '#/components/schemas/PairingAttemptId'
                   serverS2NodeDescription:
-                    $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeDescription"              
+                    $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeDescription"
                   serverS2EndpointDescription:
-                    $ref: "s2-over-ip-common.yml#/components/schemas/S2EndpointDescription"              
+                    $ref: "s2-over-ip-common.yml#/components/schemas/S2EndpointDescription"
                   selectedHmacHashingAlgorithm:
                     $ref: '#/components/schemas/HmacHashingAlgorithm'
                   clientHmacChallengeResponse:
@@ -201,12 +146,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: 
+              required:
                 - serverHmacChallengeResponse
                 - connectionDetails
               properties:
                 serverHmacChallengeResponse:
-                  $ref: "#/components/schemas/HmacChallengeResponse"                
+                  $ref: "#/components/schemas/HmacChallengeResponse"
                 connectionDetails:
                   $ref: '#/components/schemas/ConnectionDetails'
       responses:
@@ -218,7 +163,7 @@ paths:
           description: Provided pairingAttemptId not accepted. The client may restart the pairing process by calling /requestPairing again.
         '403':
           description: The server did not accept the provided HmacChallengeResponse. The PairingAttempt has failed and cannot proceed, the client may try again by calling /requestPairing.
-  
+
   /finalizePairing:
     post:
       summary: Confirm that the pairing was successful or has failed.
@@ -244,6 +189,103 @@ paths:
         '401':
           description: Provided pairingAttemptId not accepted. The client may restart the pairing process by calling /requestPairing.
 
+  /s2endpoint:
+    get:
+      summary: Get details of this S2 endpoint
+      operationId: getS2Endpoint
+      tags:
+        - LAN-LAN only extensions
+      description: Request the details of this S2 endpoint
+      responses:
+        '200':
+          description: Details of this S2 endpoint
+          content:
+            application/json:
+              schema:
+                $ref: 's2-over-ip-common.yml#/components/schemas/S2EndpointDescription'
+        '401':
+          description: The requests originates from outside the LAN
+
+  /s2nodes:
+    get:
+      summary: Get details of the S2 nodes represented by this S2 endpoint
+      operationId: getS2Nodes
+      tags:
+        - LAN-LAN only extensions
+      description: Request the details of the S2 nodes represented by this server
+      responses:
+        '200':
+          description: List with S2 nodes currently represented by this S2 endpoint
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeDescription'
+        '401':
+          description: The requests originates from outside the LAN
+
+  /preparePairing:
+    post:
+      summary: Inform the server that a S2Node on the client is planning to attempt pairing with a S2Node on the server.
+      operationId: preparePairing
+      tags:
+        - LAN-LAN only extensions
+      description: Notify the server that the end user has started the process on the client to pair with a S2Node on this server. It is up to the server implementation to decide what to do with this signal, but it can be used to display a pop-up with the pairing token in its UI to improve the user experience. It must be implemented by the client, but only when there is a clear distinction between the moment preparePairing is called and when requestPairing is called. When a preparePairing is called, it is not guaranteed that a call to pairingRequest or cancelPreparePairing will follow.
+      requestBody:
+        description: A JSON message to inform the server which client is preparing to pair.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - clientS2NodeDescription
+                - clientS2EndpointDescription
+              properties:
+                clientS2NodeDescription:
+                  $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeDescription'
+                clientS2EndpointDescription:
+                  $ref: 's2-over-ip-common.yml#/components/schemas/S2EndpointDescription'
+                serverS2PairingNodeId:
+                  $ref: '#/components/schemas/PairingS2NodeId'
+      responses:
+        '204':
+          description: Notification received (also used when provided targetS2Node is not known).
+        '400':
+          description: Based on the provided information, the server already notifies the client it is not willing to pair with the S2 node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PairingResponseErrorMessage'
+        '401':
+          description: The requests originates from outside the LAN
+
+  /cancelPreparePairing:
+    post:
+      summary: Cancel a previous call to preparePairing
+      operationId: cancelPreparePairing
+      tags:
+        - LAN-LAN only extensions
+      description: Cancel a previous notification of the preparePairing. This happens when the end user has stopped the process to pair a S2Node on the client with a S2Node on the server. It is up to the server implementation to decide what to do with this signal, but it can for example be used to close the pop-up showing the pairing token that was opened after preparePairing was called.
+      requestBody:
+        description: The clientS2NodeId of the client cancelling the pairing.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                -  clientS2NodeId
+              properties:
+                clientS2NodeId:
+                  $ref: "s2-over-ip-common.yml#/components/schemas/S2NodeId"
+                serverS2PairingNodeId:
+                  $ref: '#/components/schemas/PairingS2NodeId'
+      responses:
+        '204':
+          description: Cancellation received (also the response when the server does not recognize the clientS2NodeId).
+        '401':
+          description: The requests originates from outside the LAN
+
   /waitForPairing:
     post:
       summary: Long polling operation to indicate to the server that the client is available for pairing.
@@ -259,9 +301,9 @@ paths:
               type: array
               items:
                 type: object
-                required: 
+                required:
                   -  clientS2NodeId
-                properties: 
+                properties:
                   clientS2NodeId:
                     $ref: 's2-over-ip-common.yml#/components/schemas/S2NodeId'
                   clientS2NodeDescription:
@@ -271,7 +313,7 @@ paths:
                   errorMessage:
                     type: string
                     enum:
-                      - "No valid token on PairingClient"
+                      - "NoValidTokenOnPairingClient"
       responses:
         '200':
           description: Message telling the client what to do next
@@ -282,10 +324,10 @@ paths:
                 minItems: 1
                 items:
                   type: object
-                  required: 
+                  required:
                     - clientS2NodeId
                     - action
-                  properties: 
+                  properties:
                     clientS2NodeId:
                       $ref:  "s2-over-ip-common.yml#/components/schemas/S2NodeId"
                     action:
@@ -299,7 +341,8 @@ paths:
           description: No action for the client, try again.
         '400':
           description: The server is not available for long polling.
-
+        '401':
+          description: The requests originates from outside the LAN
 components:
   schemas:
     PairingResponseErrorMessage:
@@ -310,14 +353,14 @@ components:
         errorMessage:
           type: string
           enum:
-            - "Invalid combination of roles"
-            - "Incompatible S2 message versions"
-            - "Incompatible HMAC hashing algorithms"
-            - "Incompatible communication protocols"
-            - "S2Node not found"
-            - "No S2Node provided"
-            - "No valid pairingToken on PairingServer"
-            - "Parsing error"
+            - "InvalidCombinationOfRoles"
+            - "IncompatibleS2MessageVersions"
+            - "IncompatibleHmacHashingAlgorithms"
+            - "IncompatibleCommunicationProtocols"
+            - "S2NodeNotFound"
+            - "NoS2NodeProvided"
+            - "NoValidPairingTokenOnPairingServer"
+            - "ParsingError"
             - "Other"
         additionalInfo:
           type: string
