@@ -56,10 +56,10 @@ dev = [
     "types-pytz",
     "pyright",
     "ruff",
-    "fastapi-code-generator",
     "pre-commit",
     "pytest-asyncio (<1.3.0)",
     "aiosqlite (>=0.22.1,<0.23.0)",
+    "datamodel-code-generator (>=0.53.0,<0.54.0)",
 ]
 
 [tool.poetry.requires-plugins]
@@ -84,7 +84,6 @@ stubPath = "./typings/"
 reportImportCycles = false
 typeCheckingMode = "strict"
 exclude = [
-    "./src/s2auth/common/models.py",
     "./typings/*",
     "**/__pycache__",
     "**/.*",
@@ -109,4 +108,4 @@ exclude_also = [
 show_missing = true
 
 [tool.ruff]
-extend-exclude = ["typings/*", "./src/s2auth/common/models.py"]
+extend-exclude = ["typings/*"]
