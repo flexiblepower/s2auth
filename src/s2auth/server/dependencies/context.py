@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-import asyncio
-from collections.abc import AsyncGenerator, Generator
-import threading
+import aiologic
+from collections.abc import AsyncGenerator
 from contextvars import ContextVar
 from uuid import UUID
 from pydantic import BaseModel
@@ -53,60 +52,7 @@ class PairingAttemptContext(BaseModel):
     pairing_token: PairingToken
 
 
-class SyncContextStorage(ABC):
-    """Abstract base class for context storage implementations.
-
-    This interface allows for different storage backends (in-memory, Redis, etc.)
-    to be used for storing client and pairing attempt contexts.
-
-    Implementations must be thread-safe.
-
-    Methods are generators that yield contexts while holding locks,
-    ensuring safe modifications during the entire usage period.
-    """
-
-    @abstractmethod
-    def get_client_context(
-        self, client_node_id: ClientNodeId
-    ) -> Generator[ClientContext, None, None]:
-        """Get a ClientContext for the given client_node_id.
-
-        This is a generator that yields the context while holding a lock.
-        The lock is held until the generator is exhausted.
-
-        Args:
-            client_node_id: The UUID of the client node
-
-        Yields:
-            The ClientContext for this client
-
-        Raises:
-            KeyError: If the context does not exist
-        """
-        pass
-
-    @abstractmethod
-    def get_pairing_attempt_context(
-        self, pairing_attempt_id: PairingAttemptId
-    ) -> Generator[PairingAttemptContext, None, None]:
-        """Get a PairingAttemptContext for the given pairing_attempt_id.
-
-        This is a generator that yields the context while holding a lock.
-        The lock is held until the generator is exhausted.
-
-        Args:
-            pairing_attempt_id: The UUID of the pairing attempt
-
-        Yields:
-            The PairingAttemptContext for this attempt
-
-        Raises:
-            KeyError: If the context does not exist
-        """
-        pass
-
-
-class AsyncContextStorage(ABC):
+class ContextStorage(ABC):
     """Abstract base class for context storage implementations.
 
     This interface allows for different storage backends (in-memory, Redis, etc.)
@@ -159,17 +105,20 @@ class AsyncContextStorage(ABC):
         pass
 
 
-class AsyncInMemoryContextStorage(AsyncContextStorage):
-    """Async-safe in-memory storage for contexts.
+class InMemoryContextStorage(ContextStorage):
+    """Unified in-memory storage for contexts that works in both async and threaded environments.
 
-    Uses asyncio.Lock for non-blocking synchronization with fine-grained
-    locking per ID. This allows multiple async tasks to access different
+    Uses aiologic.Lock for synchronization, which works seamlessly across:
+    - Pure async servers (FastAPI with single event loop)
+    - Threaded servers (Flask with multiple threads)
+    - Hybrid environments (multiple threads each with their own event loop)
+
+    Unlike asyncio.Lock (async-only) or threading.Lock (sync-only), aiologic.Lock
+    is designed to synchronize between async tasks AND threads, preventing deadlocks
+    and race conditions in mixed environments.
+
+    Fine-grained locking per ID allows multiple requests to access different
     contexts in parallel while ensuring safe access to the same context.
-
-    IMPORTANT: This implementation uses asyncio.Lock and is designed for
-    async-based deployments (FastAPI with async endpoints). For thread-based
-    deployments (Flask with gunicorn in threading mode), you should use
-    the SyncInMemoryContextStorage which uses threading.Lock instead.
 
     Note: This implementation is single-process only. For multi-process
     deployments (e.g., gunicorn with multiple processes), consider using
@@ -180,25 +129,26 @@ class AsyncInMemoryContextStorage(AsyncContextStorage):
         self._client_states: dict[ClientNodeId, ClientContext] = {}
         self._pairing_attempt_states: dict[PairingAttemptId, PairingAttemptContext] = {}
         # Per-ID locks for fine-grained synchronization
-        self._client_locks: dict[ClientNodeId, asyncio.Lock] = {}
-        self._pairing_locks: dict[PairingAttemptId, asyncio.Lock] = {}
+        # Use RLock (reentrant) to allow the same task/thread to acquire the lock multiple times
+        self._client_locks: dict[ClientNodeId, aiologic.RLock] = {}
+        self._pairing_locks: dict[PairingAttemptId, aiologic.RLock] = {}
         # Global lock to protect the lock dictionaries themselves
-        self._locks_lock = asyncio.Lock()
+        self._locks_lock = aiologic.RLock()
 
-    async def _get_client_lock(self, client_node_id: ClientNodeId) -> asyncio.Lock:
+    async def _get_client_lock(self, client_node_id: ClientNodeId) -> aiologic.RLock:
         """Get or create a lock for the given client_node_id."""
         async with self._locks_lock:
             if client_node_id not in self._client_locks:
-                self._client_locks[client_node_id] = asyncio.Lock()
+                self._client_locks[client_node_id] = aiologic.RLock()
             return self._client_locks[client_node_id]
 
     async def _get_pairing_lock(
         self, pairing_attempt_id: PairingAttemptId
-    ) -> asyncio.Lock:
+    ) -> aiologic.RLock:
         """Get or create a lock for the given pairing_attempt_id."""
         async with self._locks_lock:
             if pairing_attempt_id not in self._pairing_locks:
-                self._pairing_locks[pairing_attempt_id] = asyncio.Lock()
+                self._pairing_locks[pairing_attempt_id] = aiologic.RLock()
             return self._pairing_locks[pairing_attempt_id]
 
     async def get_client_context(
@@ -228,89 +178,24 @@ class AsyncInMemoryContextStorage(AsyncContextStorage):
                 pass
 
 
-class SyncInMemoryContextStorage(SyncContextStorage):
-    """Thread-safe synchronous in-memory storage for contexts.
-
-    Uses threading.Lock for synchronization with fine-grained locking per ID.
-    This allows multiple threads to access different contexts in parallel
-    while ensuring safe access to the same context.
-
-    Suitable for:
-    - Flask with threading-based workers
-    - Any synchronous/threading based application
-
-    Note: This implementation is single-process only. For multi-process
-    deployments (e.g., gunicorn with multiple processes), consider using
-    a distributed storage backend like Redis.
-
-    To use this storage instead of the default async version, override the
-    context_storage_singleton provider and the context providers:
-    """
-
-    def __init__(self):
-        self._client_states: dict[ClientNodeId, ClientContext] = {}
-        self._pairing_attempt_states: dict[PairingAttemptId, PairingAttemptContext] = {}
-        # Per-ID locks for fine-grained synchronization
-        self._client_locks: dict[ClientNodeId, threading.Lock] = {}
-        self._pairing_locks: dict[PairingAttemptId, threading.Lock] = {}
-        # Global lock to protect the lock dictionaries themselves
-        self._locks_lock = threading.Lock()
-
-    def _get_client_lock(self, client_node_id: ClientNodeId) -> threading.Lock:
-        """Get or create a lock for the given client_node_id."""
-        with self._locks_lock:
-            if client_node_id not in self._client_locks:
-                self._client_locks[client_node_id] = threading.Lock()
-            return self._client_locks[client_node_id]
-
-    def _get_pairing_lock(self, pairing_attempt_id: PairingAttemptId) -> threading.Lock:
-        """Get or create a lock for the given pairing_attempt_id."""
-        with self._locks_lock:
-            if pairing_attempt_id not in self._pairing_locks:
-                self._pairing_locks[pairing_attempt_id] = threading.Lock()
-            return self._pairing_locks[pairing_attempt_id]
-
-    def get_client_context(
-        self, client_node_id: ClientNodeId
-    ) -> Generator[ClientContext, None, None]:
-        lock = self._get_client_lock(client_node_id)
-        with lock:
-            if client_node_id not in self._client_states:
-                raise KeyError(f"No context known for {client_node_id}")
-            try:
-                yield self._client_states[client_node_id]
-            finally:
-                # Lock is released when exiting the with block
-                pass
-
-    def get_pairing_attempt_context(
-        self, pairing_attempt_id: PairingAttemptId
-    ) -> Generator[PairingAttemptContext, None, None]:
-        lock = self._get_pairing_lock(pairing_attempt_id)
-        with lock:
-            if pairing_attempt_id not in self._pairing_attempt_states:
-                raise KeyError(f"No context known for {pairing_attempt_id}")
-            try:
-                yield self._pairing_attempt_states[pairing_attempt_id]
-            finally:
-                # Lock is released when exiting the with block
-                pass
-
-
 @register_provider(singleton=True)
-def context_storage_singleton() -> AsyncContextStorage:
+def context_storage_singleton() -> ContextStorage:
     """Singleton provider for the context storage.
 
-    Returns the same AsyncInMemoryContextStorage instance for the lifetime of the application.
+    Returns the same InMemoryContextStorage instance for the lifetime of the application.
 
-    This default implementation uses asyncio.Lock and is optimized for async deployments
-    (FastAPI with async endpoints). For thread-based deployments (Flask with gunicorn),
-    override this provider with one that provides the SyncInMemoryContextStorage.
+    This implementation uses aiologic.Lock which works seamlessly in:
+    - Async servers (FastAPI): Non-blocking async synchronization
+    - Threaded servers (Flask): Thread-safe synchronization
+    - Hybrid environments: Multiple threads with event loops per thread
+
+    The DI system's support for async dependencies in sync contexts combines with
+    aiologic's cross-environment locking to provide a unified storage implementation.
 
     For multi-process deployments, replace with RedisContextStorage or another
     distributed storage implementation.
     """
-    return AsyncInMemoryContextStorage()
+    return InMemoryContextStorage()
 
 
 @register_provider()
@@ -334,15 +219,15 @@ def pairing_attempt_id() -> PairingAttemptId:
 @register_provider()
 async def client_context(
     client_node_id: ClientNodeId = Depends[client_node_id],
-    storage: AsyncContextStorage = Depends[context_storage_singleton],
+    storage: ContextStorage = Depends[context_storage_singleton],
 ) -> AsyncGenerator[ClientContext, None]:
     """Retrieves the context for the specified client_node_id.
 
     This is an async generator provider that yields the context while holding
     its per-ID lock. The lock is held for the entire duration that dependent
-    functions use the context, ensuring thread-safe modifications.
+    functions use the context, ensuring thread-safe and async-safe modifications.
 
-    Async-safe through fine-grained per-ID locking.
+    Works in both async and threaded environments through aiologic's hybrid locking.
     """
     async for ctx in storage.get_client_context(client_node_id):
         yield ctx
@@ -351,15 +236,15 @@ async def client_context(
 @register_provider()
 async def pairing_attempt_context(
     pairing_attempt_id: PairingAttemptId = Depends[pairing_attempt_id],
-    storage: AsyncContextStorage = Depends[context_storage_singleton],
+    storage: ContextStorage = Depends[context_storage_singleton],
 ) -> AsyncGenerator[PairingAttemptContext, None]:
     """Retrieves the context for the specified pairing_attempt_id.
 
     This is an async generator provider that yields the context while holding
     its per-ID lock. The lock is held for the entire duration that dependent
-    functions use the context, ensuring thread-safe modifications.
+    functions use the context, ensuring thread-safe and async-safe modifications.
 
-    Async-safe through fine-grained per-ID locking.
+    Works in both async and threaded environments through aiologic's hybrid locking.
     """
     async for ctx in storage.get_pairing_attempt_context(pairing_attempt_id):
         yield ctx
