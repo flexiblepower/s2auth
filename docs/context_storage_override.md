@@ -1,135 +1,78 @@
-# Context Storage Override Guide for Synchronous Deployments
+# Context Storage Guide
 
 ## Overview
 
-The s2auth server uses dependency injection to manage context storage for client and pairing attempt state. By default, the system uses **async-based storage** with `asyncio.Lock`, which is optimized for async frameworks like FastAPI.
+The s2auth server uses dependency injection to manage context storage for client and pairing attempt state. The system provides a **unified `InMemoryContextStorage`** implementation that uses `aiologic.RLock` for synchronization, making it work seamlessly across:
 
-For **synchronous/threaded deployments** (e.g., Flask with Gunicorn using threading workers), you must override three dependency providers to use thread-safe synchronous storage instead.
+- **Async servers** (FastAPI with Uvicorn): Non-blocking async synchronization
+- **Threaded servers** (Flask with Gunicorn): Thread-safe synchronization
+- **Hybrid environments**: Multiple threads each with their own event loop
 
----
-
-## When to Override
-
-Override the context storage providers when:
-
-- ✅ Using **Flask** with Gunicorn (threaded workers)
-- ✅ Using **Flask** with uWSGI (threading mode)
-- ✅ Using any **synchronous web framework** with threading
-- ✅ Your endpoints are **synchronous functions** (not `async def`)
-
-Do NOT override when:
-
-- ❌ Using **FastAPI** with Uvicorn
-- ❌ Using **FastAPI** with Gunicorn + UvicornWorker
-- ❌ Your endpoints are **async functions** (`async def`)
+**No configuration changes needed** between deployment types - the same storage works everywhere!
 
 ---
 
-## What Needs to Be Overridden
+## Default Configuration (Works Everywhere!)
 
-You must override **three dependency providers**:
-
-1. **`context_storage_singleton`** - Change from `AsyncInMemoryContextStorage` to `SyncInMemoryContextStorage`
-2. **`client_context`** - Change from async (`async def`) to sync (`def`)
-3. **`pairing_attempt_context`** - Change from async (`async def`) to sync (`def`)
-
----
-
-## Step-by-Step Override Guide
-
-### Step 1: Import Required Components
+The system automatically provides the unified storage:
 
 ```python
-from s2auth.server.dependencies import (
-    setup,
-    override_provider,
-    Depends,
-    inject,
-)
+from s2auth.server.dependencies import inject, Depends
 from s2auth.server.dependencies.context import (
-    # Import the sync storage class
-    SyncInMemoryContextStorage,
-
-    # Import the providers we'll override
-    context_storage_singleton,
     client_context,
     pairing_attempt_context,
-
-    # Import the ID providers (these work for both async and sync)
-    client_node_id,
-    pairing_attempt_id,
-
-    # Import types
-    ClientNodeId,
-    PairingAttemptId,
     ClientContext,
     PairingAttemptContext,
-
-    # Import context variables for setting values in middleware
-    s2_client_node_id_var,
-    pairing_attempt_id_var,
 )
-from s2auth.common.models import S2NodeId, PairingAttemptId as S2PairingAttemptId
-from uuid import UUID
+
+# Async endpoint (FastAPI) - works automatically
+@inject
+async def my_async_endpoint(
+    client_ctx: ClientContext = Depends[client_context],
+    pairing_ctx: PairingAttemptContext = Depends[pairing_attempt_context],
+):
+    print(f"Client state: {client_ctx.state}")
+    client_ctx.state = "authenticated"
+
+# Sync endpoint (Flask) - also works automatically!
+# The DI system handles calling the async storage from sync context
+@inject
+def my_sync_endpoint(
+    client_ctx: ClientContext = Depends[client_context],
+    pairing_ctx: PairingAttemptContext = Depends[pairing_attempt_context],
+):
+    print(f"Client state: {client_ctx.state}")
+    client_ctx.state = "authenticated"
 ```
 
-### Step 2: Create Sync Override Functions
+---
 
-```python
-def sync_context_storage() -> SyncInMemoryContextStorage:
-    """Sync storage override using threading.Lock.
+## How It Works
 
-    This storage uses threading.Lock for thread-safe synchronization,
-    making it suitable for Flask with threaded Gunicorn workers.
-    """
-    return SyncInMemoryContextStorage()
+### aiologic.RLock: The Secret Sauce
 
+The storage uses `aiologic.RLock` (reentrant lock) which:
 
-def sync_client_context(
-    cid: ClientNodeId = Depends[client_node_id],
-    storage: SyncInMemoryContextStorage = Depends[context_storage_singleton],
-) -> ClientContext:
-    """Synchronous version of client_context provider.
+- ✅ Works from async tasks (like `asyncio.Lock`)
+- ✅ Works from threads (like `threading.Lock`)
+- ✅ Works across threads with different event loops
+- ✅ Is reentrant (same task/thread can acquire multiple times)
+- ✅ Prevents deadlocks in mixed async/thread environments
 
-    Returns the context for the current client (identified by context variable).
-    This is a regular function (not async) so it can be used in sync endpoints.
-    """
-    return storage.get_client_context(cid)
+### DI System Integration
 
+The dependency injection system:
+1. Detects that `client_context` and `pairing_attempt_context` are async generators
+2. In async contexts: Calls them directly with `await`
+3. In sync contexts: Creates an event loop and uses `asyncio.run()`
 
-def sync_pairing_attempt_context(
-    pid: PairingAttemptId = Depends[pairing_attempt_id],
-    storage: SyncInMemoryContextStorage = Depends[context_storage_singleton],
-) -> PairingAttemptContext:
-    """Synchronous version of pairing_attempt_context provider.
-
-    Returns the context for the current pairing attempt (identified by context variable).
-    This is a regular function (not async) so it can be used in sync endpoints.
-    """
-    return storage.get_pairing_attempt_context(pid)
-```
-
-### Step 3: Override the Providers
-
-```python
-# Override the three providers BEFORE calling setup()
-override_provider(context_storage_singleton, sync_context_storage)
-override_provider(client_context, sync_client_context)
-override_provider(pairing_attempt_context, sync_pairing_attempt_context)
-```
-
-### Step 4: Call setup() After Overrides
-
-```python
-# Wire all providers (must be called after overriding)
-setup()
-```
+This means sync Flask endpoints can depend on async providers seamlessly!
 
 ---
 
 ## Multi-Process Considerations
 
-**Important**: `SyncInMemoryContextStorage` is **single-process only**. Each Gunicorn worker process has its own independent storage instance.
+**Important**: `InMemoryContextStorage` is **single-process only**. Each worker process has its own independent storage instance.
 
 ### Implications
 
@@ -155,7 +98,7 @@ Configure your load balancer to route requests from the same client to the same 
 
 ```nginx
 # nginx.conf
-upstream flask_app {
+upstream app {
     ip_hash;  # Same client IP → same worker
     server localhost:8000;
     server localhost:8001;
@@ -169,49 +112,57 @@ Implement a Redis-based storage backend:
 
 ```python
 import redis
-import json
-from s2auth.server.dependencies import override_provider
+from s2auth.server.dependencies import register_provider
+from s2auth.server.dependencies.context import (
+    ContextStorage,
+    ClientContext,
+    PairingAttemptContext,
+    ClientNodeId,
+    PairingAttemptId,
+)
 
-class RedisContextStorage:
+class RedisContextStorage(ContextStorage):
     """Distributed context storage using Redis."""
 
     def __init__(self, redis_url: str = "redis://localhost:6379/0"):
         self.redis = redis.from_url(redis_url)
 
-    def get_client_context(self, client_node_id: ClientNodeId) -> ClientContext:
+    async def get_client_context(self, client_node_id: ClientNodeId):
         key = f"client:{client_node_id}"
         data = self.redis.get(key)
 
-        if data:
-            return ClientContext.model_validate_json(data)
-        else:
-            ctx = ClientContext()
-            self.redis.set(key, ctx.model_dump_json())
-            return ctx
+        if not data:
+            raise KeyError(f"No context known for {client_node_id}")
 
-    def get_pairing_attempt_context(
+        ctx = ClientContext.model_validate_json(data)
+        try:
+            yield ctx
+        finally:
+            # Save changes back to Redis
+            self.redis.set(key, ctx.model_dump_json())
+
+    async def get_pairing_attempt_context(
         self, pairing_attempt_id: PairingAttemptId
-    ) -> PairingAttemptContext:
+    ):
         key = f"pairing:{pairing_attempt_id}"
         data = self.redis.get(key)
 
-        if data:
-            return PairingAttemptContext.model_validate_json(data)
-        else:
-            ctx = PairingAttemptContext()
+        if not data:
+            raise KeyError(f"No context known for {pairing_attempt_id}")
+
+        ctx = PairingAttemptContext.model_validate_json(data)
+        try:
+            yield ctx
+        finally:
             self.redis.set(key, ctx.model_dump_json())
-            return ctx
 
 
-def redis_context_storage() -> RedisContextStorage:
-    """Use Redis storage for multi-process deployments."""
+@register_provider(singleton=True)
+def context_storage_singleton() -> RedisContextStorage:
     return RedisContextStorage()
-
-
-# Override to use Redis
-override_provider(context_storage_singleton, redis_context_storage)
-setup()
 ```
+
+Register this before calling `setup()` and it will override the default in-memory storage.
 
 #### Option 3: Use Single Worker
 
@@ -223,73 +174,94 @@ gunicorn app:app --workers 1 --threads 8
 
 ---
 
-## Testing with Overrides
+## Testing with Custom Storage
 
-When writing unit tests, you can use the context manager to temporarily override the storage:
+You can override the storage for testing:
 
 ```python
-# test_app.py
 import pytest
 from uuid import UUID
 from s2auth.server.dependencies import provider_overrides, setup
 from s2auth.server.dependencies.context import (
     context_storage_singleton,
-    SyncInMemoryContextStorage,
+    InMemoryContextStorage,
     s2_client_node_id_var,
-    pairing_attempt_id_var,
+    ClientContext,
 )
-from s2auth.common.models import S2NodeId, PairingAttemptId as S2PairingAttemptId
-from app import app
-
-
-@pytest.fixture
-def client():
-    """Create Flask test client."""
-    with app.test_client() as client:
-        yield client
-
+from s2auth.common.models import S2NodeId
 
 @pytest.fixture
 def test_storage():
     """Create test storage with pre-populated data."""
-    storage = SyncInMemoryContextStorage()
-
-    # Pre-populate with test data
+    storage = InMemoryContextStorage()
     test_uuid = UUID("00000000-0000-0000-0000-000000000001")
-    ctx = storage.get_client_context(test_uuid)
-    ctx.state = "test_authenticated"
 
+    # Pre-populate
+    storage._client_states[test_uuid] = ClientContext(state="test_authenticated")
     return storage
 
-
-def test_client_status_with_override(client, test_storage):
-    """Test client status endpoint with overridden storage."""
+def test_my_endpoint(test_storage):
+    """Test endpoint with custom storage."""
 
     def test_storage_provider():
         return test_storage
 
     with provider_overrides({context_storage_singleton: test_storage_provider}):
-        response = client.get(
-            '/client-status',
-            headers={'X-Client-Node-Id': '00000000-0000-0000-0000-000000000001'}
-        )
+        # Your test code here
+        # The injected contexts will use test_storage
+        pass
+```
 
-        assert response.status_code == 200
-        data = response.get_json()
-        assert data['state'] == 'test_authenticated'
+---
+
+## Context Variable Setup
+
+Both async and sync deployments require setting context variables in middleware:
+
+### FastAPI
+
+```python
+from starlette.middleware.base import BaseHTTPMiddleware
+from s2auth.server.dependencies.context import s2_client_node_id_var
+from s2auth.common.models import S2NodeId
+from uuid import UUID
+
+class ClientContextMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # Extract client ID from request
+        client_id = request.headers.get('X-Client-Node-Id')
+
+        if client_id:
+            s2_client_node_id_var.set(S2NodeId(UUID(client_id)))
+
+        response = await call_next(request)
+        return response
+```
+
+### Flask
+
+```python
+from flask import request
+from s2auth.server.dependencies.context import s2_client_node_id_var
+from s2auth.common.models import S2NodeId
+from uuid import UUID
+
+@app.before_request
+def set_client_context():
+    client_id = request.headers.get('X-Client-Node-Id')
+
+    if client_id:
+        s2_client_node_id_var.set(S2NodeId(UUID(client_id)))
 ```
 
 ---
 
 ## Summary
 
-To use context storage in synchronous (Flask) applications:
+| Deployment | Storage Type | Configuration Needed? |
+|------------|-------------|----------------------|
+| FastAPI + Uvicorn | InMemoryContextStorage | ❌ No - works by default |
+| Flask + Gunicorn (threaded) | InMemoryContextStorage | ❌ No - works by default |
+| Multi-process (any framework) | InMemoryContextStorage | ⚠️ Consider Redis for shared state |
 
-1. **Create sync override functions** for the three providers
-2. **Use `override_provider()`** to override them BEFORE calling `setup()`
-3. **Call `setup()`** after overriding
-4. **Set context variables** in Flask's `@app.before_request` handler
-5. **Use `@inject`** decorator on routes that need context
-6. **Consider distributed storage** (Redis) for multi-process deployments
-
-The complete example in this guide provides a working starting point for Flask applications with Gunicorn.
+The unified storage with aiologic.RLock eliminates the need for deployment-specific configuration while maintaining thread safety and async compatibility!
