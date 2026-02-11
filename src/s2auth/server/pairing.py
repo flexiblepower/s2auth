@@ -16,6 +16,8 @@ from s2auth.server.dependencies.context import (
     pairing_attempt_context,
     pairing_attempt_id_var,
     s2_client_node_id_var,
+    store_client_context,
+    store_pairing_attempt_context,
 )
 from s2auth.common.hmac import create_challenge, create_pairing_token
 from s2auth.server.settings import Settings, settings
@@ -23,7 +25,7 @@ from s2auth.server.settings import Settings, settings
 
 @inject
 async def initiate_pairing(
-    store_pairing_context: Callable[[PairingAttemptContext], Awaitable[None]],
+    store_pairing_ctx: Callable[[PairingAttemptContext], Awaitable[None]] = Depends[store_pairing_attempt_context],
     server_settings: Settings = Depends[settings],
 ):
     pairing_attempt_id: PairingAttemptId = uuid4()
@@ -35,20 +37,21 @@ async def initiate_pairing(
         pairing_token=pairing_token,
         pairing_node_id=PairingS2NodeId(root=pairing_node_id),
     )
-    await store_pairing_context(ctx)
+    await store_pairing_ctx(ctx)
 
 
 @inject
 async def request_pairing(
     request: RequestPairingPostRequest,
-    store_client_context: Callable[[ClientContext], Awaitable[None]],
+    store_client_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[store_client_context],
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
 ) -> str:
     """Initiate a new pairing attempt.
 
     Args:
         request: The pairing request containing client node description
-        storage: Context storage for managing client and pairing attempt contexts
+        store_client_context: Function to store client context
+        pairing_context: The pairing attempt context
 
     Returns:
         The pairing attempt ID (as a string)
@@ -59,7 +62,7 @@ async def request_pairing(
     # Set the contextvars
     client_node_id = request.s2ClientNodeDescription.id.root
     client_ctx = ClientContext(client_node_id=client_node_id, state="pairing")
-    store_client_context(client_ctx)
+    await store_client_ctx(client_ctx)
     s2_client_node_id_var.set(S2NodeId(root=client_node_id))
 
     # Get or create the PairingAttemptContext

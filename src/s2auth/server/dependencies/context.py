@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import aiologic
 from collections.abc import AsyncGenerator
 from contextvars import ContextVar
+from typing import Awaitable, Callable
 from uuid import UUID
 from pydantic import BaseModel
 
@@ -104,6 +105,30 @@ class ContextStorage(ABC):
         """
         pass
 
+    @abstractmethod
+    async def store_client_context(self, context: ClientContext) -> None:
+        """Store a new ClientContext.
+
+        This creates or replaces a ClientContext for the given client_node_id.
+        Thread-safe and async-safe.
+
+        Args:
+            context: The ClientContext to store (must have client_node_id set)
+        """
+        pass
+
+    @abstractmethod
+    async def store_pairing_attempt_context(self, context: PairingAttemptContext) -> None:
+        """Store a new PairingAttemptContext.
+
+        This creates or replaces a PairingAttemptContext for the given pairing_attempt_id.
+        Thread-safe and async-safe.
+
+        Args:
+            context: The PairingAttemptContext to store (must have pairing_attempt_id set)
+        """
+        pass
+
 
 class InMemoryContextStorage(ContextStorage):
     """Unified in-memory storage for contexts that works in both async and threaded environments.
@@ -177,6 +202,29 @@ class InMemoryContextStorage(ContextStorage):
                 # Lock is released when exiting the async with block
                 pass
 
+    async def store_client_context(self, context: ClientContext) -> None:
+        """Store a new ClientContext.
+
+        Thread-safe creation/replacement of client context.
+        Acquires the fine-grained lock for this client_node_id.
+        """
+        if context.client_node_id is None:
+            raise ValueError("ClientContext must have client_node_id set")
+
+        lock = await self._get_client_lock(context.client_node_id)
+        async with lock:
+            self._client_states[context.client_node_id] = context
+
+    async def store_pairing_attempt_context(self, context: PairingAttemptContext) -> None:
+        """Store a new PairingAttemptContext.
+
+        Thread-safe creation/replacement of pairing attempt context.
+        Acquires the fine-grained lock for this pairing_attempt_id.
+        """
+        lock = await self._get_pairing_lock(context.pairing_attempt_id)
+        async with lock:
+            self._pairing_attempt_states[context.pairing_attempt_id] = context
+
 
 @register_provider(singleton=True)
 def context_storage_singleton() -> ContextStorage:
@@ -248,3 +296,43 @@ async def pairing_attempt_context(
     """
     async for ctx in storage.get_pairing_attempt_context(pairing_attempt_id):
         yield ctx
+
+
+@register_provider()
+async def store_client_context(
+    storage: ContextStorage = Depends[context_storage_singleton],
+) -> Callable[[ClientContext], Awaitable[None]]:
+    """Provider that returns a function to store client contexts.
+
+    Returns a callable that can be used to safely store ClientContext objects
+    in the context storage. Thread-safe and async-safe.
+
+    Usage:
+        @inject
+        async def my_function(
+            store_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[store_client_context]
+        ):
+            ctx = ClientContext(client_node_id=some_uuid)
+            await store_ctx(ctx)
+    """
+    return storage.store_client_context
+
+
+@register_provider()
+async def store_pairing_attempt_context(
+    storage: ContextStorage = Depends[context_storage_singleton],
+) -> Callable[[PairingAttemptContext], Awaitable[None]]:
+    """Provider that returns a function to store pairing attempt contexts.
+
+    Returns a callable that can be used to safely store PairingAttemptContext objects
+    in the context storage. Thread-safe and async-safe.
+
+    Usage:
+        @inject
+        async def my_function(
+            store_ctx: Callable[[PairingAttemptContext], Awaitable[None]] = Depends[store_pairing_attempt_context]
+        ):
+            ctx = PairingAttemptContext(pairing_attempt_id=some_uuid, ...)
+            await store_ctx(ctx)
+    """
+    return storage.store_pairing_attempt_context
