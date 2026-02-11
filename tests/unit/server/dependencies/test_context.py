@@ -1,7 +1,8 @@
 import pytest
 import asyncio
 import threading
-from typing import Any
+from typing import Any, AsyncGenerator
+from contextlib import asynccontextmanager
 from uuid import UUID
 from s2auth.server.dependencies import setup, Depends, inject, provider_overrides
 from s2auth.server.dependencies.context import (
@@ -10,17 +11,33 @@ from s2auth.server.dependencies.context import (
     client_context,
     ClientContext,
     ClientNodeId,
-    AsyncContextStorage,
-    SyncContextStorage,
-    AsyncInMemoryContextStorage,
-    SyncInMemoryContextStorage,
+    ContextStorage,
+    InMemoryContextStorage,
     PairingAttemptContext,
     PairingAttemptId,
 )
 
 
-class MockAsyncContextStorage(AsyncContextStorage):
-    """Test implementation of AsyncContextStorage with pre-populated data."""
+@asynccontextmanager
+async def get_context_once(
+    storage: ContextStorage,
+    context_id: UUID,
+    is_pairing: bool = False
+) -> AsyncGenerator[ClientContext | PairingAttemptContext, None]:
+    """Helper to properly manage async generator lifecycle for single-use access."""
+    if is_pairing:
+        gen = storage.get_pairing_attempt_context(context_id)
+    else:
+        gen = storage.get_client_context(context_id)
+    try:
+        ctx = await anext(gen)
+        yield ctx
+    finally:
+        await gen.aclose()
+
+
+class MockContextStorage(ContextStorage):
+    """Test implementation of ContextStorage with pre-populated data."""
 
     def __init__(
         self,
@@ -43,29 +60,6 @@ class MockAsyncContextStorage(AsyncContextStorage):
         yield self.pairing_contexts[pairing_attempt_id]
 
 
-class MockSyncContextStorage(SyncContextStorage):
-    """Test implementation of SyncContextStorage with pre-populated data."""
-
-    def __init__(
-        self,
-        client_contexts: dict[ClientNodeId, ClientContext] | None = None,
-        pairing_contexts: dict[PairingAttemptId, PairingAttemptContext] | None = None,
-    ):
-        self.client_contexts = client_contexts or {}
-        self.pairing_contexts = pairing_contexts or {}
-
-    def get_client_context(self, client_node_id: ClientNodeId):
-        if client_node_id not in self.client_contexts:
-            raise KeyError(f"No context known for {client_node_id}")
-        yield self.client_contexts[client_node_id]
-
-    def get_pairing_attempt_context(
-        self, pairing_attempt_id: PairingAttemptId
-    ):
-        if pairing_attempt_id not in self.pairing_contexts:
-            raise KeyError(f"No context known for {pairing_attempt_id}")
-        yield self.pairing_contexts[pairing_attempt_id]
-
 
 @pytest.mark.skip_wire
 async def test_client_context_with_multiple_clients():
@@ -75,7 +69,7 @@ async def test_client_context_with_multiple_clients():
     test_uuid_2 = UUID("00000000-0000-0000-0000-000000000002")
     test_uuid_3 = UUID("00000000-0000-0000-0000-000000000003")
 
-    test_storage = MockAsyncContextStorage(
+    test_storage = MockContextStorage(
         client_contexts={
             test_uuid_1: ClientContext(state="client_1_state"),
             test_uuid_2: ClientContext(state="client_2_state"),
@@ -83,7 +77,7 @@ async def test_client_context_with_multiple_clients():
         }
     )
 
-    def test_context_storage() -> AsyncContextStorage:
+    def test_context_storage() -> ContextStorage:
         return test_storage
 
     # Override client_node_id to return different values
@@ -139,13 +133,13 @@ async def test_context_storage_singleton_is_singleton():
 
     @inject
     async def get_storage(
-        storage: AsyncContextStorage = Depends[context_storage_singleton],
-    ) -> AsyncContextStorage:
+        storage: ContextStorage = Depends[context_storage_singleton],
+    ) -> ContextStorage:
         return storage
 
     @inject
     async def modify_storage(
-        storage: AsyncContextStorage = Depends[context_storage_singleton],
+        storage: ContextStorage = Depends[context_storage_singleton],
     ) -> None:
         test_uuid = UUID("00000000-0000-0000-0000-000000000999")
         # Create and modify the storage
@@ -168,8 +162,8 @@ async def test_context_storage_singleton_is_singleton():
 
     # Verify the modification persisted
     test_uuid = UUID("00000000-0000-0000-0000-000000000999")
-    ctx = await anext(storage2.get_client_context(test_uuid))
-    assert ctx.state == "modified_state", "Modified state should be preserved"
+    async with get_context_once(storage2, test_uuid) as ctx:
+        assert ctx.state == "modified_state", "Modified state should be preserved"
 
 
 @pytest.mark.skip_wire
@@ -179,11 +173,11 @@ async def test_client_context_returns_existing_context():
 
     # Create a test storage with pre-populated data
     existing_context = ClientContext(state="existing_state")
-    test_storage = MockAsyncContextStorage(
+    test_storage = MockContextStorage(
         client_contexts={test_uuid: existing_context}
     )
 
-    def test_context_storage() -> AsyncContextStorage:
+    def test_context_storage() -> ContextStorage:
         return test_storage
 
     def test_client_node_id() -> UUID:
@@ -215,9 +209,9 @@ async def test_client_context_raises_keyerror_for_unknown_id():
     test_uuid = UUID("00000000-0000-0000-0000-000000000063")
 
     # Create an empty test storage
-    test_storage = AsyncInMemoryContextStorage()
+    test_storage = InMemoryContextStorage()
 
-    def test_context_storage() -> AsyncContextStorage:
+    def test_context_storage() -> ContextStorage:
         return test_storage
 
     def test_client_node_id() -> UUID:
@@ -242,16 +236,16 @@ async def test_client_context_raises_keyerror_for_unknown_id():
 
 @pytest.mark.skip_wire
 async def test_async_in_memory_storage_concurrency():
-    """Test that AsyncInMemoryContextStorage properly handles concurrent async access."""
-    storage = AsyncInMemoryContextStorage()
+    """Test that InMemoryContextStorage properly handles concurrent async access."""
+    storage = InMemoryContextStorage()
     test_uuid = UUID("00000000-0000-0000-0000-000000000001")
 
     # Pre-populate the storage
     storage._client_states[test_uuid] = ClientContext()  # type: ignore[attr-defined]
 
     async def get_context() -> int:
-        ctx = await anext(storage.get_client_context(test_uuid))
-        return id(ctx)
+        async with get_context_once(storage, test_uuid) as ctx:
+            return id(ctx)
 
     # Create multiple async tasks that try to get the same context
     results = await asyncio.gather(*[get_context() for _ in range(10)])
@@ -262,8 +256,8 @@ async def test_async_in_memory_storage_concurrency():
 
 @pytest.mark.skip_wire
 async def test_async_in_memory_storage_multiple_contexts():
-    """Test that AsyncInMemoryContextStorage maintains separate contexts for different IDs."""
-    storage = AsyncInMemoryContextStorage()
+    """Test that InMemoryContextStorage maintains separate contexts for different IDs."""
+    storage = InMemoryContextStorage()
 
     test_uuid_1 = UUID("00000000-0000-0000-0000-000000000001")
     test_uuid_2 = UUID("00000000-0000-0000-0000-000000000002")
@@ -272,42 +266,41 @@ async def test_async_in_memory_storage_multiple_contexts():
     storage._client_states[test_uuid_1] = ClientContext(state="state_1")  # type: ignore[attr-defined]
     storage._client_states[test_uuid_2] = ClientContext(state="state_2")  # type: ignore[attr-defined]
 
-    ctx1 = await anext(storage.get_client_context(test_uuid_1))
-    ctx2 = await anext(storage.get_client_context(test_uuid_2))
-
-    # Verify contexts are different
-    assert ctx1 is not ctx2
-    assert ctx1.state == "state_1"
-    assert ctx2.state == "state_2"
+    async with get_context_once(storage, test_uuid_1) as ctx1:
+        async with get_context_once(storage, test_uuid_2) as ctx2:
+            # Verify contexts are different
+            assert ctx1 is not ctx2
+            assert ctx1.state == "state_1"
+            assert ctx2.state == "state_2"
 
     # Verify contexts are persistent
-    ctx1_again = await anext(storage.get_client_context(test_uuid_1))
-    ctx2_again = await anext(storage.get_client_context(test_uuid_2))
-
-    assert ctx1_again is ctx1
-    assert ctx2_again is ctx2
-    assert ctx1_again.state == "state_1"
-    assert ctx2_again.state == "state_2"
+    async with get_context_once(storage, test_uuid_1) as ctx1_again:
+        async with get_context_once(storage, test_uuid_2) as ctx2_again:
+            assert ctx1_again is ctx1
+            assert ctx2_again is ctx2
+            assert ctx1_again.state == "state_1"
+            assert ctx2_again.state == "state_2"
 
 
 @pytest.mark.skip_wire
 async def test_async_in_memory_storage_keyerror_for_unknown_id():
-    """Test that AsyncInMemoryContextStorage raises KeyError for unknown IDs."""
-    storage = AsyncInMemoryContextStorage()
+    """Test that InMemoryContextStorage raises KeyError for unknown IDs."""
+    storage = InMemoryContextStorage()
     unknown_uuid = UUID("00000000-0000-0000-0000-999999999999")
 
     with pytest.raises(KeyError, match=f"No context known for {unknown_uuid}"):
-        await anext(storage.get_client_context(unknown_uuid))
+        async with get_context_once(storage, unknown_uuid) as _:
+            pass
 
 
 @pytest.mark.skip_wire
 async def test_async_in_memory_storage_pairing_attempt_contexts():
-    """Test that AsyncInMemoryContextStorage handles pairing attempt contexts correctly."""
+    """Test that InMemoryContextStorage handles pairing attempt contexts correctly."""
     from uuid import uuid4
     from s2auth.common.models import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
-    storage = AsyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
 
     pairing_id_1 = uuid4()
     pairing_id_2 = uuid4()
@@ -332,40 +325,39 @@ async def test_async_in_memory_storage_pairing_attempt_contexts():
     )  # type: ignore[attr-defined]
 
     # Get contexts
-    ctx1 = await anext(storage.get_pairing_attempt_context(pairing_id_1))
-    ctx2 = await anext(storage.get_pairing_attempt_context(pairing_id_2))
-
-    # Verify contexts are different
-    assert ctx1 is not ctx2
-    assert ctx1.state == "pairing_1_state"
-    assert ctx2.state == "pairing_2_state"
-    assert ctx1.client_node_id == test_uuid_1
-    assert ctx2.client_node_id is None
+    async with get_context_once(storage, pairing_id_1, is_pairing=True) as ctx1:
+        async with get_context_once(storage, pairing_id_2, is_pairing=True) as ctx2:
+            # Verify contexts are different
+            assert ctx1 is not ctx2
+            assert ctx1.state == "pairing_1_state"
+            assert ctx2.state == "pairing_2_state"
+            assert ctx1.client_node_id == test_uuid_1
+            assert ctx2.client_node_id is None
 
     # Verify contexts are persistent
-    ctx1_again = await anext(storage.get_pairing_attempt_context(pairing_id_1))
-    ctx2_again = await anext(storage.get_pairing_attempt_context(pairing_id_2))
-
-    assert ctx1_again is ctx1
-    assert ctx2_again is ctx2
+    async with get_context_once(storage, pairing_id_1, is_pairing=True) as ctx1_again:
+        async with get_context_once(storage, pairing_id_2, is_pairing=True) as ctx2_again:
+            assert ctx1_again is ctx1
+            assert ctx2_again is ctx2
 
 
 @pytest.mark.skip_wire
 async def test_async_in_memory_storage_pairing_keyerror_for_unknown_id():
-    """Test that AsyncInMemoryContextStorage raises KeyError for unknown pairing IDs."""
+    """Test that InMemoryContextStorage raises KeyError for unknown pairing IDs."""
     from uuid import uuid4
 
-    storage = AsyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
     unknown_pairing_id = uuid4()
 
     with pytest.raises(KeyError, match=f"No context known for {unknown_pairing_id}"):
-        await anext(storage.get_pairing_attempt_context(unknown_pairing_id))
+        async with get_context_once(storage, unknown_pairing_id, is_pairing=True) as _:
+            pass
 
 
 @pytest.mark.skip_wire
-def test_sync_in_memory_storage_thread_safety():
-    """Test that SyncInMemoryContextStorage properly handles concurrent thread access."""
-    storage = SyncInMemoryContextStorage()
+async def test_sync_in_memory_storage_thread_safety():
+    """Test that InMemoryContextStorage properly handles concurrent thread access."""
+    storage = InMemoryContextStorage()
     test_uuid = UUID("00000000-0000-0000-0000-000000000001")
 
     # Pre-populate the storage
@@ -374,8 +366,12 @@ def test_sync_in_memory_storage_thread_safety():
     results: list[int] = []
 
     def get_context() -> None:
-        ctx = next(storage.get_client_context(test_uuid))
-        results.append(id(ctx))
+        async def async_work():
+            ctx_gen = storage.get_client_context(test_uuid)
+            ctx = await anext(ctx_gen)
+            results.append(id(ctx))
+            await ctx_gen.aclose()
+        asyncio.run(async_work())
 
     # Create multiple threads that try to get the same context
     threads = [threading.Thread(target=get_context) for _ in range(10)]
@@ -389,9 +385,9 @@ def test_sync_in_memory_storage_thread_safety():
 
 
 @pytest.mark.skip_wire
-def test_sync_in_memory_storage_multiple_contexts():
-    """Test that SyncInMemoryContextStorage maintains separate contexts for different IDs."""
-    storage = SyncInMemoryContextStorage()
+async def test_sync_in_memory_storage_multiple_contexts():
+    """Test that InMemoryContextStorage maintains separate contexts for different IDs."""
+    storage = InMemoryContextStorage()
 
     test_uuid_1 = UUID("00000000-0000-0000-0000-000000000001")
     test_uuid_2 = UUID("00000000-0000-0000-0000-000000000002")
@@ -400,42 +396,41 @@ def test_sync_in_memory_storage_multiple_contexts():
     storage._client_states[test_uuid_1] = ClientContext(state="state_1")  # type: ignore[attr-defined]
     storage._client_states[test_uuid_2] = ClientContext(state="state_2")  # type: ignore[attr-defined]
 
-    ctx1 = next(storage.get_client_context(test_uuid_1))
-    ctx2 = next(storage.get_client_context(test_uuid_2))
-
-    # Verify contexts are different
-    assert ctx1 is not ctx2
-    assert ctx1.state == "state_1"
-    assert ctx2.state == "state_2"
+    async with get_context_once(storage, test_uuid_1) as ctx1:
+        async with get_context_once(storage, test_uuid_2) as ctx2:
+            # Verify contexts are different
+            assert ctx1 is not ctx2
+            assert ctx1.state == "state_1"
+            assert ctx2.state == "state_2"
 
     # Verify contexts are persistent
-    ctx1_again = next(storage.get_client_context(test_uuid_1))
-    ctx2_again = next(storage.get_client_context(test_uuid_2))
-
-    assert ctx1_again is ctx1
-    assert ctx2_again is ctx2
-    assert ctx1_again.state == "state_1"
-    assert ctx2_again.state == "state_2"
+    async with get_context_once(storage, test_uuid_1) as ctx1_again:
+        async with get_context_once(storage, test_uuid_2) as ctx2_again:
+            assert ctx1_again is ctx1
+            assert ctx2_again is ctx2
+            assert ctx1_again.state == "state_1"
+            assert ctx2_again.state == "state_2"
 
 
 @pytest.mark.skip_wire
-def test_sync_in_memory_storage_keyerror_for_unknown_id():
-    """Test that SyncInMemoryContextStorage raises KeyError for unknown IDs."""
-    storage = SyncInMemoryContextStorage()
+async def test_sync_in_memory_storage_keyerror_for_unknown_id():
+    """Test that InMemoryContextStorage raises KeyError for unknown IDs."""
+    storage = InMemoryContextStorage()
     unknown_uuid = UUID("00000000-0000-0000-0000-999999999999")
 
     with pytest.raises(KeyError, match=f"No context known for {unknown_uuid}"):
-        next(storage.get_client_context(unknown_uuid))
+        async with get_context_once(storage, unknown_uuid) as _:
+            pass
 
 
 @pytest.mark.skip_wire
-def test_sync_in_memory_storage_pairing_attempt_contexts():
-    """Test that SyncInMemoryContextStorage handles pairing attempt contexts correctly."""
+async def test_sync_in_memory_storage_pairing_attempt_contexts():
+    """Test that InMemoryContextStorage handles pairing attempt contexts correctly."""
     from uuid import uuid4
     from s2auth.common.models import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
-    storage = SyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
 
     pairing_id_1 = uuid4()
     pairing_id_2 = uuid4()
@@ -460,50 +455,50 @@ def test_sync_in_memory_storage_pairing_attempt_contexts():
     )  # type: ignore[attr-defined]
 
     # Get contexts
-    ctx1 = next(storage.get_pairing_attempt_context(pairing_id_1))
-    ctx2 = next(storage.get_pairing_attempt_context(pairing_id_2))
-
-    # Verify contexts are different
-    assert ctx1 is not ctx2
-    assert ctx1.state == "pairing_1_state"
-    assert ctx2.state == "pairing_2_state"
-    assert ctx1.client_node_id == test_uuid_1
-    assert ctx2.client_node_id is None
+    async with get_context_once(storage, pairing_id_1, is_pairing=True) as ctx1:
+        async with get_context_once(storage, pairing_id_2, is_pairing=True) as ctx2:
+            # Verify contexts are different
+            assert ctx1 is not ctx2
+            assert ctx1.state == "pairing_1_state"
+            assert ctx2.state == "pairing_2_state"
+            assert ctx1.client_node_id == test_uuid_1
+            assert ctx2.client_node_id is None
 
     # Verify contexts are persistent
-    ctx1_again = next(storage.get_pairing_attempt_context(pairing_id_1))
-    ctx2_again = next(storage.get_pairing_attempt_context(pairing_id_2))
-
-    assert ctx1_again is ctx1
-    assert ctx2_again is ctx2
+    async with get_context_once(storage, pairing_id_1, is_pairing=True) as ctx1_again:
+        async with get_context_once(storage, pairing_id_2, is_pairing=True) as ctx2_again:
+            assert ctx1_again is ctx1
+            assert ctx2_again is ctx2
 
 
 @pytest.mark.skip_wire
-def test_sync_in_memory_storage_pairing_keyerror_for_unknown_id():
-    """Test that SyncInMemoryContextStorage raises KeyError for unknown pairing IDs."""
+async def test_sync_in_memory_storage_pairing_keyerror_for_unknown_id():
+    """Test that InMemoryContextStorage raises KeyError for unknown pairing IDs."""
     from uuid import uuid4
 
-    storage = SyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
     unknown_pairing_id = uuid4()
 
     with pytest.raises(KeyError, match=f"No context known for {unknown_pairing_id}"):
-        next(storage.get_pairing_attempt_context(unknown_pairing_id))
+        async with get_context_once(storage, unknown_pairing_id, is_pairing=True) as _:
+            pass
 
 
 @pytest.mark.skip_wire
-def test_sync_storage_keyerror_behavior():
-    """Test that SyncInMemoryContextStorage raises KeyError for unknown IDs consistently."""
-    storage = SyncInMemoryContextStorage()
+async def test_sync_storage_keyerror_behavior():
+    """Test that InMemoryContextStorage raises KeyError for unknown IDs consistently."""
+    storage = InMemoryContextStorage()
     test_uuid = UUID("00000000-0000-0000-0000-000000000042")
 
     # Should raise KeyError for unknown ID
     with pytest.raises(KeyError, match=f"No context known for {test_uuid}"):
-        next(storage.get_client_context(test_uuid))
+        async with get_context_once(storage, test_uuid) as _:
+            pass
 
     # After pre-populating, it should work
     storage._client_states[test_uuid] = ClientContext(state="modified")  # type: ignore[attr-defined]
-    ctx = next(storage.get_client_context(test_uuid))
-    assert ctx.state == "modified"
+    async with get_context_once(storage, test_uuid) as ctx:
+        assert ctx.state == "modified"
 
 
 @pytest.mark.skip_wire
@@ -627,7 +622,7 @@ async def test_pairing_attempt_context_provider():
     setup()
 
     # Create a custom storage with pre-populated context
-    test_storage = AsyncInMemoryContextStorage()
+    test_storage = InMemoryContextStorage()
     test_uuid = UUID("00000000-0000-0000-0000-000000000099")
     test_pairing_node_id = PairingS2NodeId(root="testnodeid123")
     test_token = create_pairing_token()
@@ -639,7 +634,7 @@ async def test_pairing_attempt_context_provider():
         pairing_token=test_token
     )  # type: ignore[attr-defined]
 
-    def get_test_storage() -> AsyncContextStorage:
+    def get_test_storage() -> ContextStorage:
         return test_storage
 
     # Set the contextvar
@@ -668,9 +663,9 @@ async def test_pairing_attempt_context_raises_keyerror_for_unknown_id():
     test_pairing_id = uuid4()
 
     # Create an empty test storage
-    test_storage = AsyncInMemoryContextStorage()
+    test_storage = InMemoryContextStorage()
 
-    def test_context_storage() -> AsyncContextStorage:
+    def test_context_storage() -> ContextStorage:
         return test_storage
 
     @inject
@@ -695,76 +690,73 @@ async def test_pairing_attempt_context_raises_keyerror_for_unknown_id():
 
 @pytest.mark.skip_wire
 async def test_async_fine_grained_locking_concurrent_different_contexts():
-    """Test that AsyncInMemoryContextStorage allows concurrent access to DIFFERENT contexts.
+    """Test that InMemoryContextStorage allows concurrent access to DIFFERENT contexts.
 
     This test verifies that the fine-grained locking implementation allows
     multiple async tasks to access different client contexts simultaneously,
     without blocking each other.
-    """
-    storage = AsyncInMemoryContextStorage()
 
-    test_uuid_1 = UUID("00000000-0000-0000-0000-000000000001")
-    test_uuid_2 = UUID("00000000-0000-0000-0000-000000000002")
-    test_uuid_3 = UUID("00000000-0000-0000-0000-000000000003")
+    CRITICAL: This test verifies that _locks_lock doesn't cause serialization.
+    If _locks_lock was held during fine-grained lock acquisition, all accesses
+    would be serialized and total time would be 5 × 0.1s = 0.5s instead of ~0.1s.
+    """
+    storage = InMemoryContextStorage()
+
+    # Create 5 different contexts to test parallel access
+    test_uuids = [UUID(f"00000000-0000-0000-0000-00000000000{i}") for i in range(1, 6)]
 
     # Pre-populate the storage
-    storage._client_states[test_uuid_1] = ClientContext()  # type: ignore[attr-defined]
-    storage._client_states[test_uuid_2] = ClientContext()  # type: ignore[attr-defined]
-    storage._client_states[test_uuid_3] = ClientContext()  # type: ignore[attr-defined]
+    for uuid in test_uuids:
+        storage._client_states[uuid] = ClientContext()  # type: ignore[attr-defined]
 
-    access_times: list[dict[str, Any]] = []
+    start_times: list[float] = []
+    end_times: list[float] = []
 
     async def access_context(client_id: UUID, delay: float) -> str:
         """Access a context, simulate work, record timing."""
         start_time = asyncio.get_event_loop().time()
-        ctx = await anext(storage.get_client_context(client_id))
-        # Simulate some work while holding the lock
-        await asyncio.sleep(delay)
-        ctx.state = f"accessed_{client_id}"
-        end_time = asyncio.get_event_loop().time()
-        access_times.append({
-            'client_id': client_id,
-            'start': start_time,
-            'end': end_time
-        })
-        return ctx.state
+        start_times.append(start_time)
+        async with get_context_once(storage, client_id) as ctx:
+            # Simulate some work while holding the lock
+            await asyncio.sleep(delay)
+            ctx.state = f"accessed_{client_id}"
+            end_time = asyncio.get_event_loop().time()
+            end_times.append(end_time)
+            return ctx.state
 
-    # Access three different contexts concurrently
-    results = await asyncio.gather(
-        access_context(test_uuid_1, 0.1),
-        access_context(test_uuid_2, 0.1),
-        access_context(test_uuid_3, 0.1)
-    )
+    # Access all 5 different contexts concurrently with 0.1s delay each
+    overall_start = asyncio.get_event_loop().time()
+    results = await asyncio.gather(*[access_context(uuid, 0.1) for uuid in test_uuids])
+    overall_end = asyncio.get_event_loop().time()
+    total_time = overall_end - overall_start
 
     # All should succeed
-    assert len(results) == 3
-    assert results[0] == f"accessed_{test_uuid_1}"
-    assert results[1] == f"accessed_{test_uuid_2}"
-    assert results[2] == f"accessed_{test_uuid_3}"
+    assert len(results) == 5
+    for i, uuid in enumerate(test_uuids):
+        assert results[i] == f"accessed_{uuid}"
 
-    # Verify that the accesses overlapped (concurrent execution)
-    # If they were truly concurrent, the total time should be ~0.1s, not ~0.3s
-    # We check that at least two of them had overlapping execution
-    overlaps = 0
-    for i in range(len(access_times)):
-        for j in range(i+1, len(access_times)):
-            # Check if time ranges overlap
-            if (access_times[i]['start'] < access_times[j]['end'] and
-                access_times[j]['start'] < access_times[i]['end']):
-                overlaps += 1
+    # CRITICAL TEST: If _locks_lock caused serialization, total time would be ~0.5s
+    # If truly concurrent, total time should be ~0.1s
+    assert total_time < 0.25, \
+        f"Access to different contexts should be concurrent (expected ~0.1s, got {total_time:.3f}s). " \
+        f"This suggests _locks_lock is causing serialization!"
 
-    # With 3 concurrent accesses, we should have at least 1 overlap
-    assert overlaps >= 1, "Different contexts should be accessible concurrently"
+    # Verify all tasks started roughly at the same time (within 50ms)
+    first_start = min(start_times)
+    last_start = max(start_times)
+    start_spread = last_start - first_start
+    assert start_spread < 0.05, \
+        f"All tasks should start nearly simultaneously, but spread was {start_spread:.3f}s"
 
 
 @pytest.mark.skip_wire
 async def test_async_fine_grained_locking_same_context_returns_same_object():
-    """Test that AsyncInMemoryContextStorage returns the SAME object for same context ID.
+    """Test that InMemoryContextStorage returns the SAME object for same context ID.
 
     This test verifies that when multiple async tasks access the same context,
     they all receive the same context object (get-or-create is properly synchronized).
     """
-    storage = AsyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
     test_uuid = UUID("00000000-0000-0000-0000-000000000001")
 
     # Pre-populate the storage
@@ -774,8 +766,8 @@ async def test_async_fine_grained_locking_same_context_returns_same_object():
 
     async def get_context() -> None:
         """Get context and record its object ID."""
-        ctx = await anext(storage.get_client_context(test_uuid))
-        context_ids.append(id(ctx))
+        async with get_context_once(storage, test_uuid) as ctx:
+            context_ids.append(id(ctx))
 
     # Access the same context from multiple tasks concurrently
     await asyncio.gather(
@@ -815,14 +807,14 @@ async def test_async_fine_grained_locking_same_context_serializes():
     access_times: list[dict[str, Any]] = []
 
     # Create storage with pre-populated context
-    storage = AsyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
     storage._client_states[test_uuid] = ClientContext(state="")  # type: ignore[attr-defined]
 
     # Override providers
     def test_client_id() -> UUID:
         return test_uuid
 
-    async def test_storage() -> AsyncContextStorage:
+    async def test_storage() -> ContextStorage:
         return storage
 
     @inject
@@ -901,7 +893,7 @@ async def test_async_fine_grained_locking_pairing_attempts():
     from s2auth.common.models import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
-    storage = AsyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
 
     pairing_id_1 = uuid4()
     pairing_id_2 = uuid4()
@@ -925,16 +917,16 @@ async def test_async_fine_grained_locking_pairing_attempts():
     async def access_pairing_context(pairing_id: UUID, delay: float) -> str:
         """Access a pairing context, simulate work, record timing."""
         start_time = asyncio.get_event_loop().time()
-        ctx = await anext(storage.get_pairing_attempt_context(pairing_id))
-        await asyncio.sleep(delay)
-        ctx.state = f"accessed_{pairing_id}"
-        end_time = asyncio.get_event_loop().time()
-        access_times.append({
-            'pairing_id': pairing_id,
-            'start': start_time,
-            'end': end_time
-        })
-        return ctx.state
+        async with get_context_once(storage, pairing_id, is_pairing=True) as ctx:
+            await asyncio.sleep(delay)
+            ctx.state = f"accessed_{pairing_id}"
+            end_time = asyncio.get_event_loop().time()
+            access_times.append({
+                'pairing_id': pairing_id,
+                'start': start_time,
+                'end': end_time
+            })
+            return ctx.state
 
     # Access two different pairing contexts concurrently
     results = await asyncio.gather(
@@ -954,78 +946,88 @@ async def test_async_fine_grained_locking_pairing_attempts():
 
 
 @pytest.mark.skip_wire
-def test_sync_fine_grained_locking_concurrent_different_contexts():
-    """Test that SyncInMemoryContextStorage allows concurrent access to DIFFERENT contexts.
+async def test_sync_fine_grained_locking_concurrent_different_contexts():
+    """Test that InMemoryContextStorage allows concurrent access to DIFFERENT contexts.
 
     This test verifies that the fine-grained locking implementation allows
     multiple threads to access different client contexts simultaneously.
-    """
-    storage = SyncInMemoryContextStorage()
 
-    test_uuid_1 = UUID("00000000-0000-0000-0000-000000000001")
-    test_uuid_2 = UUID("00000000-0000-0000-0000-000000000002")
-    test_uuid_3 = UUID("00000000-0000-0000-0000-000000000003")
+    CRITICAL: This test verifies that _locks_lock doesn't cause serialization.
+    If _locks_lock was held during fine-grained lock acquisition, all accesses
+    would be serialized and total time would be 5 × 0.1s = 0.5s instead of ~0.1s.
+    """
+    storage = InMemoryContextStorage()
+
+    # Create 5 different contexts to test parallel access
+    test_uuids = [UUID(f"00000000-0000-0000-0000-00000000000{i}") for i in range(1, 6)]
 
     # Pre-populate the storage
-    storage._client_states[test_uuid_1] = ClientContext()  # type: ignore[attr-defined]
-    storage._client_states[test_uuid_2] = ClientContext()  # type: ignore[attr-defined]
-    storage._client_states[test_uuid_3] = ClientContext()  # type: ignore[attr-defined]
+    for uuid in test_uuids:
+        storage._client_states[uuid] = ClientContext()  # type: ignore[attr-defined]
 
     import time
-    access_times: list[dict[str, Any]] = []
+    start_times: list[float] = []
+    end_times: list[float] = []
     lock = threading.Lock()
 
     def access_context(client_id: UUID, delay: float) -> None:
         """Access a context, simulate work, record timing."""
-        start_time = time.time()
-        ctx = next(storage.get_client_context(client_id))
-        # Simulate some work while holding the lock
-        time.sleep(delay)
-        ctx.state = f"accessed_{client_id}"
-        end_time = time.time()
+        async def async_work():
+            start_time = time.time()
+            with lock:
+                start_times.append(start_time)
 
-        with lock:
-            access_times.append({
-                'client_id': client_id,
-                'start': start_time,
-                'end': end_time
-            })
+            ctx_gen = storage.get_client_context(client_id)
+            ctx = await anext(ctx_gen)
+            # Simulate some work while holding the lock
+            time.sleep(delay)
+            ctx.state = f"accessed_{client_id}"
 
-    # Access three different contexts concurrently
-    threads = [
-        threading.Thread(target=access_context, args=(test_uuid_1, 0.1)),
-        threading.Thread(target=access_context, args=(test_uuid_2, 0.1)),
-        threading.Thread(target=access_context, args=(test_uuid_3, 0.1))
-    ]
+            end_time = time.time()
+            with lock:
+                end_times.append(end_time)
+
+            await ctx_gen.aclose()
+        asyncio.run(async_work())
+
+    # Access all 5 different contexts concurrently from different threads
+    overall_start = time.time()
+    threads = [threading.Thread(target=access_context, args=(uuid, 0.1)) for uuid in test_uuids]
 
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
 
+    overall_end = time.time()
+    total_time = overall_end - overall_start
+
     # All should succeed
-    assert len(access_times) == 3
+    assert len(start_times) == 5
+    assert len(end_times) == 5
 
-    # Verify that the accesses overlapped (concurrent execution)
-    overlaps = 0
-    for i in range(len(access_times)):
-        for j in range(i+1, len(access_times)):
-            if (access_times[i]['start'] < access_times[j]['end'] and
-                access_times[j]['start'] < access_times[i]['end']):
-                overlaps += 1
+    # CRITICAL TEST: If _locks_lock caused serialization, total time would be ~0.5s
+    # If truly concurrent, total time should be ~0.1s
+    assert total_time < 0.25, \
+        f"Access to different contexts should be concurrent (expected ~0.1s, got {total_time:.3f}s). " \
+        f"This suggests _locks_lock is causing serialization!"
 
-    # With 3 concurrent accesses, we should have at least 1 overlap
-    assert overlaps >= 1, "Different contexts should be accessible concurrently"
+    # Verify threads started roughly at the same time (within 50ms)
+    first_start = min(start_times)
+    last_start = max(start_times)
+    start_spread = last_start - first_start
+    assert start_spread < 0.05, \
+        f"All threads should start nearly simultaneously, but spread was {start_spread:.3f}s"
 
 
 @pytest.mark.skip_wire
-def test_sync_fine_grained_locking_same_context_returns_same_object():
-    """Test that SyncInMemoryContextStorage returns the SAME object for same context ID.
+async def test_sync_fine_grained_locking_same_context_returns_same_object():
+    """Test that InMemoryContextStorage returns the SAME object for same context ID.
 
     This test verifies that when multiple threads access the same context,
     they all receive the same context object (get-or-create is properly synchronized).
     """
-    storage = SyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
     test_uuid = UUID("00000000-0000-0000-0000-000000000001")
 
     # Pre-populate the storage
@@ -1036,9 +1038,13 @@ def test_sync_fine_grained_locking_same_context_returns_same_object():
 
     def get_context() -> None:
         """Get context and record its object ID."""
-        ctx = next(storage.get_client_context(test_uuid))
-        with lock:
-            context_ids.append(id(ctx))
+        async def async_work():
+            ctx_gen = storage.get_client_context(test_uuid)
+            ctx = await anext(ctx_gen)
+            with lock:
+                context_ids.append(id(ctx))
+            await ctx_gen.aclose()
+        asyncio.run(async_work())
 
     # Access the same context from multiple threads concurrently
     threads = [
@@ -1059,7 +1065,7 @@ def test_sync_fine_grained_locking_same_context_returns_same_object():
     assert test_uuid in storage._client_states  # type: ignore[attr-defined]
 
 
-def test_sync_fine_grained_locking_same_context_serializes():
+async def test_sync_fine_grained_locking_same_context_serializes():
     """Test that concurrent access to the SAME context is serialized via DI.
 
     This verifies that when multiple threads access the same context ID through
@@ -1067,7 +1073,7 @@ def test_sync_fine_grained_locking_same_context_serializes():
     modifications from one access are visible to the next.
     """
     import time
-    from typing import Generator
+    from typing import AsyncGenerator
     from s2auth.server.dependencies.context import (
         client_context,
         client_node_id,
@@ -1083,27 +1089,27 @@ def test_sync_fine_grained_locking_same_context_serializes():
     lock = threading.Lock()
 
     # Create storage with pre-populated context
-    storage = SyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
     storage._client_states[test_uuid] = ClientContext(state="")  # type: ignore[attr-defined]
 
-    # Override providers - sync versions for sync storage
+    # Override providers - async versions for async storage
     def test_client_id() -> UUID:
         return test_uuid
 
-    def test_storage() -> SyncContextStorage:
+    def test_storage() -> ContextStorage:
         return storage
 
     @inject
-    def test_client_context(
+    async def test_client_context(
         cid: UUID = Depends[client_node_id],
-        stor: SyncContextStorage = Depends[context_storage_singleton],
-    ) -> Generator[ClientContext, None, None]:
-        """Sync generator version of client_context for sync storage."""
-        for ctx in stor.get_client_context(cid):
+        stor: ContextStorage = Depends[context_storage_singleton],
+    ) -> AsyncGenerator[ClientContext, None]:
+        """Async generator version of client_context for async storage."""
+        async for ctx in stor.get_client_context(cid):
             yield ctx
 
     @inject
-    def access_context(
+    async def access_context(
         thread_id: int,
         delay: float,
         ctx: ClientContext = Depends[client_context],
@@ -1131,6 +1137,10 @@ def test_sync_fine_grained_locking_same_context_serializes():
             })
         return ctx.state
 
+    def thread_func(thread_id: int, delay: float) -> None:
+        """Thread function that runs async code."""
+        asyncio.run(access_context(thread_id, delay))
+
     # Access the same context from multiple threads concurrently
     with provider_overrides({
         client_node_id: test_client_id,
@@ -1138,9 +1148,9 @@ def test_sync_fine_grained_locking_same_context_serializes():
         client_context: test_client_context,
     }):
         threads = [
-            threading.Thread(target=access_context, args=(1, 0.05)),
-            threading.Thread(target=access_context, args=(2, 0.05)),
-            threading.Thread(target=access_context, args=(3, 0.05))
+            threading.Thread(target=thread_func, args=(1, 0.05)),
+            threading.Thread(target=thread_func, args=(2, 0.05)),
+            threading.Thread(target=thread_func, args=(3, 0.05))
         ]
 
         for thread in threads:
@@ -1177,13 +1187,13 @@ def test_sync_fine_grained_locking_same_context_serializes():
 
 
 @pytest.mark.skip_wire
-def test_sync_fine_grained_locking_pairing_attempts():
+async def test_sync_fine_grained_locking_pairing_attempts():
     """Test fine-grained locking for pairing attempt contexts in sync storage."""
     from uuid import uuid4
     from s2auth.common.models import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
-    storage = SyncInMemoryContextStorage()
+    storage = InMemoryContextStorage()
 
     pairing_id_1 = uuid4()
     pairing_id_2 = uuid4()
@@ -1208,18 +1218,22 @@ def test_sync_fine_grained_locking_pairing_attempts():
 
     def access_pairing_context(pairing_id: UUID, delay: float) -> None:
         """Access a pairing context, simulate work, record timing."""
-        start_time = time.time()
-        ctx = next(storage.get_pairing_attempt_context(pairing_id))
-        time.sleep(delay)
-        ctx.state = f"accessed_{pairing_id}"
-        end_time = time.time()
+        async def async_work():
+            start_time = time.time()
+            ctx_gen = storage.get_pairing_attempt_context(pairing_id)
+            ctx = await anext(ctx_gen)
+            time.sleep(delay)
+            ctx.state = f"accessed_{pairing_id}"
+            end_time = time.time()
 
-        with lock:
-            access_times.append({
-                'pairing_id': pairing_id,
-                'start': start_time,
-                'end': end_time
-            })
+            with lock:
+                access_times.append({
+                    'pairing_id': pairing_id,
+                    'start': start_time,
+                    'end': end_time
+                })
+            await ctx_gen.aclose()
+        asyncio.run(async_work())
 
     # Access two different pairing contexts concurrently
     threads = [

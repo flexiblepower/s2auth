@@ -23,6 +23,7 @@ dependencies = [
     "fastapi",
     "dependency-injector (>=4.48.3,<5.0.0)",
     "pydantic-settings (>=2.5,<3.0)",
+    "aiologic (>=0.16.0,<0.17.0)",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
