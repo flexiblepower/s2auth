@@ -3,8 +3,10 @@ import hmac
 import secrets
 from base64 import b64decode, b64encode
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any
 from collections.abc import Callable
+
+from pydantic import StringConstraints
 
 from s2auth.common.exceptions import VerificationError
 
@@ -25,6 +27,22 @@ def _get_hashing_algorithm(algorithm: str) -> Callable[..., Any]:
         raise ValueError(
             f"Hashing algorithm '{algorithm}' is not supported. Please use one of {SupportedHashingAlgorithms.keys()}"
         ) from e
+
+
+PairingToken = Annotated[
+    str, StringConstraints(pattern=r"^[A-Za-z0-9+/]{12,}={0,2}$", min_length=12)
+]
+
+
+def create_pairing_token(length: int = 9) -> PairingToken:
+    """
+    Create the base64 encoded pairing token (sequence of random bytes) to be sent to the other side of the connection.
+    The token is a shared secret between the nodes to sign challenges.
+    """
+    if length < 9:
+        raise ValueError("The pairing token needs to be at least 9 bytes.")
+    token = secrets.token_bytes(length)
+    return b64encode(token).decode("utf-8")
 
 
 def create_challenge(length: int = 128) -> str:

@@ -26,7 +26,7 @@ async def test_dependency_injection():
 
     with pytest.raises(
         RuntimeError,
-        match=r"Cannot resolve async dependency 'config' in sync function 'my_test_function'\. Sync functions cannot have async dependencies\. Make your function async instead: async def my_test_function\(\.\.\.\)",
+        match=r"Cannot resolve async dependency 'config' in sync function 'my_test_function' from within an async context\. Either make 'my_test_function' async or call it from a sync context\.",
     ):
         assert my_test_function() == default_config.sqlalchemy_db_uri
 
