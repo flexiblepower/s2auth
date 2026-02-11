@@ -1,4 +1,5 @@
 """Tests for generator dependencies and cleanup."""
+
 from typing import Any, AsyncGenerator, Generator
 import pytest
 from pytest_mock import MockerFixture
@@ -113,6 +114,190 @@ def test_sync_generator_dependency_in_sync_function(
 
 
 @pytest.mark.skip_wire
+def test_async_generator_dependency_in_sync_function(
+    mocker: MockerFixture, cleanup_tracker: MagicMock
+) -> None:
+    """Test async generator as dependency in sync function (sync context).
+
+    This tests the DI system's ability to resolve async generator dependencies
+    in sync functions by running them in an event loop. The system should:
+    1. Detect the async generator
+    2. Check there's no running event loop
+    3. Create a new event loop
+    4. Run __anext__() to get the yielded value
+    5. Track the generator for cleanup
+    6. Properly clean up using athrow()/anext() in the event loop
+
+    This test runs in a thread to simulate a true sync context (no event loop).
+    """
+    import threading
+
+    @register_provider()
+    async def async_session_provider() -> AsyncGenerator[MagicMock, None]:
+        session = mocker.MagicMock()
+        session.query = mocker.MagicMock(return_value="async_query_result")
+        try:
+            yield session
+        finally:
+            await cleanup_tracker.async_gen_cleanup()
+
+    @inject
+    def query_database(session: Any = Depends[async_session_provider]) -> str:
+        # This is a sync function depending on an async generator
+        return session.query()
+
+    setup()
+
+    # Run in a thread to ensure we're in a true sync context (no event loop)
+    result_container: list[str] = []
+    error_container: list[Exception] = []
+
+    def run_test():
+        try:
+            result = query_database()
+            result_container.append(result)
+        except Exception as e:
+            error_container.append(e)
+
+    thread = threading.Thread(target=run_test)
+    thread.start()
+    thread.join()
+
+    # Check for errors
+    if error_container:
+        raise error_container[0]
+
+    # Verify the function worked
+    assert len(result_container) == 1
+    assert result_container[0] == "async_query_result"
+
+    # Verify cleanup was called (the DI system should have cleaned up the async generator)
+    cleanup_tracker.async_gen_cleanup.assert_called_once()
+
+
+@pytest.mark.skip_wire
+def test_async_coroutine_dependency_in_sync_function() -> None:
+    """Test async coroutine (regular async function) as dependency in sync function (sync context).
+
+    This tests the DI system's ability to resolve async function (coroutine)
+    dependencies in sync functions by running them in an event loop. The system should:
+    1. Detect the coroutine
+    2. Check there's no running event loop
+    3. Create a new event loop
+    4. Run the coroutine to completion
+    5. Return the result to the sync function
+
+    This test runs in a thread to simulate a true sync context (no event loop).
+    """
+    import threading
+
+    call_count = 0
+
+    @register_provider()
+    async def async_config_provider() -> dict[str, Any]:
+        # Simulate async work (e.g., fetching from async source)
+        nonlocal call_count
+        call_count += 1
+        return {
+            "api_url": "https://api.example.com",
+            "timeout": 30,
+            "call_count": call_count,
+        }
+
+    @inject
+    def get_api_url(config: dict[str, Any] = Depends[async_config_provider]) -> str:
+        # This is a sync function depending on an async coroutine
+        return config["api_url"]
+
+    setup()
+
+    # Run in a thread to ensure we're in a true sync context (no event loop)
+    result_container: list[str] = []
+    error_container: list[Exception] = []
+
+    def run_test():
+        try:
+            result = get_api_url()
+            result_container.append(result)
+        except Exception as e:
+            error_container.append(e)
+
+    thread = threading.Thread(target=run_test)
+    thread.start()
+    thread.join()
+
+    # Check for errors
+    if error_container:
+        raise error_container[0]
+
+    # Verify the function worked
+    assert len(result_container) == 1
+    assert result_container[0] == "https://api.example.com"
+
+    # Verify the async provider was actually called
+    assert call_count == 1
+
+
+@pytest.mark.skip_wire
+async def test_async_dependency_in_sync_function_from_async_context_errors() -> None:
+    """Test that sync functions with async dependencies error when called from async context.
+
+    When a sync function depends on an async provider and is called from within
+    an async context (where an event loop is already running), the DI system
+    should raise a clear error telling the user to make the function async.
+    """
+
+    @register_provider()
+    async def async_config_provider() -> dict[str, Any]:
+        return {"api_url": "https://api.example.com"}
+
+    @inject
+    def sync_func_with_async_dep(
+        config: dict[str, Any] = Depends[async_config_provider],
+    ) -> str:
+        return config["api_url"]
+
+    setup()
+
+    # This should raise an error because we're in an async context
+    with pytest.raises(
+        RuntimeError,
+        match=r"Cannot resolve async dependency 'config' in sync function 'sync_func_with_async_dep' from within an async context",
+    ):
+        sync_func_with_async_dep()
+
+
+@pytest.mark.skip_wire
+async def test_async_generator_in_sync_function_from_async_context_errors(
+    mocker: MockerFixture,
+) -> None:
+    """Test that sync functions with async generator dependencies error when called from async context.
+
+    When a sync function depends on an async generator provider and is called from within
+    an async context (where an event loop is already running), the DI system
+    should raise a clear error telling the user to make the function async.
+    """
+
+    @register_provider()
+    async def async_session_provider() -> AsyncGenerator[MagicMock, None]:
+        session = mocker.MagicMock()
+        yield session
+
+    @inject
+    def sync_func_with_async_gen(session: Any = Depends[async_session_provider]) -> Any:
+        return session
+
+    setup()
+
+    # This should raise an error because we're in an async context
+    with pytest.raises(
+        RuntimeError,
+        match=r"Cannot resolve async dependency 'session' in sync function 'sync_func_with_async_gen' from within an async context",
+    ):
+        sync_func_with_async_gen()  # type: ignore[reportUnusedCoroutine]
+
+
+@pytest.mark.skip_wire
 async def test_async_generator_cleanup_with_exception(
     mocker: MockerFixture, cleanup_tracker: MagicMock
 ) -> None:
@@ -212,7 +397,7 @@ def test_sync_generator_cleanup_with_exception_in_sync(
 
 
 @pytest.mark.skip_wire
-async def test_generator_yields_more_than_once_async(mocker: MockerFixture) -> None:
+async def test_generator_yields_more_than_once_async() -> None:
     """Test error when generator yields more than once (async context).
 
     This tests lines 427-434: RuntimeError when generator yields multiple times.
@@ -262,8 +447,7 @@ async def test_multiple_generators_cleanup_in_order(
 
     @inject
     async def use_both(
-        first: Any = Depends[first_provider],
-        second: Any = Depends[second_provider]
+        first: Any = Depends[first_provider], second: Any = Depends[second_provider]
     ) -> str:
         return f"{first.name}-{second.name}"
 
@@ -299,7 +483,9 @@ async def test_async_generator_cleanup_handles_exception_in_cleanup(
         await cleanup_that_fails()
 
     @inject
-    async def use_resource(resource: Any = Depends[provider_with_failing_cleanup]) -> str:
+    async def use_resource(
+        resource: Any = Depends[provider_with_failing_cleanup],
+    ) -> str:
         return "success"
 
     setup()
@@ -339,7 +525,7 @@ async def test_generator_cleanup_with_stop_iteration(mocker: MockerFixture) -> N
 
 
 @pytest.mark.skip_wire
-def test_sync_generator_yields_more_than_once_in_sync_function(mocker: MockerFixture) -> None:
+def test_sync_generator_yields_more_than_once_in_sync_function() -> None:
     """Test error when sync generator yields more than once in sync function.
 
     This tests the error case in sync generator cleanup.

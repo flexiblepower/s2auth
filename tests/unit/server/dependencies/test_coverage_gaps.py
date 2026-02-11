@@ -844,10 +844,11 @@ def test_sync_gen_with_multiple_dependencies() -> None:
 
 @pytest.mark.skip_wire
 def test_inject_sync_func_with_async_dep_no_event_loop() -> None:
-    """Test @inject decorator on sync function with async dep raises error (no asyncio.run fallback).
+    """Test @inject decorator on sync function with async dep works in sync context.
 
-    With the new behavior, sync functions cannot resolve async dependencies
-    regardless of whether there's an event loop or not.
+    Sync functions can resolve async dependencies when called from a sync context
+    (no event loop running). The DI system creates a new event loop to resolve
+    the async dependency.
     """
 
     @register_provider()
@@ -858,17 +859,20 @@ def test_inject_sync_func_with_async_dep_no_event_loop() -> None:
     def sync_consumer(value: int = Depends[async_dep]) -> int:
         return value * 2
 
-    # Call from thread with no event loop
+    # Call from thread with no event loop - should work
+    result_container: list[int] = []
+
     def call_in_thread() -> None:
-        with pytest.raises(
-            RuntimeError,
-            match=r"Cannot resolve async dependency 'value' in sync function 'sync_consumer'\. Sync functions cannot have async dependencies\. Make your function async instead: async def sync_consumer\(\.\.\.\)",
-        ):
-            sync_consumer()
+        result = sync_consumer()
+        result_container.append(result)
 
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(call_in_thread)
         future.result()
+
+    # Verify it worked
+    assert len(result_container) == 1
+    assert result_container[0] == 888 * 2
 
     clear_overrides()
