@@ -59,6 +59,16 @@ class MockContextStorage(ContextStorage):
             raise KeyError(f"No context known for {pairing_attempt_id}")
         yield self.pairing_contexts[pairing_attempt_id]
 
+    async def store_client_context(self, context: ClientContext) -> None:
+        """Store a client context in the mock storage."""
+        if context.client_node_id is None:
+            raise ValueError("ClientContext must have client_node_id set")
+        self.client_contexts[context.client_node_id] = context
+
+    async def store_pairing_attempt_context(self, context: PairingAttemptContext) -> None:
+        """Store a pairing attempt context in the mock storage."""
+        self.pairing_contexts[context.pairing_attempt_id] = context
+
 
 
 @pytest.mark.skip_wire
