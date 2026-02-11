@@ -181,7 +181,8 @@ async def test_dependency_resolution_without_overrides(mocker: MockerFixture) ->
 async def test_sync_dependency_error_handling_in_event_loop(mocker: MockerFixture) -> None:
     """Test error handling when sync function resolves async dependency in event loop.
 
-    This tests lines 392-401: error handling in _resolve_dependencies_sync.
+    Sync functions cannot resolve async dependencies when called from an async
+    context (event loop already running). The DI system raises a clear error.
     """
 
     @register_provider()
@@ -198,7 +199,7 @@ async def test_sync_dependency_error_handling_in_event_loop(mocker: MockerFixtur
 
     with pytest.raises(
         RuntimeError,
-        match=r"Cannot resolve async dependency 'val' in sync function 'sync_func_with_async_dep'\. Sync functions cannot have async dependencies\. Make your function async instead: async def sync_func_with_async_dep\(\.\.\.\)"
+        match=r"Cannot resolve async dependency 'val' in sync function 'sync_func_with_async_dep' from within an async context\. Either make 'sync_func_with_async_dep' async or call it from a sync context\."
     ):
         await caller()
 
