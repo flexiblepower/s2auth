@@ -8,9 +8,10 @@ from pydantic import BaseModel
 
 
 from s2auth.common.hmac import PairingToken
-from s2auth.common.models import PairingAttemptId as S2PairingAttemptId, PairingS2NodeId
-from s2auth.common.models import S2NodeId
+from s2auth.common.model.s2_over_ip_pairing import PairingAttemptId as S2PairingAttemptId, PairingS2NodeId
+from s2auth.common.model.s2_over_ip_common import S2NodeId
 from s2auth.common.dependencies import Depends, register_provider
+
 
 
 # Type aliases for the root types
