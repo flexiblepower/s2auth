@@ -19,7 +19,7 @@ from s2auth.server.context import (
     store_client_context,
     store_pairing_attempt_context,
 )
-from s2auth.common.hmac import create_challenge, create_pairing_token
+from s2auth.common.hmac import create_challenge, create_pairing_token, PairingToken
 from s2auth.server.settings import Settings, settings
 
 
@@ -27,10 +27,10 @@ from s2auth.server.settings import Settings, settings
 async def initiate_pairing(
     store_pairing_ctx: Callable[[PairingAttemptContext], Awaitable[None]] = Depends[store_pairing_attempt_context],
     server_settings: Settings = Depends[settings],
+    pairing_token: PairingToken = Depends[create_pairing_token],
 ):
     pairing_attempt_id: PairingAttemptId = uuid4()
     pairing_attempt_id_var.set(S2PairingAttemptId(root=str(pairing_attempt_id)))
-    pairing_token = create_pairing_token()
     pairing_node_id = server_settings.pairing_node_id
     ctx = PairingAttemptContext(
         pairing_attempt_id=pairing_attempt_id,
