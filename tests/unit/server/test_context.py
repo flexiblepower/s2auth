@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 import threading
+from base64 import b64encode
 from typing import Any, AsyncGenerator
 from contextlib import asynccontextmanager
 from uuid import UUID
@@ -307,7 +308,7 @@ async def test_async_in_memory_storage_keyerror_for_unknown_id():
 async def test_async_in_memory_storage_pairing_attempt_contexts():
     """Test that InMemoryContextStorage handles pairing attempt contexts correctly."""
     from uuid import uuid4
-    from s2auth.common.models import PairingS2NodeId
+    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
     storage = InMemoryContextStorage()
@@ -437,7 +438,7 @@ async def test_sync_in_memory_storage_keyerror_for_unknown_id():
 async def test_sync_in_memory_storage_pairing_attempt_contexts():
     """Test that InMemoryContextStorage handles pairing attempt contexts correctly."""
     from uuid import uuid4
-    from s2auth.common.models import PairingS2NodeId
+    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
     storage = InMemoryContextStorage()
@@ -518,7 +519,7 @@ async def test_client_node_id_provider_with_contextvar_set():
         s2_client_node_id_var,
         client_node_id as client_node_id_provider,
     )
-    from s2auth.common.models import S2NodeId
+    from s2auth.common.model.s2_over_ip_common import S2NodeId
 
     test_uuid = UUID("00000000-0000-0000-0000-000000000042")
 
@@ -567,7 +568,7 @@ async def test_pairing_attempt_id_provider_with_contextvar_set():
         pairing_attempt_id_var,
         pairing_attempt_id as pairing_attempt_id_provider,
     )
-    from s2auth.common.models import PairingAttemptId as S2PairingAttemptId
+    from s2auth.common.model.s2_over_ip_pairing import PairingAttemptId as S2PairingAttemptId
 
     test_pairing_id = uuid4()
 
@@ -577,8 +578,8 @@ async def test_pairing_attempt_id_provider_with_contextvar_set():
 
     setup()
 
-    # Set the contextvar with string representation of UUID
-    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=str(test_pairing_id)))
+    # Set the contextvar with base64-encoded UUID
+    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8')).decode('utf-8')))
     try:
         result = get_pairing_attempt_id()
         assert result == test_pairing_id
@@ -615,10 +616,10 @@ async def test_pairing_attempt_context_provider():
         pairing_attempt_id_var,
         pairing_attempt_context as pairing_attempt_context_provider,
     )
-    from s2auth.common.models import PairingAttemptId as S2PairingAttemptId
+    from s2auth.common.model.s2_over_ip_pairing import PairingAttemptId as S2PairingAttemptId
 
     from uuid import uuid4
-    from s2auth.common.models import PairingS2NodeId
+    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
     test_pairing_id = uuid4()
@@ -647,8 +648,8 @@ async def test_pairing_attempt_context_provider():
     def get_test_storage() -> ContextStorage:
         return test_storage
 
-    # Set the contextvar
-    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=str(test_pairing_id)))
+    # Set the contextvar with base64-encoded UUID
+    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8')).decode('utf-8')))
     try:
         with provider_overrides({context_storage_singleton: get_test_storage}):
             # Should return the pre-populated context
@@ -668,7 +669,7 @@ async def test_pairing_attempt_context_raises_keyerror_for_unknown_id():
         pairing_attempt_id_var,
         pairing_attempt_context as pairing_attempt_context_provider,
     )
-    from s2auth.common.models import PairingAttemptId as S2PairingAttemptId
+    from s2auth.common.model.s2_over_ip_pairing import PairingAttemptId as S2PairingAttemptId
 
     test_pairing_id = uuid4()
 
@@ -686,8 +687,8 @@ async def test_pairing_attempt_context_raises_keyerror_for_unknown_id():
 
     setup()
 
-    # Set the contextvar
-    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=str(test_pairing_id)))
+    # Set the contextvar with base64-encoded UUID
+    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8')).decode('utf-8')))
     try:
         with provider_overrides({context_storage_singleton: test_context_storage}):
             # Should raise KeyError for unknown ID
@@ -900,7 +901,7 @@ async def test_async_fine_grained_locking_same_context_serializes():
 async def test_async_fine_grained_locking_pairing_attempts():
     """Test fine-grained locking for pairing attempt contexts."""
     from uuid import uuid4
-    from s2auth.common.models import PairingS2NodeId
+    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
     storage = InMemoryContextStorage()
@@ -1200,7 +1201,7 @@ async def test_sync_fine_grained_locking_same_context_serializes():
 async def test_sync_fine_grained_locking_pairing_attempts():
     """Test fine-grained locking for pairing attempt contexts in sync storage."""
     from uuid import uuid4
-    from s2auth.common.models import PairingS2NodeId
+    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
     from s2auth.common.hmac import create_pairing_token
 
     storage = InMemoryContextStorage()
