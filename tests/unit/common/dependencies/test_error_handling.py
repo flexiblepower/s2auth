@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from pytest_mock import MockerFixture
 from unittest.mock import MagicMock
-from s2auth.server.dependencies import (
+from s2auth.common.dependencies import (
     setup,
     Depends,
     inject,
@@ -229,7 +229,7 @@ async def test_call_provider_helper_with_async_function(mocker: MockerFixture) -
 
     This tests line 227: _call_provider function execution.
     """
-    from s2auth.server.dependencies import _call_provider  # type: ignore[reportPrivateUsage]
+    from s2auth.common.dependencies import _call_provider  # type: ignore[reportPrivateUsage]
 
     async def async_provider() -> str:
         return "async_result"
@@ -242,7 +242,7 @@ async def test_call_provider_helper_with_async_function(mocker: MockerFixture) -
 @pytest.mark.skip_wire
 async def test_call_provider_helper_with_sync_function(mocker: MockerFixture) -> None:
     """Test _call_provider helper with sync function."""
-    from s2auth.server.dependencies import _call_provider  # type: ignore[reportPrivateUsage]
+    from s2auth.common.dependencies import _call_provider  # type: ignore[reportPrivateUsage]
 
     def sync_provider() -> str:
         return "sync_result"

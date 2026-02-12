@@ -9,7 +9,7 @@ from s2auth.server.models import Base, StoredObject
 from s2auth.common.models import AccessToken, ConnectionDetails
 from s2auth.server.config import Config, config
 from s2auth.server.db import async_session
-from s2auth.server.dependencies import Depends, provider_overrides, setup
+from s2auth.common.dependencies import Depends, provider_overrides, setup
 
 
 # Type alias for the test fixture return type

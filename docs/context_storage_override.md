@@ -17,7 +17,7 @@ The s2auth server uses dependency injection to manage context storage for client
 The system automatically provides the unified storage:
 
 ```python
-from s2auth.server.dependencies import inject, Depends
+from s2auth.common.dependencies import inject, Depends
 from s2auth.server.context import (
     client_context,
     pairing_attempt_context,
@@ -114,7 +114,7 @@ Implement a Redis-based storage backend. There are three ways to override the de
 
 ```python
 import redis
-from s2auth.server.dependencies import override_provider, setup
+from s2auth.common.dependencies import override_provider, setup
 from s2auth.server.context import (
     ContextStorage,
     ClientContext,
@@ -219,7 +219,7 @@ You can override the storage for testing:
 ```python
 import pytest
 from uuid import UUID
-from s2auth.server.dependencies import provider_overrides, setup
+from s2auth.common.dependencies import provider_overrides, setup
 from s2auth.server.context import (
     context_storage_singleton,
     InMemoryContextStorage,

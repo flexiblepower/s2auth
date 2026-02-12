@@ -7,7 +7,7 @@ from sqlalchemy.orm import declarative_base
 
 from s2auth.server.config import Config, config
 from s2auth.server.db import async_session
-from s2auth.server.dependencies import Depends, inject, provider_overrides, setup
+from s2auth.common.dependencies import Depends, inject, provider_overrides, setup
 
 # Create a simple SQLAlchemy model for testing
 Base = declarative_base()
