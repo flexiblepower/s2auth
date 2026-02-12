@@ -614,7 +614,7 @@ Combined with the DI system's support for async dependencies in sync contexts, t
 
 ```python
 from s2auth.server.dependencies import inject, Depends
-from s2auth.server.dependencies.context import (
+from s2auth.server.context import (
     client_context,
     pairing_attempt_context,
     ClientContext,
