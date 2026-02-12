@@ -20,7 +20,7 @@ Use `@override_provider(original)` as a decorator on your replacement function.
 **Best for:** Production configuration, application-level overrides
 
 ```python
-from s2auth.server.dependencies import override_provider, setup
+from s2auth.common.dependencies import override_provider, setup
 from s2auth.server.context import context_storage_singleton, ContextStorage
 
 class RedisContextStorage(ContextStorage):
@@ -50,7 +50,7 @@ Pass overrides as a dictionary to `setup(overrides={...})`.
 **Best for:** Centralizing all configuration in one place at application startup
 
 ```python
-from s2auth.server.dependencies import setup
+from s2auth.common.dependencies import setup
 from s2auth.server.context import context_storage_singleton, ContextStorage
 
 class RedisContextStorage(ContextStorage):
@@ -81,7 +81,7 @@ Call `override_provider(original, override)` explicitly.
 **Best for:** Programmatic/dynamic overrides, conditional logic
 
 ```python
-from s2auth.server.dependencies import override_provider, setup
+from s2auth.common.dependencies import override_provider, setup
 from s2auth.server.context import context_storage_singleton, ContextStorage
 
 class RedisContextStorage(ContextStorage):
@@ -114,7 +114,7 @@ Use `provider_overrides()` context manager for temporary overrides.
 ```python
 import pytest
 from uuid import UUID
-from s2auth.server.dependencies import provider_overrides, setup
+from s2auth.common.dependencies import provider_overrides, setup
 from s2auth.server.context import (
     context_storage_singleton,
     InMemoryContextStorage,
@@ -162,7 +162,7 @@ Here's a complete example showing how to override the default in-memory context 
 ```python
 import redis
 from collections.abc import AsyncGenerator
-from s2auth.server.dependencies import override_provider, setup
+from s2auth.common.dependencies import override_provider, setup
 from s2auth.server.context import (
     ContextStorage,
     ClientContext,
@@ -288,7 +288,7 @@ setup(overrides={
 Use `clear_overrides()` to remove all permanent overrides:
 
 ```python
-from s2auth.server.dependencies import clear_overrides
+from s2auth.common.dependencies import clear_overrides
 
 clear_overrides()  # Removes all overrides
 ```

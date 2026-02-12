@@ -8,7 +8,7 @@ This test shows that:
 """
 
 import pytest
-from s2auth.server.dependencies import (
+from s2auth.common.dependencies import (
     Depends,
     inject,
     register_provider,

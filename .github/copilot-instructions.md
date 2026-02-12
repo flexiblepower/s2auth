@@ -62,7 +62,7 @@ This project uses a custom dependency injection wrapper around `dependency-injec
 
 **Register providers** with `@register_provider()`:
 ```python
-from s2auth.server.dependencies import register_provider
+from s2auth.common.dependencies import register_provider
 
 @register_provider()  # Default: creates new instance each time
 async def my_provider() -> MyType:
@@ -77,7 +77,7 @@ def my_singleton() -> MyType:
 
 **Inject dependencies** with `@inject` and `Depends[]`:
 ```python
-from s2auth.server.dependencies import inject, Depends
+from s2auth.common.dependencies import inject, Depends
 from s2auth.server.config import config
 
 @inject
@@ -86,7 +86,7 @@ async def my_function(cfg: Config = Depends[config]):
     pass
 ```
 
-**Setup**: Call `setup()` from `s2auth.server.dependencies` to wire all registered modules before using injected functions.
+**Setup**: Call `setup()` from `s2auth.common.dependencies` to wire all registered modules before using injected functions.
 
 #### Overriding Providers
 
@@ -94,7 +94,7 @@ There are **four methods** to override providers (see `docs/dependency_overrides
 
 **1. Decorator (Recommended for production):**
 ```python
-from s2auth.server.dependencies import override_provider, setup
+from s2auth.common.dependencies import override_provider, setup
 from s2auth.server.context import context_storage_singleton
 
 @override_provider(context_storage_singleton)
@@ -123,7 +123,7 @@ setup()
 
 **4. Context manager (For tests):**
 ```python
-from s2auth.server.dependencies import provider_overrides
+from s2auth.common.dependencies import provider_overrides
 
 with provider_overrides({config: test_config}):
     # Temporary override for this block
@@ -204,7 +204,7 @@ The server uses a **unified `InMemoryContextStorage`** implementation (in `src/s
 
 **Basic usage:**
 ```python
-from s2auth.server.dependencies import inject, Depends
+from s2auth.common.dependencies import inject, Depends
 from s2auth.server.context import (
     client_context,
     store_client_context,
@@ -244,7 +244,7 @@ async def my_endpoint(
 
 **Override providers in tests** (use context manager for temporary overrides):
 ```python
-from s2auth.server.dependencies import provider_overrides
+from s2auth.common.dependencies import provider_overrides
 from s2auth.server.config import config
 
 def test_config() -> Config:
