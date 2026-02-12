@@ -8,10 +8,12 @@ from pydantic import BaseModel
 
 
 from s2auth.common.hmac import PairingToken
-from s2auth.common.model.s2_over_ip_pairing import PairingAttemptId as S2PairingAttemptId, PairingS2NodeId
+from s2auth.common.model.s2_over_ip_pairing import (
+    PairingAttemptId as S2PairingAttemptId,
+    PairingS2NodeId,
+)
 from s2auth.common.model.s2_over_ip_common import S2NodeId
 from s2auth.common.dependencies import Depends, register_provider
-
 
 
 # Type aliases for the root types
@@ -119,7 +121,9 @@ class ContextStorage(ABC):
         pass
 
     @abstractmethod
-    async def store_pairing_attempt_context(self, context: PairingAttemptContext) -> None:
+    async def store_pairing_attempt_context(
+        self, context: PairingAttemptContext
+    ) -> None:
         """Store a new PairingAttemptContext.
 
         This creates or replaces a PairingAttemptContext for the given pairing_attempt_id.
@@ -216,7 +220,9 @@ class InMemoryContextStorage(ContextStorage):
         async with lock:
             self._client_states[context.client_node_id] = context
 
-    async def store_pairing_attempt_context(self, context: PairingAttemptContext) -> None:
+    async def store_pairing_attempt_context(
+        self, context: PairingAttemptContext
+    ) -> None:
         """Store a new PairingAttemptContext.
 
         Thread-safe creation/replacement of pairing attempt context.
