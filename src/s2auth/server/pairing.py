@@ -1,13 +1,14 @@
 """Pairing functionality for the S2 server."""
 
+from base64 import b64encode
 from typing import Awaitable, Callable
 from uuid import uuid4
-from s2auth.common.models import (
+from s2auth.common.model.s2_over_ip_pairing import (
     PairingAttemptId as S2PairingAttemptId,
     PairingS2NodeId,
     RequestPairingPostRequest,
-    S2NodeId,
 )
+from s2auth.common.model.s2_over_ip_common import S2NodeId
 from s2auth.common.dependencies import Depends, inject
 from s2auth.server.context import (
     ClientContext,
@@ -30,7 +31,9 @@ async def initiate_pairing(
     pairing_token: PairingToken = Depends[create_pairing_token],
 ):
     pairing_attempt_id: PairingAttemptId = uuid4()
-    pairing_attempt_id_var.set(S2PairingAttemptId(root=str(pairing_attempt_id)))
+    # Encode UUID string as base64 for S2PairingAttemptId (Base64Str requires valid UTF-8)
+    pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode('utf-8')).decode('utf-8')
+    pairing_attempt_id_var.set(S2PairingAttemptId(root=pairing_attempt_id_b64))
     pairing_node_id = server_settings.pairing_node_id
     ctx = PairingAttemptContext(
         pairing_attempt_id=pairing_attempt_id,
@@ -60,7 +63,7 @@ async def request_pairing(
     # Create a new pairing_attempt_id
 
     # Set the contextvars
-    client_node_id = request.s2ClientNodeDescription.id.root
+    client_node_id = request.clientS2NodeDescription.id.root
     client_ctx = ClientContext(client_node_id=client_node_id, state="pairing")
     await store_client_ctx(client_ctx)
     s2_client_node_id_var.set(S2NodeId(root=client_node_id))
