@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 from pydantic import StringConstraints
 
+from s2auth.common.dependencies import register_provider
 from s2auth.common.exceptions import VerificationError
 
 
@@ -34,10 +35,15 @@ PairingToken = Annotated[
 ]
 
 
+@register_provider()
 def create_pairing_token(length: int = 9) -> PairingToken:
     """
     Create the base64 encoded pairing token (sequence of random bytes) to be sent to the other side of the connection.
     The token is a shared secret between the nodes to sign challenges.
+
+    This function is registered as a dependency provider and can be overridden
+    to customize token generation (e.g., static tokens for testing, different lengths, etc.).
+    See docs/pairing_token_override.md for override examples.
     """
     if length < 9:
         raise ValueError("The pairing token needs to be at least 9 bytes.")
