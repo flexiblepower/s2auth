@@ -5,7 +5,7 @@ from typing import Any, AsyncGenerator
 from contextlib import asynccontextmanager
 from uuid import UUID
 from s2auth.server.dependencies import setup, Depends, inject, provider_overrides
-from s2auth.server.dependencies.context import (
+from s2auth.server.context import (
     client_node_id,
     context_storage_singleton,
     client_context,
@@ -514,7 +514,7 @@ async def test_sync_storage_keyerror_behavior():
 @pytest.mark.skip_wire
 async def test_client_node_id_provider_with_contextvar_set():
     """Test that client_node_id provider returns UUID from contextvar when set."""
-    from s2auth.server.dependencies.context import (
+    from s2auth.server.context import (
         s2_client_node_id_var,
         client_node_id as client_node_id_provider,
     )
@@ -541,7 +541,7 @@ async def test_client_node_id_provider_with_contextvar_set():
 @pytest.mark.skip_wire
 async def test_client_node_id_provider_without_contextvar():
     """Test that client_node_id provider raises ValueError when contextvar is not set."""
-    from s2auth.server.dependencies.context import (
+    from s2auth.server.context import (
         s2_client_node_id_var,
         client_node_id as client_node_id_provider,
     )
@@ -563,7 +563,7 @@ async def test_client_node_id_provider_without_contextvar():
 async def test_pairing_attempt_id_provider_with_contextvar_set():
     """Test that pairing_attempt_id provider returns UUID from contextvar when set."""
     from uuid import uuid4
-    from s2auth.server.dependencies.context import (
+    from s2auth.server.context import (
         pairing_attempt_id_var,
         pairing_attempt_id as pairing_attempt_id_provider,
     )
@@ -590,7 +590,7 @@ async def test_pairing_attempt_id_provider_with_contextvar_set():
 @pytest.mark.skip_wire
 async def test_pairing_attempt_id_provider_without_contextvar():
     """Test that pairing_attempt_id provider raises ValueError when contextvar is not set."""
-    from s2auth.server.dependencies.context import (
+    from s2auth.server.context import (
         pairing_attempt_id_var,
         pairing_attempt_id as pairing_attempt_id_provider,
     )
@@ -611,7 +611,7 @@ async def test_pairing_attempt_id_provider_without_contextvar():
 @pytest.mark.skip_wire
 async def test_pairing_attempt_context_provider():
     """Test that pairing_attempt_context provider works correctly."""
-    from s2auth.server.dependencies.context import (
+    from s2auth.server.context import (
         pairing_attempt_id_var,
         pairing_attempt_context as pairing_attempt_context_provider,
     )
@@ -664,7 +664,7 @@ async def test_pairing_attempt_context_provider():
 async def test_pairing_attempt_context_raises_keyerror_for_unknown_id():
     """Test that pairing_attempt_context raises KeyError when pairing_attempt_id is not known."""
     from uuid import uuid4
-    from s2auth.server.dependencies.context import (
+    from s2auth.server.context import (
         pairing_attempt_id_var,
         pairing_attempt_context as pairing_attempt_context_provider,
     )
@@ -803,7 +803,7 @@ async def test_async_fine_grained_locking_same_context_serializes():
     the DI system, they wait for each other (serialized execution), and that
     modifications from one access are visible to the next.
     """
-    from s2auth.server.dependencies.context import (
+    from s2auth.server.context import (
         client_context,
         client_node_id,
         context_storage_singleton,
@@ -1084,7 +1084,7 @@ async def test_sync_fine_grained_locking_same_context_serializes():
     """
     import time
     from typing import AsyncGenerator
-    from s2auth.server.dependencies.context import (
+    from s2auth.server.context import (
         client_context,
         client_node_id,
         context_storage_singleton,
