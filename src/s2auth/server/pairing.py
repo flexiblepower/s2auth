@@ -8,7 +8,7 @@ from s2auth.common.models import (
     RequestPairingPostRequest,
     S2NodeId,
 )
-from s2auth.server.dependencies import Depends, inject
+from s2auth.common.dependencies import Depends, inject
 from s2auth.server.context import (
     ClientContext,
     PairingAttemptContext,

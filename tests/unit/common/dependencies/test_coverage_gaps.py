@@ -59,7 +59,7 @@ from typing import Any, AsyncGenerator, Generator
 
 import pytest
 
-from s2auth.server.dependencies import (
+from s2auth.common.dependencies import (
     Depends,
     clear_overrides,
     inject,

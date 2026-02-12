@@ -4,7 +4,7 @@ import threading
 from typing import Any, AsyncGenerator
 from contextlib import asynccontextmanager
 from uuid import UUID
-from s2auth.server.dependencies import setup, Depends, inject, provider_overrides
+from s2auth.common.dependencies import setup, Depends, inject, provider_overrides
 from s2auth.server.context import (
     client_node_id,
     context_storage_singleton,
@@ -808,7 +808,7 @@ async def test_async_fine_grained_locking_same_context_serializes():
         client_node_id,
         context_storage_singleton,
     )
-    from s2auth.server.dependencies import inject, provider_overrides, setup
+    from s2auth.common.dependencies import inject, provider_overrides, setup
 
     # Wire the DI system
     setup()
@@ -1089,7 +1089,7 @@ async def test_sync_fine_grained_locking_same_context_serializes():
         client_node_id,
         context_storage_singleton,
     )
-    from s2auth.server.dependencies import inject, provider_overrides, setup
+    from s2auth.common.dependencies import inject, provider_overrides, setup
 
     # Wire the DI system
     setup()

@@ -1,6 +1,6 @@
 import pytest
 from s2auth.server.config import config, Config
-from s2auth.server.dependencies import setup, Depends, inject, register_provider
+from s2auth.common.dependencies import setup, Depends, inject, register_provider
 
 
 @pytest.mark.skip_wire
@@ -94,14 +94,14 @@ async def test_provider_overrides_context_manager():
     setup()
 
     # Without override, get original value
-    from s2auth.server.dependencies import clear_overrides
+    from s2auth.common.dependencies import clear_overrides
 
     clear_overrides()
     result = await get_value()
     assert result == "original"
 
     # With override, get overridden value
-    from s2auth.server.dependencies import provider_overrides
+    from s2auth.common.dependencies import provider_overrides
 
     with provider_overrides({original_provider: override_provider}):
         result = await get_value()
