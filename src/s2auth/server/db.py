@@ -1,5 +1,5 @@
 from s2auth.server.config import Config, config
-from s2auth.server.dependencies import Depends, register_provider
+from s2auth.common.dependencies import Depends, register_provider
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 

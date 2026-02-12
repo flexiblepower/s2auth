@@ -1,5 +1,5 @@
 import pytest
-from s2auth.server.dependencies import setup
+from s2auth.common.dependencies import setup
 
 
 @pytest.fixture(autouse=True)

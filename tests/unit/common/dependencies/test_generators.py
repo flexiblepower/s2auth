@@ -4,7 +4,7 @@ from typing import Any, AsyncGenerator, Generator
 import pytest
 from pytest_mock import MockerFixture
 from unittest.mock import MagicMock
-from s2auth.server.dependencies import setup, Depends, inject, register_provider
+from s2auth.common.dependencies import setup, Depends, inject, register_provider
 
 
 @pytest.fixture
