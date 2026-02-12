@@ -248,33 +248,79 @@ def register_provider(name: Optional[str] = None, singleton: bool = False):
     return decorator
 
 
-def setup():
+def setup(overrides: Optional[Dict[Union[Callable[..., Any], str], Callable[..., Any]]] = None):
+    """Wire the dependency injection system.
+
+    Args:
+        overrides: Optional dictionary of provider overrides to apply before wiring.
+                  Maps original providers to their override implementations.
+
+    Example:
+        # Without overrides
+        setup()
+
+        # With overrides
+        def redis_storage() -> ContextStorage:
+            return RedisContextStorage()
+
+        setup(overrides={context_storage_singleton: redis_storage})
+    """
+    if overrides:
+        for original, override_func in overrides.items():
+            provider_name = original if isinstance(original, str) else original.__name__
+            _provider_overrides[provider_name] = override_func
+
     registry.wire(modules=list(_registered_modules))
 
 
 def override_provider(
     original: Union[Callable[..., Any], str],
-    override: Callable[..., Any],
-) -> None:
-    """Permanently override a provider with a new implementation.
+    override: Optional[Callable[..., Any]] = None,
+) -> Union[None, Callable[[Callable[..., Any]], Callable[..., Any]]]:
+    """Override a provider with a new implementation.
+
+    Can be used as a function or a decorator.
 
     Args:
         original: The original provider function or its name
-        override: The new provider function to use instead
+        override: The new provider function (when used as a function call)
 
-    Example:
+    Returns:
+        None when used as a function, decorator when used as @override_provider(original)
+
+    Example as function:
         @register_provider()
         async def config() -> Config:
             return Config()
 
-        # Override in tests
-        async def test_config() -> Config:
-            return Config(sqlalchemy_db_uri=SecretStr("sqlite:///:memory:"))
+        # Override with plain function
+        async def prod_config() -> Config:
+            return Config(db_url="production")
 
-        override_provider(config, test_config)
+        override_provider(config, prod_config)
+
+    Example as decorator:
+        @register_provider()
+        async def config() -> Config:
+            return Config()
+
+        # Override with decorator
+        @override_provider(config)
+        async def prod_config() -> Config:
+            return Config(db_url="production")
     """
     provider_name = original if isinstance(original, str) else original.__name__
+
+    # Used as @override_provider(original)
+    if override is None:
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            _provider_overrides[provider_name] = func
+            return func
+        return decorator
+
+    # Used as override_provider(original, override_func)
     _provider_overrides[provider_name] = override
+    return None
 
 
 def clear_overrides() -> None:
