@@ -7,6 +7,7 @@ from s2auth.common.model.s2_over_ip_pairing import (
     PairingAttemptId as S2PairingAttemptId,
     PairingS2NodeId,
     RequestPairingPostRequest,
+    RequestPairingPostResponse,
 )
 from s2auth.common.model.s2_over_ip_common import S2NodeId
 from s2auth.common.dependencies import Depends, inject
@@ -20,7 +21,12 @@ from s2auth.server.context import (
     store_client_context,
     store_pairing_attempt_context,
 )
-from s2auth.common.hmac import PairingToken, create_challenge, create_pairing_token
+from s2auth.common.hmac import (
+    PairingToken,
+    create_challenge,
+    create_pairing_token,
+    create_response,
+)
 from s2auth.server.settings import Settings, settings
 
 
@@ -45,6 +51,7 @@ async def initiate_pairing(
         pairing_node_id=PairingS2NodeId(root=pairing_node_id),
     )
     await store_pairing_ctx(ctx)
+    return ctx
 
 
 @inject
@@ -54,7 +61,7 @@ async def request_pairing(
         store_client_context
     ],
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
-) -> str:
+) -> RequestPairingPostResponse:
     """Initiate a new pairing attempt.
 
     Args:
@@ -74,10 +81,15 @@ async def request_pairing(
     await store_client_ctx(client_ctx)
     s2_client_node_id_var.set(S2NodeId(root=client_node_id))
 
-    # Get or create the PairingAttemptContext
     pairing_context.client_node_id = client_node_id
+
+    client_response = create_response(
+        pairing_token=pairing_context.pairing_token,
+        challenge=request.clientHmacChallenge,
+    )
     # Set the state to "initiated" and store both IDs
     pairing_context.state = "initiated"
-    challenge = create_challenge()
-
-    return challenge
+    server_challenge = create_challenge()
+    return RequestPairingPostResponse(
+        pairingAttemptId=pairing_context.pairing_attempt_id,
+    )
