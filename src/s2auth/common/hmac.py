@@ -8,11 +8,16 @@ from collections.abc import Callable
 from pydantic import StringConstraints
 
 from s2auth.common.dependencies import register_provider
-from s2auth.common.exceptions import VerificationError
+from s2auth.common.exceptions import (
+    IncompatibleHmacHashingAlgorithms,
+    VerificationError,
+)
 from s2auth.common.model.s2_over_ip_pairing import HmacChallenge, HmacHashingAlgorithm
 
 # Ensure the algorithms are sorted with the most secure/desirable algorithms last.
-_ALGORITHM_MAP = OrderedDict([(HmacHashingAlgorithm.SHA256, hashlib.sha256)])
+_ALGORITHM_MAP: OrderedDict[HmacHashingAlgorithm, Callable[..., Any]] = OrderedDict(
+    [(HmacHashingAlgorithm.SHA256, hashlib.sha256)]
+)
 
 
 def _get_hashing_algorithm(algorithm: HmacHashingAlgorithm) -> Callable[..., Any]:
@@ -57,7 +62,7 @@ def create_challenge(length: int = 128) -> HmacChallenge:
     The challenge needs to be passed to the the other side of the connection, who should sign it with a shared pairing token.
     verify_response can then be used to verify that signature.
     """
-    # if using Base64Bytes for the HmacChallenge rather than Base64Str, use this and remove the random_utf8_string function.
+    # TODO if using Base64Bytes for the HmacChallenge rather than Base64Str, use this and remove the random_utf8_string function.
     # challenge_value = secrets.token_bytes(length)
     challenge_value = random_utf8_string(length)
     return HmacChallenge(
@@ -77,7 +82,7 @@ def select_algorithm(
     common = set(supported_algorithms) & set(node_algorithms)
 
     if not common:
-        raise ValueError(
+        raise IncompatibleHmacHashingAlgorithms(
             f"Node does not support any of our algorithms: {get_supported_algorithms()}"
         )
 
