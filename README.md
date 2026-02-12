@@ -29,6 +29,11 @@ poetry install --extras server
 pip install s2auth[server]
 ```
 
+# Readding OpenAPI specs through swagger docs
+```bash
+./serve_specs.sh
+```
+
 # Run Developer tooling
 ```bash
 ci/lint.sh
