@@ -1,13 +1,14 @@
-import hashlib
-import hmac
-
 from s2auth.common.exceptions import VerificationError
 from s2auth.common.hmac import (
     PairingToken,
     create_challenge,
+    create_response,
     verify_response,
     create_pairing_token,
+    select_algorithm,
+    get_supported_algorithms,
 )
+from s2auth.common.model.s2_over_ip_pairing import HmacChallenge, HmacHashingAlgorithm
 from base64 import b64encode, b64decode
 from pydantic import TypeAdapter
 import pytest
@@ -15,65 +16,78 @@ import pytest
 
 def test_valid_response():
     """Test that the response is validated correctly."""
-    pairing_token = "mypairingtoken"
-    digestmod = hashlib.sha256
+    pairing_token = create_pairing_token()
     challenge = create_challenge()
-    signature = b64encode(
-        hmac.new(
-            pairing_token.encode("utf-8"), msg=b64decode(challenge), digestmod=digestmod
-        ).digest()
-    ).decode("utf-8")
+
+    # Create the correct signature using create_response
+    signature = create_response(pairing_token, challenge)
+
+    # Verify it
     assert verify_response(
         pairing_token=pairing_token,
         challenge=challenge,
         response=signature,
-        algorithm="SHA256",
+        algorithm=HmacHashingAlgorithm.SHA256,
     )
 
 
 def test_invalid_response():
     """Test that verifying the signature with a wrong pairing token raises a VerificationError"""
-    pairing_token = "mypairingtoken"
-    wrong_pairing_token = "myotherpairingtoken"
+    pairing_token = create_pairing_token()
+    wrong_pairing_token = create_pairing_token()  # Different token
     challenge = create_challenge()
-    digestmod = hashlib.sha256
-    signature = b64encode(
-        hmac.new(
-            wrong_pairing_token.encode("utf-8"),
-            msg=b64decode(challenge),
-            digestmod=digestmod,
-        ).digest()
-    ).decode("utf-8")
+
+    # Create signature with wrong token
+    signature = create_response(wrong_pairing_token, challenge)
+
+    # Should fail verification with correct token
     with pytest.raises(VerificationError):
         verify_response(
             pairing_token=pairing_token,
             challenge=challenge,
             response=signature,
-            algorithm="SHA256",
+            algorithm=HmacHashingAlgorithm.SHA256,
         )
 
 
 def test_invalid_algorithm():
     """Test that specifying an unsupported hashing algorithm raises a VerificationError."""
+    from unittest.mock import MagicMock
+
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
     signature = "random signature"
-    invalid_algorithm = "invalid algorithm"
+
+    # Create a mock algorithm object that isn't in the supported list
+    # Don't use spec to allow setting __str__
+    invalid_algorithm = MagicMock()
+    invalid_algorithm.__str__.return_value = "invalid algorithm"  # pyright: ignore[reportAttributeAccessIssue]
+    invalid_algorithm.value = "invalid algorithm"
+
     with pytest.raises(
         VerificationError,
-        match=f"Hashing algorithm '{invalid_algorithm}' is not supported",
+        match="Hashing algorithm .* is not supported",
     ):
         verify_response(
             pairing_token=pairing_token,
             challenge=challenge,
             response=signature,
-            algorithm=invalid_algorithm,
+            algorithm=invalid_algorithm,  # pyright: ignore[reportArgumentType]
         )
 
 
 def test_create_challenge():
+    """Test that create_challenge returns a valid HmacChallenge."""
     challenge = create_challenge(length=64)
-    assert len(b64decode(challenge)) == 64
+
+    # Should be an HmacChallenge instance
+    assert isinstance(challenge, HmacChallenge)
+
+    # challenge.root should be a string
+    assert isinstance(challenge.root, str)
+
+    # The root should be the decoded random string (length=64)
+    assert len(challenge.root) == 64
 
 
 def test_create_pairing_token():
@@ -144,3 +158,150 @@ def test_create_pairing_token_too_short():
         ValueError, match="The pairing token needs to be at least 9 bytes"
     ):
         create_pairing_token(length=-1)
+
+
+def test_create_response_default_algorithm():
+    """Test that create_response generates a valid HMAC signature with default algorithm."""
+    pairing_token = create_pairing_token()
+    challenge = create_challenge()
+
+    response = create_response(pairing_token, challenge)
+
+    # Response should be base64 encoded
+    assert isinstance(response, str)
+    decoded_response = b64decode(response)
+
+    # SHA256 produces 32 bytes
+    assert len(decoded_response) == 32
+
+    # Verify the response is valid
+    assert verify_response(pairing_token, challenge, response)
+
+
+def test_create_response_invalid_algorithm():
+    """Test that create_response raises VerificationError for unsupported algorithm."""
+    from unittest.mock import MagicMock
+
+    pairing_token = "mypairingtoken"
+    challenge = create_challenge()
+
+    # Create a mock algorithm that's not supported (no spec to allow __str__)
+    invalid_algorithm = MagicMock()
+    invalid_algorithm.__str__.return_value = "MD5"  # pyright: ignore[reportAttributeAccessIssue]
+    invalid_algorithm.value = "MD5"
+
+    with pytest.raises(
+        VerificationError, match="Hashing algorithm .* is not supported"
+    ):
+        create_response(pairing_token, challenge, algorithm=invalid_algorithm)  # pyright: ignore[reportArgumentType]
+
+
+def test_create_response_with_different_challenge_lengths():
+    """Test create_response works with different challenge lengths."""
+    pairing_token = create_pairing_token()
+
+    # Test with 32-byte challenge
+    challenge32 = create_challenge(length=32)
+    response32 = create_response(pairing_token, challenge32)
+    assert len(b64decode(response32)) == 32
+
+    # Test with 128-byte challenge (default)
+    challenge128 = create_challenge(length=128)
+    response128 = create_response(pairing_token, challenge128)
+    assert len(b64decode(response128)) == 32
+
+    # Test with 256-byte challenge
+    challenge256 = create_challenge(length=256)
+    response256 = create_response(pairing_token, challenge256)
+    assert len(b64decode(response256)) == 32
+
+    # Different challenges should produce different responses
+    assert response32 != response128
+    assert response128 != response256
+
+
+def test_create_and_verify_response_integration():
+    """Integration test: create a response and verify it with the same token."""
+    pairing_token = create_pairing_token()
+    challenge = create_challenge()
+
+    # Create response
+    response = create_response(pairing_token, challenge)
+
+    # Verify response with same token should succeed
+    assert verify_response(pairing_token, challenge, response)
+
+
+def test_create_and_verify_response_wrong_token():
+    """Integration test: verify fails with different pairing token."""
+    pairing_token = create_pairing_token()
+    wrong_token = create_pairing_token()
+    challenge = create_challenge()
+
+    # Create response with first token
+    response = create_response(pairing_token, challenge)
+
+    # Verify with different token should fail
+    with pytest.raises(VerificationError):
+        verify_response(wrong_token, challenge, response)
+
+
+def test_create_and_verify_response_wrong_challenge():
+    """Integration test: verify fails with different challenge."""
+    pairing_token = create_pairing_token()
+    challenge1 = create_challenge()
+    challenge2 = create_challenge()
+
+    # Create response for first challenge
+    response = create_response(pairing_token, challenge1)
+
+    # Verify with different challenge should fail
+    with pytest.raises(VerificationError):
+        verify_response(pairing_token, challenge2, response)
+
+
+def test_create_response_deterministic():
+    """Test that create_response is deterministic for same inputs."""
+    pairing_token = create_pairing_token()
+    # Create HmacChallenge with UTF-8 safe data
+    consistent_data = "consistent_challenge_data_as_text"
+    challenge = HmacChallenge(
+        root=b64encode(consistent_data.encode("utf-8")).decode("utf-8")
+    )
+
+    # Create response multiple times
+    response1 = create_response(pairing_token, challenge)
+    response2 = create_response(pairing_token, challenge)
+    response3 = create_response(pairing_token, challenge)
+
+    # All responses should be identical
+    assert response1 == response2 == response3
+
+
+def test_select_algorithm_with_matching_algorithm():
+    """Test select_algorithm returns the correct algorithm when there's a match."""
+    # Should select SHA256 (currently the only/last supported algorithm)
+    result = select_algorithm([HmacHashingAlgorithm.SHA256])
+    assert result == HmacHashingAlgorithm.SHA256
+
+
+def test_select_algorithm_no_match():
+    """Test select_algorithm raises ValueError when no algorithms match."""
+    from unittest.mock import MagicMock
+
+    # Create a mock algorithm that's not supported (no spec to allow __str__)
+    unsupported_alg = MagicMock()
+    unsupported_alg.__str__.return_value = "UNSUPPORTED"  # pyright: ignore[reportAttributeAccessIssue]
+    unsupported_alg.value = "UNSUPPORTED"
+
+    with pytest.raises(ValueError, match="Node does not support any of our algorithms"):
+        select_algorithm([unsupported_alg])  # pyright: ignore[reportArgumentType]
+
+
+def test_get_supported_algorithms():
+    """Test get_supported_algorithms returns expected algorithms."""
+    algorithms = get_supported_algorithms()
+
+    assert isinstance(algorithms, list)
+    assert len(algorithms) > 0
+    assert HmacHashingAlgorithm.SHA256 in algorithms
