@@ -18,7 +18,7 @@ The system automatically provides the unified storage:
 
 ```python
 from s2auth.server.dependencies import inject, Depends
-from s2auth.server.dependencies.context import (
+from s2auth.server.context import (
     client_context,
     pairing_attempt_context,
     ClientContext,
@@ -113,7 +113,7 @@ Implement a Redis-based storage backend:
 ```python
 import redis
 from s2auth.server.dependencies import register_provider
-from s2auth.server.dependencies.context import (
+from s2auth.server.context import (
     ContextStorage,
     ClientContext,
     PairingAttemptContext,
@@ -182,7 +182,7 @@ You can override the storage for testing:
 import pytest
 from uuid import UUID
 from s2auth.server.dependencies import provider_overrides, setup
-from s2auth.server.dependencies.context import (
+from s2auth.server.context import (
     context_storage_singleton,
     InMemoryContextStorage,
     s2_client_node_id_var,
@@ -222,7 +222,7 @@ Both async and sync deployments require setting context variables in middleware:
 
 ```python
 from starlette.middleware.base import BaseHTTPMiddleware
-from s2auth.server.dependencies.context import s2_client_node_id_var
+from s2auth.server.context import s2_client_node_id_var
 from s2auth.common.models import S2NodeId
 from uuid import UUID
 
@@ -242,7 +242,7 @@ class ClientContextMiddleware(BaseHTTPMiddleware):
 
 ```python
 from flask import request
-from s2auth.server.dependencies.context import s2_client_node_id_var
+from s2auth.server.context import s2_client_node_id_var
 from s2auth.common.models import S2NodeId
 from uuid import UUID
 
