@@ -4,12 +4,15 @@ from base64 import b64encode
 from typing import Awaitable, Callable
 from uuid import uuid4
 from s2auth.common.model.s2_over_ip_pairing import (
+    HmacChallengeResponse,
     PairingAttemptId as S2PairingAttemptId,
     PairingS2NodeId,
     RequestPairingPostRequest,
     RequestPairingPostResponse,
+    S2NodeDescription,
+    S2EndpointDescription,
 )
-from s2auth.common.model.s2_over_ip_common import S2NodeId
+from s2auth.common.model.s2_over_ip_common import S2NodeId, S2Role
 from s2auth.common.dependencies import Depends, inject
 from s2auth.server.context import (
     ClientContext,
@@ -26,6 +29,7 @@ from s2auth.common.hmac import (
     create_challenge,
     create_pairing_token,
     create_response,
+    select_algorithm,
 )
 from s2auth.server.settings import Settings, settings
 
@@ -61,6 +65,7 @@ async def request_pairing(
         store_client_context
     ],
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
+    settings: Settings = Depends[settings],
 ) -> RequestPairingPostResponse:
     """Initiate a new pairing attempt.
 
@@ -83,13 +88,33 @@ async def request_pairing(
 
     pairing_context.client_node_id = client_node_id
 
+    algorithm = select_algorithm(request.supportedHmacHashingAlgorithms)
     client_response = create_response(
         pairing_token=pairing_context.pairing_token,
         challenge=request.clientHmacChallenge,
+        algorithm=algorithm,
     )
     # Set the state to "initiated" and store both IDs
     pairing_context.state = "initiated"
     server_challenge = create_challenge()
+    server_node_description = S2NodeDescription(
+        id=S2NodeId(root=settings.cem_s2_node_id),
+        brand=settings.cem_brand,
+        role=S2Role.CEM,
+        type=settings.cem_type,
+        modelName=settings.cem_model_name,
+    )
+    server_endpoint_description = S2EndpointDescription()
     return RequestPairingPostResponse(
-        pairingAttemptId=pairing_context.pairing_attempt_id,
+        selectedHmacHashingAlgorithm=algorithm,
+        serverS2NodeDescription=server_node_description,
+        serverS2EndpointDescription=server_endpoint_description,
+        clientHmacChallengeResponse=HmacChallengeResponse(root=client_response),
+        serverHmacChallenge=server_challenge,
+        pairingAttemptId=S2PairingAttemptId(
+            # TODO should probably be a regular UUID or str, not Base64Str
+            root=b64encode(
+                str(pairing_context.pairing_attempt_id).encode("ascii")
+            ).decode("ascii")
+        ),
     )

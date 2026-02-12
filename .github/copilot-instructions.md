@@ -259,6 +259,36 @@ with provider_overrides({config: test_config}):
 
 ## Key Conventions
 
+### Code Style
+
+**Import Organization**:
+- **All imports must be at the top of the file** unless there's a specific technical reason (e.g., circular import resolution, conditional imports)
+- Never add imports inside functions just for convenience
+- Group imports in this order:
+  1. Standard library imports
+  2. Third-party imports
+  3. Local/project imports
+- Use absolute imports, not relative imports
+
+**Example:**
+```python
+# ✅ CORRECT
+import hashlib
+import hmac
+from unittest.mock import MagicMock
+
+import pytest
+from pydantic import TypeAdapter
+
+from s2auth.common.exceptions import VerificationError
+from s2auth.common.hmac import create_challenge
+
+# ❌ INCORRECT
+def my_test():
+    import hashlib  # Don't do this!
+    from unittest.mock import MagicMock  # Don't do this!
+```
+
 ### Poetry Dependency Management
 - Runtime deps: `poetry add <package>`
 - Dev deps: `poetry add -G dev <package>`
