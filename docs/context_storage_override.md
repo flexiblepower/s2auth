@@ -108,17 +108,20 @@ upstream app {
 
 #### Option 2: Use Distributed Storage (Redis)
 
-Implement a Redis-based storage backend:
+Implement a Redis-based storage backend. There are three ways to override the default storage:
+
+**Method 1: Decorator (Recommended)**
 
 ```python
 import redis
-from s2auth.server.dependencies import register_provider
+from s2auth.server.dependencies import override_provider, setup
 from s2auth.server.context import (
     ContextStorage,
     ClientContext,
     PairingAttemptContext,
     ClientNodeId,
     PairingAttemptId,
+    context_storage_singleton,
 )
 
 class RedisContextStorage(ContextStorage):
@@ -156,13 +159,48 @@ class RedisContextStorage(ContextStorage):
         finally:
             self.redis.set(key, ctx.model_dump_json())
 
+    async def store_client_context(self, context: ClientContext) -> None:
+        if context.client_node_id is None:
+            raise ValueError("ClientContext must have client_node_id set")
+        key = f"client:{context.client_node_id}"
+        self.redis.set(key, context.model_dump_json())
 
-@register_provider(singleton=True)
-def context_storage_singleton() -> RedisContextStorage:
+    async def store_pairing_attempt_context(self, context: PairingAttemptContext) -> None:
+        key = f"pairing:{context.pairing_attempt_id}"
+        self.redis.set(key, context.model_dump_json())
+
+
+# Use decorator to override the default storage
+@override_provider(context_storage_singleton)
+def redis_context_storage() -> ContextStorage:
     return RedisContextStorage()
+
+# Now call setup()
+setup()
 ```
 
-Register this before calling `setup()` and it will override the default in-memory storage.
+**Method 2: Pass to setup()**
+
+```python
+# Define the override function
+def redis_context_storage() -> ContextStorage:
+    return RedisContextStorage()
+
+# Pass overrides directly to setup()
+setup(overrides={context_storage_singleton: redis_context_storage})
+```
+
+**Method 3: Function call**
+
+```python
+# Define the override function
+def redis_context_storage() -> ContextStorage:
+    return RedisContextStorage()
+
+# Call override_provider explicitly
+override_provider(context_storage_singleton, redis_context_storage)
+setup()
+```
 
 #### Option 3: Use Single Worker
 

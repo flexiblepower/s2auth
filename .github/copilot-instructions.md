@@ -88,6 +88,50 @@ async def my_function(cfg: Config = Depends[config]):
 
 **Setup**: Call `setup()` from `s2auth.server.dependencies` to wire all registered modules before using injected functions.
 
+#### Overriding Providers
+
+There are **four methods** to override providers (see `docs/dependency_overrides.md` for full details):
+
+**1. Decorator (Recommended for production):**
+```python
+from s2auth.server.dependencies import override_provider, setup
+from s2auth.server.context import context_storage_singleton
+
+@override_provider(context_storage_singleton)
+def redis_storage() -> ContextStorage:
+    return RedisContextStorage()
+
+setup()
+```
+
+**2. Pass to setup() (Good for centralized config):**
+```python
+def redis_storage() -> ContextStorage:
+    return RedisContextStorage()
+
+setup(overrides={context_storage_singleton: redis_storage})
+```
+
+**3. Function call (Explicit):**
+```python
+def redis_storage() -> ContextStorage:
+    return RedisContextStorage()
+
+override_provider(context_storage_singleton, redis_storage)
+setup()
+```
+
+**4. Context manager (For tests):**
+```python
+from s2auth.server.dependencies import provider_overrides
+
+with provider_overrides({config: test_config}):
+    # Temporary override for this block
+    pass
+```
+
+**CRITICAL**: Override functions should **NOT** use `@register_provider` decorator. They are plain functions that replace the original provider.
+
 #### Generator Provider Patterns
 
 The dependency injection system supports generator providers for resource management (setup/teardown pattern). **CRITICAL**: All generator providers MUST use `try-finally` or `try-except` blocks for cleanup.
@@ -144,6 +188,47 @@ async def broken_provider():
 3. Never rely on code immediately after `yield` to run without try-finally
 4. The try-finally pattern works for both success and failure cases
 
+### Context Storage
+
+The server uses a **unified `InMemoryContextStorage`** implementation (in `src/s2auth/server/context.py`) that works seamlessly in all deployment scenarios:
+
+- **Async servers** (FastAPI with Uvicorn): Non-blocking async synchronization
+- **Threaded servers** (Flask with Gunicorn): Thread-safe synchronization
+- **Hybrid environments**: Multiple threads each with their own event loop
+
+**Key features:**
+- Uses `aiologic.RLock` for synchronization (works in both async and threading contexts)
+- Fine-grained locking per context ID (different contexts can be accessed concurrently)
+- Supports both client contexts and pairing attempt contexts
+- Generator-based API with automatic lock management
+
+**Basic usage:**
+```python
+from s2auth.server.dependencies import inject, Depends
+from s2auth.server.context import (
+    client_context,
+    store_client_context,
+    ClientContext,
+)
+
+@inject
+async def my_endpoint(
+    ctx: ClientContext = Depends[client_context],
+    store_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[store_client_context],
+):
+    # Read/modify existing context
+    print(f"Current state: {ctx.state}")
+    ctx.state = "authenticated"
+
+    # Store new context
+    new_ctx = ClientContext(client_node_id=some_uuid, state="active")
+    await store_ctx(new_ctx)
+```
+
+**For multi-process deployments** (e.g., Gunicorn with multiple workers), override with a distributed storage like Redis. See `docs/context_storage_override.md` for examples.
+
+**Location:** Context storage is in `src/s2auth/server/context.py` (not in the dependencies folder).
+
 ### Database
 - Uses SQLAlchemy async with PostgreSQL (via asyncpg)
 - Connection configured via `Config` class (reads from `.env` or `.env.docker`)
@@ -155,19 +240,22 @@ async def broken_provider():
 - Dependency injection is auto-wired in tests via `conftest.py` fixture
 - Use `@pytest.mark.skip_wire` marker to skip auto-wiring when you need custom dependencies in a test
 - Test coverage reports generated in `unit_test_coverage/`
+- Context storage tests are in `tests/unit/server/test_context.py`
 
-**Override providers in tests**:
+**Override providers in tests** (use context manager for temporary overrides):
 ```python
 from s2auth.server.dependencies import provider_overrides
 from s2auth.server.config import config
 
-async def test_config() -> Config:
+def test_config() -> Config:
     return Config(sqlalchemy_db_uri=SecretStr("sqlite:///:memory:"))
 
 with provider_overrides({config: test_config}):
     # Your test code here - uses test_config instead of config
     pass
 ```
+
+**Note:** For permanent overrides (production config), use the decorator or setup() method. See "Overriding Providers" section above.
 
 ## Key Conventions
 
@@ -186,3 +274,10 @@ Supports Python 3.10-3.13, configured in `pyproject.toml` and `.python-version`
 
 ### Configuration
 Uses `pydantic-settings` with environment variables. Config reads from `.env` and `.env.docker` files. Nested env vars use double underscore: `SECTION__KEY`
+
+## Documentation
+
+For more detailed information, see:
+- **`docs/dependency_overrides.md`** - Complete guide to overriding providers (4 methods: decorator, setup(), function call, context manager)
+- **`docs/context_storage_override.md`** - How to override context storage with Redis or other distributed backends
+- **`docs/dependency_injection_deployment_models.md`** - How the DI system works in different deployment scenarios (async, threaded, hybrid)
