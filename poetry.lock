@@ -2694,4 +2694,4 @@ server = ["asyncpg", "fastapi", "sqlalchemy", "uvicorn"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10, < 3.14"
-content-hash = "474164cf34a2f67b4fbfe91cb9b16c119e555ce2844f275154214d84bce6dbd4"
+content-hash = "609b8d85c100130a38233e169f91adb92b456920b299824ec5f6e0eeff60bdfb"
