@@ -20,19 +20,23 @@ from s2auth.server.context import (
     store_client_context,
     store_pairing_attempt_context,
 )
-from s2auth.common.hmac import create_challenge, create_pairing_token, PairingToken
+from s2auth.common.hmac import PairingToken, create_challenge, create_pairing_token
 from s2auth.server.settings import Settings, settings
 
 
 @inject
 async def initiate_pairing(
-    store_pairing_ctx: Callable[[PairingAttemptContext], Awaitable[None]] = Depends[store_pairing_attempt_context],
+    store_pairing_ctx: Callable[[PairingAttemptContext], Awaitable[None]] = Depends[
+        store_pairing_attempt_context
+    ],
     server_settings: Settings = Depends[settings],
     pairing_token: PairingToken = Depends[create_pairing_token],
 ):
     pairing_attempt_id: PairingAttemptId = uuid4()
     # Encode UUID string as base64 for S2PairingAttemptId (Base64Str requires valid UTF-8)
-    pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode('utf-8')).decode('utf-8')
+    pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode("utf-8")).decode(
+        "utf-8"
+    )
     pairing_attempt_id_var.set(S2PairingAttemptId(root=pairing_attempt_id_b64))
     pairing_node_id = server_settings.pairing_node_id
     ctx = PairingAttemptContext(
@@ -46,7 +50,9 @@ async def initiate_pairing(
 @inject
 async def request_pairing(
     request: RequestPairingPostRequest,
-    store_client_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[store_client_context],
+    store_client_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[
+        store_client_context
+    ],
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
 ) -> str:
     """Initiate a new pairing attempt.
