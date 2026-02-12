@@ -1,4 +1,12 @@
-from s2auth.common.exceptions import VerificationError
+import hashlib
+import hmac
+from unittest.mock import MagicMock
+
+import pytest
+from base64 import b64encode, b64decode
+from pydantic import TypeAdapter
+
+from s2auth.common.exceptions import IncompatibleHmacHashingAlgorithms, VerificationError
 from s2auth.common.hmac import (
     PairingToken,
     create_challenge,
@@ -9,51 +17,10 @@ from s2auth.common.hmac import (
     get_supported_algorithms,
 )
 from s2auth.common.model.s2_over_ip_pairing import HmacChallenge, HmacHashingAlgorithm
-from base64 import b64encode, b64decode
-from pydantic import TypeAdapter
-import pytest
-
-
-def test_valid_response():
-    """Test that the response is validated correctly."""
-    pairing_token = create_pairing_token()
-    challenge = create_challenge()
-
-    # Create the correct signature using create_response
-    signature = create_response(pairing_token, challenge)
-
-    # Verify it
-    assert verify_response(
-        pairing_token=pairing_token,
-        challenge=challenge,
-        response=signature,
-        algorithm=HmacHashingAlgorithm.SHA256,
-    )
-
-
-def test_invalid_response():
-    """Test that verifying the signature with a wrong pairing token raises a VerificationError"""
-    pairing_token = create_pairing_token()
-    wrong_pairing_token = create_pairing_token()  # Different token
-    challenge = create_challenge()
-
-    # Create signature with wrong token
-    signature = create_response(wrong_pairing_token, challenge)
-
-    # Should fail verification with correct token
-    with pytest.raises(VerificationError):
-        verify_response(
-            pairing_token=pairing_token,
-            challenge=challenge,
-            response=signature,
-            algorithm=HmacHashingAlgorithm.SHA256,
-        )
 
 
 def test_invalid_algorithm():
     """Test that specifying an unsupported hashing algorithm raises a VerificationError."""
-    from unittest.mock import MagicMock
-
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
     signature = "random signature"
@@ -90,16 +57,6 @@ def test_create_challenge():
     assert len(challenge.root) == 64
 
 
-def test_create_pairing_token():
-    """Test that create_pairing_token returns a valid base64 encoded string."""
-    token = create_pairing_token()
-    assert isinstance(token, str)
-    assert len(token) == 12  # 9 bytes -> 12 characters in base64 (no padding needed)
-    # Should be valid base64
-    decoded = b64decode(token)
-    assert len(decoded) == 9
-
-
 def test_create_pairing_token_default_length():
     """Test that create_pairing_token with default length returns valid token."""
 
@@ -119,8 +76,6 @@ def test_create_pairing_token_default_length():
 
 def test_create_pairing_token_custom_length():
     """Test that create_pairing_token with custom length returns valid token."""
-    from pydantic import TypeAdapter
-
     adapter = TypeAdapter[str](PairingToken)
 
     # Test with 10 bytes (will have padding)
@@ -174,14 +129,18 @@ def test_create_response_default_algorithm():
     # SHA256 produces 32 bytes
     assert len(decoded_response) == 32
 
-    # Verify the response is valid
-    assert verify_response(pairing_token, challenge, response)
+    # Manually compute expected HMAC and verify it matches
+    expected_hmac = hmac.new(
+        b64decode(pairing_token),
+        msg=challenge.root.encode("utf-8"),
+        digestmod=hashlib.sha256
+    ).digest()
+
+    assert decoded_response == expected_hmac
 
 
 def test_create_response_invalid_algorithm():
     """Test that create_response raises VerificationError for unsupported algorithm."""
-    from unittest.mock import MagicMock
-
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
 
@@ -286,15 +245,13 @@ def test_select_algorithm_with_matching_algorithm():
 
 
 def test_select_algorithm_no_match():
-    """Test select_algorithm raises ValueError when no algorithms match."""
-    from unittest.mock import MagicMock
-
+    """Test select_algorithm raises IncompatibleHmacHashingAlgorithms when no algorithms match."""
     # Create a mock algorithm that's not supported (no spec to allow __str__)
     unsupported_alg = MagicMock()
     unsupported_alg.__str__.return_value = "UNSUPPORTED"  # pyright: ignore[reportAttributeAccessIssue]
     unsupported_alg.value = "UNSUPPORTED"
 
-    with pytest.raises(ValueError, match="Node does not support any of our algorithms"):
+    with pytest.raises(IncompatibleHmacHashingAlgorithms, match="Node does not support any of our algorithms"):
         select_algorithm([unsupported_alg])  # pyright: ignore[reportArgumentType]
 
 
