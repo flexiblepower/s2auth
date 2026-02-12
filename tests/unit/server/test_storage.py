@@ -1,12 +1,14 @@
 from typing import Any, AsyncGenerator, Callable, Coroutine
 import json
 import pytest
+from base64 import b64decode, b64encode
 from pydantic import AnyUrl, SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from s2auth.server.storage import store_object
 from s2auth.server.models import Base, StoredObject
-from s2auth.common.models import AccessToken, ConnectionDetails
+from s2auth.common.model.s2_over_ip_common import AccessToken
+from s2auth.common.model.s2_over_ip_pairing import ConnectionDetails
 from s2auth.server.config import Config, config
 from s2auth.server.db import async_session
 from s2auth.common.dependencies import Depends, provider_overrides, setup
@@ -89,9 +91,12 @@ async def test_store_object(test_storage_db: StorageDbFixture) -> None:
         setup()
 
         # Create a test object
+        token = "sometoken"
         test_connection_details = ConnectionDetails(
             initiateConnectionUrl=AnyUrl("http://test.com/1234"),
-            accessToken=AccessToken(root="sometoken"),
+            accessToken=AccessToken(
+                root=b64encode(token.encode("utf-8")).decode("ascii")
+            ),
         )
 
         # Store the object using the injected session
@@ -122,7 +127,7 @@ async def test_store_object(test_storage_db: StorageDbFixture) -> None:
             assert isinstance(stored_obj.data, str), "Data should be stored as text"
             data_dict = json.loads(stored_obj.data)
             assert data_dict["initiateConnectionUrl"] == "http://test.com/1234"
-            assert data_dict["accessToken"] == "sometoken"
+            assert b64decode(data_dict["accessToken"]).decode("utf-8") == token
 
             # Verify we can reconstruct the object from stored JSON
             reconstructed = ConnectionDetails.model_validate(data_dict)
