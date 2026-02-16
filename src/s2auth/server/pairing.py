@@ -9,15 +9,15 @@ from s2auth.common.model.s2_over_ip_pairing import (
     PairingS2NodeId,
     RequestPairingPostRequest,
     RequestPairingPostResponse,
-    S2NodeDescription,
-    S2EndpointDescription,
 )
-from s2auth.common.model.s2_over_ip_common import S2NodeId, S2Role
+from s2auth.common.model.s2_over_ip_common import S2NodeId
 from s2auth.common.dependencies import Depends, inject
 from s2auth.server.context import (
     ClientContext,
     PairingAttemptContext,
     PairingAttemptId,
+    ReadOnlyClientContext,
+    ReadOnlyPairingAttemptContext,
     pairing_attempt_context,
     pairing_attempt_id_var,
     s2_client_node_id_var,
@@ -32,6 +32,7 @@ from s2auth.common.hmac import (
     select_algorithm,
 )
 from s2auth.server.settings import Settings, settings
+from s2auth.server.hooks import HookRegistry, hook_registry, pairing_attempt_request
 
 
 @inject
@@ -65,7 +66,7 @@ async def request_pairing(
         store_client_context
     ],
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
-    settings: Settings = Depends[settings],
+    hooks: HookRegistry = Depends[hook_registry],
 ) -> RequestPairingPostResponse:
     """Initiate a new pairing attempt.
 
@@ -73,12 +74,11 @@ async def request_pairing(
         request: The pairing request containing client node description
         store_client_context: Function to store client context
         pairing_context: The pairing attempt context
+        hooks: Hook registry for calling server hooks
 
     Returns:
-        The pairing attempt ID (as a string)
+        The pairing response with server descriptions and challenge
     """
-
-    # Create a new pairing_attempt_id
 
     # Set the contextvars
     client_node_id = request.clientS2NodeDescription.id.root
@@ -97,14 +97,15 @@ async def request_pairing(
     # Set the state to "initiated" and store both IDs
     pairing_context.state = "initiated"
     server_challenge = create_challenge()
-    server_node_description = S2NodeDescription(
-        id=S2NodeId(root=settings.cem_s2_node_id),
-        brand=settings.cem_brand,
-        role=S2Role.CEM,
-        type=settings.cem_type,
-        modelName=settings.cem_model_name,
+
+    # Call the hook to get server descriptions (can be overridden)
+    # Pass read-only copies to enforce immutability in hooks
+    pairing_hook = hooks.get(pairing_attempt_request)
+    server_endpoint_description, server_node_description = await pairing_hook(
+        ReadOnlyClientContext.model_validate(client_ctx),
+        ReadOnlyPairingAttemptContext.model_validate(pairing_context),
     )
-    server_endpoint_description = S2EndpointDescription()
+
     return RequestPairingPostResponse(
         selectedHmacHashingAlgorithm=algorithm,
         serverS2NodeDescription=server_node_description,
