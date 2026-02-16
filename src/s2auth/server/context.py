@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from contextvars import ContextVar
 from typing import Awaitable, Callable
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 from s2auth.common.hmac import PairingToken
@@ -54,6 +54,26 @@ class PairingAttemptContext(BaseModel):
     pairing_attempt_id: PairingAttemptId
     pairing_node_id: PairingS2NodeId
     pairing_token: PairingToken
+
+
+class ReadOnlyClientContext(ClientContext):
+    """Read-only view of ClientContext for passing to hooks.
+
+    This class prevents accidental modification of context state in hooks.
+    Any attempt to modify attributes will raise a ValidationError.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+
+class ReadOnlyPairingAttemptContext(PairingAttemptContext):
+    """Read-only view of PairingAttemptContext for passing to hooks.
+
+    This class prevents accidental modification of context state in hooks.
+    Any attempt to modify attributes will raise a ValidationError.
+    """
+
+    model_config = ConfigDict(frozen=True)
 
 
 class ContextStorage(ABC):
