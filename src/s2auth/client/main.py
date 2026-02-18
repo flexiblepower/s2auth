@@ -1,225 +1,77 @@
-import base64, datetime, os, sqlite3
-from typing import Optional, List
-import httpx
-from abc import ABC
-from s2auth.common.models import (
-    S2NodeDescription,
-    S2EndpointDescription,
-    S2Role,
-    Deployment,
-    CommunicationProtocol,
-    HmacChallenge,
-    HmacChallengeResponse,
-    RequestPairingPostRequest,
-    RequestConnectionDetailsPostRequest,
-    PostConnectionDetailsPostRequest,
-    InitiateConnectionPostRequest,
-)
+import argparse
+import asyncio
+import logging
+from uuid import UUID, uuid4
 
-# Single, shared SQLite DB path for client connection details
-DB_PATH = os.path.join(os.path.dirname(__file__), "connection_details.db")
+from s2auth.client.dao import Dao
+from s2auth.client.pairing import ConnectionClient, PairingClient
+from s2auth.common.model.s2_over_ip_common import S2NodeDescription, S2NodeId
+from s2auth.common.model.s2_over_ip_pairing import HmacHashingAlgorithm
 
-def main() -> None:
-    print('Hello world!')
+logging.basicConfig(level=logging.WARNING)
 
-if __name__ == '__main__':
+
+
+
+async def run_client():
+    logger = logging.getLogger("PairingClient")
+
+    parser = argparse.ArgumentParser(description="S2 pairing client example implementation.")
+
+    parser.add_argument("--server_url", default="http://localhost", help="The pairing URL of the pairing server (default: http://localhost)")
+    parser.add_argument("--client_S2_nodeId", default=None, help="The id of the client S2 node, (default: auto generated)")
+    parser.add_argument("--server_S2_nodeId", default=None, help="The id of the server S2 node, (default: auto generated)")
+    parser.add_argument("--access_token", help="Access token for pairing, (default: auto generated, but auto generated is only valid if we are pairing server)")
+    parser.add_argument("--s2_role", default="RM", help="The S2 role we are fulfilling, Either RM or CEM (Default: RM)")
+    parser.add_argument("--deployment", default="LAN", help="The deployment of this client (WAM or LAN)")
+    parser.add_argument("--supported_s2_message_versions", default=["NEN-EN 50491-12-2"], help="The supported S2 message versions (one per use of the parameter, default: NEN-EN 50491-12-2)")
+    parser.add_argument("--communication_protocols", default=["WebSocket"], action="append", help="The communication protocols supported (one per use of the parameter, default: Websocket)")
+    parser.add_argument("--supported_hmac_hashingAlgorithms", default=["SHA256"], action="append", help="The Hmac Hashing Algorithms supported (one per use of the parameter, default: \"SHA256\")")
+
+    parser.add_argument("--brand", default="ExampleHeatCo", help="The brand of this S2 node (default: ExampleHeatCo)")
+    parser.add_argument("--type", default="Heatpump", help="The type of this S2 node (default: auto Heatpump)")
+    parser.add_argument("--model_name", default="SmartHeatPump X200", help="The model name of this S2 node (default: SmartHeatPump X200)")
+    parser.add_argument("--pairing_s2_node_id", default=None, help="The s2 node id of the S2 node to pair (default None, indicating id same as client, assuming only 1 device per client)")
+
+    args = parser.parse_args()
+
+    # generate client id if not given
+    clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
+    logger.warning(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
+
+    s2_client_description: S2NodeDescription = S2NodeDescription(id = S2NodeId(clientS2NodeId),
+                                                                 brand = args.brand,
+                                                                 type = args.type,
+                                                                 modelName = args.model_name,
+                                                                 role = args.s2_role)
+
+    dao = Dao()
+    pairing_client: PairingClient = PairingClient(
+        pairing_uri = args.server_url,
+        pairing_token = args.access_token,
+        storage = dao,
+        role = args.s2_role,
+        deployment = args.deployment,
+        supported_s2_message_versions = args.supported_s2_message_versions,
+        supported_communication_protocols = args.communication_protocols,
+        supportedHmacHashingAlgorithms = list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms))
+    )
+
+    logger.warning(f"Using access token: {pairing_client.pairing_token_str}")
+
+    if args.s2_role == "RM":
+        connection_client = ConnectionClient(args.server_url,
+                                             storage = dao,
+                                             role = args.s2_role,
+                                             deployment = args.deployment,
+                                             supported_s2_message_versions = args.supported_s2_message_versions,
+                                             supported_communication_protocols = args.communication_protocols)
+
+        assert connection_client.connect(s2_client_description = s2_client_description, serverS2NodeId = str(clientS2NodeId), clientS2NodeId = str(clientS2NodeId))
+        logger.warning(f"Initiated connection with token : {connection_client.get_pairing_token_str(str(clientS2NodeId))}")
+
+def main():
+    asyncio.run(run_client())
+
+if __name__ == "__main__":
     main()
-
-
-class PairingClient:
-
-    """
-    PairingClient of the S2 pairing process.
-    Attributes:
-        storage (Dao): The storage backend for persisting pairing information.
-        role: The S2 role (CEM/RM) of the client.
-        deployment: The deployment (WAN/LAN) of this client
-        supported_s2_message_versions: List of versions of the S2 messages that the client supports
-        supported_communication_protocols: List of communication protocols (e.g. WebSockets) that the client supports
-    Methods:
-        pair():
-            Initiates the pairing process.
-    """
-    def __init__(self, storage: Dao, role, deployment, supported_s2_message_versions, supported_communication_protocols) -> None:
-        self.storage = storage
-        self.role = role
-        self.deployment = deployment
-        self.supported_s2_message_versions = supported_s2_message_versions
-        self.supported_communication_protocols = supported_communication_protocols
-        pass
-
-    """
-    Attributes:
-        s2_client_description: Information about this client that will be send to the server, such as brand, model, logo URL etc. Also contains a globally unique identifier of the S2 node this client wants to pair to a node on the server
-        pairing_s2_node_id: optional identifier of the S2 node at the server (that has been communicated to the client via the end user) this client node will be paired with.
-    """
-    async def pair(self, s2_client_description, pairing_s2_node_id=None):
-        # Create client HMAC challenge that the server needs to solve
-        # Create /requestPairing request body object
-        # Do the HTTP request
-        # Check the client HMAC challenge response
-        # Solve the server HMAC challenge
-        # Depending on the client/server role in the connection initiation of other S2 node either requestConnectionDetails or postConnectionDetails
-        # In any case, store the connection details in the database.
-        client_hmac_challenge = make_client_hmac_challenge()
-        request_payload = RequestPairingPostRequest(
-            s2ClientNodeDescription=s2_client_description,
-            s2ClientEndpointDescription=S2EndpointDescription(
-                name="string",
-                logoUri="string",
-                deployment=self.deployment,
-            ),
-            pairingS2NodeId=pairing_s2_node_id,
-            supportedCommunicationProtocols=self.supported_communication_protocols,
-            supportedS2MessageVersions=self.supported_s2_message_versions,
-            supportedHmacHashingAlgorithms=["SHA256"],
-            clientHmacChallenge=client_hmac_challenge,
-            forcePairing=False,
-        )
-        body = request_payload.model_dump()
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post("https://s2server.example.com/requestPairing", json=body)
-                response_data = response.json()
-                if response.status_code == 200:
-                    # Process successful response
-                    attempt_id=response_data.get("attemptId")
-                    if(check_client_hmac_challenge_response(client_hmac_challenge,response.get("clientHmacChallengeResponse"))):
-                        if self.role=="RM":
-                            connection_details=await request_connection_details(attempt_id,response_data.get("serverHmacChallenge"))
-                            # Store connection details in the database
-                         #   self.storage.store_connection_details(s2_client_description.id,connection_details)
-                        else:
-                            await post_connection_details(attempt_id, {}, response_data.get("serverHmacChallenge"))
-                            # Post connection details logic for RM role
-                        
-                    final_response = await finalize_pairing(attempt_id, success=True)
-                    return (final_response.status_code == 204)
-        except httpx.HTTPError as e:
-            # Handle HTTP error
-            return False
-
-    def make_client_hmac_challenge():
-        # 32 random bytes typical → base64 encoded
-        challenge = base64.b64encode(os.urandom(32)).decode()
-
-        expiration = (datetime.datetime.utcnow()
-                    + datetime.timedelta(minutes=5)).isoformat() + "Z"
-
-        return HmacChallenge(hmacChallenge=challenge, expirationTime=expiration)
-
-    def check_client_hmac_challenge_response(challenge, response):
-        # Implement HMAC challenge response verification logic here
-        return True,
-
-    async def request_connection_details(attempt_id: str,serverHmacChallangeResponse) -> dict:
-        async with httpx.AsyncClient() as client:
-            payload = RequestConnectionDetailsPostRequest(
-                serverHmacChallengeResponse=serverHmacChallangeResponse
-            )
-            response = await client.post(
-                "https://s2server.example.com/requestConnectionDetails",
-                headers=add_header(attempt_id),
-                json=payload.model_dump(),
-            )
-            return response.json()
-        
-    async def post_connection_details(attempt_id: str, connection_details: dict, server_hmac_challenge: dict) -> None:
-        async with httpx.AsyncClient() as client:
-            payload = PostConnectionDetailsPostRequest(
-                serverHmacChallengeResponse=server_hmac_challenge,
-                connectionDetails=connection_details,
-            )
-            response = await client.post(
-                "https://s2server.example.com/postConnectionDetails",
-                headers=add_header(attempt_id),
-                json=payload.model_dump(),
-            )
-            return response.json()
-
-    async def finalize_pairing(attempt_id: str, success: Optional[bool] = None) -> None:
-        async with httpx.AsyncClient() as client:
-            body = {"attemptId": attempt_id, "success": success}
-            response = await client.post("https://s2server.example.com/finalizePairing", headers=add_header(attempt_id), json=body)
-            return response.json()
-        
-
-class ConnectionClient:
-    def __init__(self, storage: Dao, role, deployment, supported_s2_message_versions, supported_communication_protocols) -> None:
-        self.storage = storage
-        self.role = role
-        self.deployment = deployment
-        self.supported_s2_message_versions = supported_s2_message_versions
-        self.supported_communication_protocols = supported_communication_protocols
-        
-
-    async def connect(self, s2_client_description, pairing_s2_node_id=None):
-        async with httpx.AsyncClient() as client:
-            init_payload = InitiateConnectionPostRequest(
-                s2ClientNodeId=pairing_s2_node_id,
-                supportedS2MessageVersions=self.supported_s2_message_versions,
-                supportedCommunicationProtocols=self.supported_communication_protocols,
-            )
-            response = await httpx.post(
-                "https://s2server.example.com/initiateConnection",
-                json=init_payload.model_dump(),
-            )
-            if response.status_code == 200:
-                confirmation = await self.confirmToken(response.json().get("pendingToken"))
-                if confirmation.status_code == 200:
-                    # Store connection details in the database
-                    token = confirmation.json().get("websocketToken")
-                    self.storage.store_connection_details(token)
-                    return True
-        
-
-    def get_access_token(self):
-        return self.storage.load_connection_details(s2_node_id)
-    
-    async def confirmToken(pendingToken: str):
-        async with httpx.AsyncClient() as client:
-            body = {"pendingToken": pendingToken}
-            response = await client.post("https://s2server.example.com/confirmToken", json=body)
-            return response.json()
-
-    async def unpair( pairing_s2_node_id=None):
-        async with httpx.AsyncClient() as client:
-            response = await client.post("https://s2server.example.com/unpair", json={pairing_s2_node_id})
-            return response.json()
-
-class Dao(ABC):
-
-
-    
-    def store_connection_details(s2_node_id, connection_details):
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-
-        token_value = connection_details.get("accessToken") | None
-        cur.execute(
-            f"INSERT INTO connection_details (s2_node_id, auth_token) VALUES (?, ?)",
-            (str(s2_node_id), token_value),
-        )
-        conn.commit()
-        conn.close()
-
-    
-    def load_connection_details(s2_node_id):
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT auth_token
-            FROM connection_details
-            WHERE s2_node_id = ?
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (str(s2_node_id)),
-        )
-        row = cur.fetchone()
-        return row[0] if row else None
-
-def add_header(token: str):
-    return {"Authorization": f"Bearer {token}"}

@@ -5,15 +5,19 @@
 from __future__ import annotations
 from uuid import UUID
 from typing import Annotated
-from pydantic import AnyUrl, Base64Str, BaseModel, Field, RootModel
+from pydantic import AnyUrl, Base64Str, BaseModel, Field, RootModel, field_serializer
 from enum import Enum
 
 
 class S2NodeId(RootModel[UUID]):
     root: Annotated[UUID, Field(description="Unique identifier of the S2 node")]
 
+    @field_serializer('root')
+    def serialize_uuid(self, value: UUID) -> str:
+        return str(value)
 
-class CommunicationProtocol(Enum):
+
+class CommunicationProtocol(str, Enum):
     WebSocket = "WebSocket"
 
 
@@ -35,12 +39,12 @@ class CommunicationToken(RootModel[Base64Str]):
     ]
 
 
-class S2Role(Enum):
+class S2Role(str, Enum):
     CEM = "CEM"
     RM = "RM"
 
 
-class Deployment(Enum):
+class Deployment(str, Enum):
     WAN = "WAN"
     LAN = "LAN"
 

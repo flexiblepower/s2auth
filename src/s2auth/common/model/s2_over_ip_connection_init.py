@@ -17,7 +17,7 @@ from enum import Enum
 
 
 class CommunicationDetails(BaseModel):
-    communicationProtocol: Literal['Websocket']
+    communicationProtocol: Literal[CommunicationProtocol.WebSocket]
 
 
 class WebSocketCommunicationDetails(CommunicationDetails):
@@ -27,7 +27,7 @@ class WebSocketCommunicationDetails(CommunicationDetails):
     ]
 
 
-class ErrorMessage(Enum):
+class ErrorMessage(str, Enum):
     IncompatibleS2MessageVersions = "IncompatibleS2MessageVersions"
     IncompatibleCommunicationProtocols = "IncompatibleCommunicationProtocols"
     NoLongerPaired = "NoLongerPaired"

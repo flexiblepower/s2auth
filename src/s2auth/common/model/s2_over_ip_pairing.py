@@ -15,7 +15,7 @@ from .s2_over_ip_common import (
 )
 
 
-class ErrorMessage(Enum):
+class ErrorMessage(str, Enum):
     InvalidCombinationOfRoles = "InvalidCombinationOfRoles"
     IncompatibleS2MessageVersions = "IncompatibleS2MessageVersions"
     IncompatibleHmacHashingAlgorithms = "IncompatibleHmacHashingAlgorithms"
@@ -48,7 +48,7 @@ class ConnectionDetails(BaseModel):
     accessToken: AccessToken | None = None
 
 
-class HmacHashingAlgorithm(Enum):
+class HmacHashingAlgorithm(str, Enum):
     SHA256 = "SHA256"
 
 
@@ -97,11 +97,11 @@ class CancelPreparePairingPostRequest(BaseModel):
     serverS2PairingNodeId: PairingS2NodeId | None = None
 
 
-class ErrorMessage2(Enum):
+class ErrorMessage2(str, Enum):
     NoValidTokenOnPairingClient = "NoValidTokenOnPairingClient"
 
 
-class Action(Enum):
+class Action(str, Enum):
     sendS2NodeDescription = "sendS2NodeDescription"
     preparePairing = "preparePairing"
     cancelPreparePairing = "cancelPreparePairing"
