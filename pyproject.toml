@@ -41,6 +41,7 @@ server = "s2auth.server.run:main"
 [project.optional-dependencies]
 db = ["asyncpg (>=0.31.0,<0.32.0)", "sqlalchemy[asyncio] (>=2.0.46,<3.0.0)"]
 server = ["asyncpg (>=0.31.0,<0.32.0)", "sqlalchemy[asyncio] (>=2.0.46,<3.0.0)", "fastapi (>=0.128.0,<0.129.0)", "uvicorn[standard] (>=0.32.1,<1.0.0)"]
+client = ["sqlalchemy[asyncio] (>=2.0.46,<3.0.0)", "sqlalchemy-utils (>=0.42.1,<0.43.0)", "httpx (>=0.28.1,<0.29.0)"]
 [dependency-groups]
 docs = [
     "sphinx",
