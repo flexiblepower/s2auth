@@ -8,13 +8,10 @@ from s2auth.client.pairing import ConnectionClient, PairingClient
 from s2auth.common.model.s2_over_ip_common import S2NodeDescription, S2NodeId
 from s2auth.common.model.s2_over_ip_pairing import HmacHashingAlgorithm
 
-logging.basicConfig(level=logging.WARNING)
-
-
 
 
 async def run_client():
-    logger = logging.getLogger("PairingClient")
+    logger = logging.getLogger("pairing client script")
 
     parser = argparse.ArgumentParser(description="S2 pairing client example implementation.")
 
@@ -32,8 +29,12 @@ async def run_client():
     parser.add_argument("--type", default="Heatpump", help="The type of this S2 node (default: auto Heatpump)")
     parser.add_argument("--model_name", default="SmartHeatPump X200", help="The model name of this S2 node (default: SmartHeatPump X200)")
     parser.add_argument("--pairing_s2_node_id", default=None, help="The s2 node id of the S2 node to pair (default None, indicating id same as client, assuming only 1 device per client)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--skip_cert_verify", action="store_true", help="Skip certificate verification")
 
     args = parser.parse_args()
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
 
     # generate client id if not given
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
@@ -54,10 +55,13 @@ async def run_client():
         deployment = args.deployment,
         supported_s2_message_versions = args.supported_s2_message_versions,
         supported_communication_protocols = args.communication_protocols,
-        supportedHmacHashingAlgorithms = list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms))
+        supportedHmacHashingAlgorithms = list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
+        verify = not args.skip_cert_verify
     )
 
     logger.warning(f"Using access token: {pairing_client.pairing_token_str}")
+
+    assert await pairing_client.pair(s2_client_description = s2_client_description)
 
     if args.s2_role == "RM":
         connection_client = ConnectionClient(args.server_url,
@@ -65,7 +69,8 @@ async def run_client():
                                              role = args.s2_role,
                                              deployment = args.deployment,
                                              supported_s2_message_versions = args.supported_s2_message_versions,
-                                             supported_communication_protocols = args.communication_protocols)
+                                             supported_communication_protocols = args.communication_protocols,
+                                             verify = not args.skip_cert_verify)
 
         assert connection_client.connect(s2_client_description = s2_client_description, serverS2NodeId = str(clientS2NodeId), clientS2NodeId = str(clientS2NodeId))
         logger.warning(f"Initiated connection with token : {connection_client.get_pairing_token_str(str(clientS2NodeId))}")
