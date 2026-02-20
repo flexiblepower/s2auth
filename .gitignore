@@ -17,3 +17,6 @@ src/s2auth/gen_protocol/server/connection_init/
 src/s2auth/gen_protocol/server/pairing/
 src/s2auth/gen_protocol/client/connection_init/
 src/s2auth/gen_protocol/client/pairing/
+# Client connection details
+connection_details.db
+/*/*/connection_details.db
