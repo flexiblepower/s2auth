@@ -87,12 +87,12 @@ class PairingClient:
             clientHmacChallenge = client_hmac_challenge,
             forcePairing = True
         )
-        body = request_payload.model_dump_json(exclude_none=True)
+        body = request_payload.model_dump(exclude_none=True)
 
         try:
             async with httpx.AsyncClient(verify=self._verify) as client:
                 self._logger.debug(f'posting {self._pairing_uri}/requestPairing with json:\n{body}')
-                response = await client.post(f'{self._pairing_uri}/requestPairing', json=body)
+                response = await client.post(f'{self._pairing_uri}/requestPairing', json=body, headers={"Content-Type": "application/json"})
                 self._logger.debug(f'Response: {response}')
                 response.raise_for_status()
 
@@ -133,7 +133,7 @@ class PairingClient:
             payload: RequestConnectionDetailsPostRequest = RequestConnectionDetailsPostRequest(
                 serverHmacChallengeResponse=HmacChallengeResponse(serverHmacChallangeResponse.model_dump(exclude_none=True))
             )
-            body = payload.model_dump_json(exclude_none=True)
+            body = payload.model_dump(exclude_none=True)
             headers = add_header(pairing_attempt_id=attempt_id)
             self._logger.debug(f'posting {self._pairing_uri}/requestConnectionDetails with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(
@@ -150,7 +150,7 @@ class PairingClient:
             connectionDetails=connection_details,
         )
         async with httpx.AsyncClient(verify=self._verify) as client:
-            body = payload.model_dump_json(exclude_none=True)
+            body = payload.model_dump(exclude_none=True)
             headers = add_header(pairing_attempt_id=attempt_id)
             self._logger.debug(f'posting {self._pairing_uri}/postConnectionDetails with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(
@@ -167,7 +167,7 @@ class PairingClient:
         finalize_pairing_postRequest = FinalizePairingPostRequest(success=success)
 
         async with httpx.AsyncClient(verify=self._verify) as client:
-            body = finalize_pairing_postRequest.model_dump_json(exclude_none=True)
+            body = finalize_pairing_postRequest.model_dump(exclude_none=True)
             headers = add_header(pairing_attempt_id=attempt_id)
             self._logger.debug(f'posting {self._pairing_uri}/finalizePairing with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(f'{self._pairing_uri}/finalizePairing',
