@@ -87,12 +87,12 @@ class PairingClient:
             clientHmacChallenge = client_hmac_challenge,
             forcePairing = True
         )
-        body = request_payload.model_dump(exclude_none=True)
+        body = request_payload.model_dump_json(exclude_none=True)
 
         try:
             async with httpx.AsyncClient(verify=self._verify) as client:
                 self._logger.debug(f'posting {self._pairing_uri}/requestPairing with json:\n{body}')
-                response = await client.post(f'{self._pairing_uri}/requestPairing', json=body, headers={"Content-Type": "application/json"})
+                response = await client.post(f'{self._pairing_uri}/requestPairing', content=body, headers={"Content-Type": "application/json"})
                 self._logger.debug(f'Response: {response}')
                 response.raise_for_status()
 
@@ -133,13 +133,13 @@ class PairingClient:
             payload: RequestConnectionDetailsPostRequest = RequestConnectionDetailsPostRequest(
                 serverHmacChallengeResponse=HmacChallengeResponse(serverHmacChallangeResponse.model_dump(exclude_none=True))
             )
-            body = payload.model_dump(exclude_none=True)
+            body = payload.model_dump_json(exclude_none=True)
             headers = add_header(pairing_attempt_id=attempt_id)
             self._logger.debug(f'posting {self._pairing_uri}/requestConnectionDetails with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(
                 f'{self._pairing_uri}/requestConnectionDetails',
                 headers=headers,
-                json=body,
+                content=body,
             )
             self._logger.debug(f'Response: {response}')
             return response.json()
@@ -150,13 +150,13 @@ class PairingClient:
             connectionDetails=connection_details,
         )
         async with httpx.AsyncClient(verify=self._verify) as client:
-            body = payload.model_dump(exclude_none=True)
+            body = payload.model_dump_json(exclude_none=True)
             headers = add_header(pairing_attempt_id=attempt_id)
             self._logger.debug(f'posting {self._pairing_uri}/postConnectionDetails with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(
                 f'{self._pairing_uri}/postConnectionDetails',
                 headers=headers,
-                json=body,
+                content=body,
             )
             self._logger.debug(f'Response: {response}')
             response.raise_for_status()
@@ -167,12 +167,12 @@ class PairingClient:
         finalize_pairing_postRequest = FinalizePairingPostRequest(success=success)
 
         async with httpx.AsyncClient(verify=self._verify) as client:
-            body = finalize_pairing_postRequest.model_dump(exclude_none=True)
+            body = finalize_pairing_postRequest.model_dump_json(exclude_none=True)
             headers = add_header(pairing_attempt_id=attempt_id)
             self._logger.debug(f'posting {self._pairing_uri}/finalizePairing with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(f'{self._pairing_uri}/finalizePairing',
                                          headers=headers,
-                                         json=body)
+                                         content=body)
             self._logger.debug(f'Response: {response}')
             return response
 
@@ -201,13 +201,13 @@ class ConnectionClient:
                 supportedCommunicationProtocols=self._supported_communication_protocols,
             )
 
-            body = init_payload.model_dump(exclude_none=True)
+            body = init_payload.model_dump_json(exclude_none=True)
             headers = add_header(access_token=self.get_pairing_token_str(client_s2_node_id))
             self._logger.debug(f'posting {self._client_uri}/initiateConnection with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(
                 f'{self._client_uri}/initiateConnection',
                 headers=headers,
-                json=init_payload.model_dump(exclude_none=True)
+                content=body
             )
             self._logger.debug(f'Response: {response}')
             response.raise_for_status()
@@ -222,12 +222,12 @@ class ConnectionClient:
 
     async def confirmToken(self, client_s2_node_id: str, pendingToken: str):
         async with httpx.AsyncClient(verify=self._verify) as client:
-            body = {"pendingToken": pendingToken}
+            body = '{"pendingToken": "pendingToken"}'
             headers = add_header(access_token=self.get_pairing_token_str(client_s2_node_id))
             self._logger.debug(f'posting {self._client_uri}/confirmToken with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(f'{self._client_uri}/confirmToken',
                                          headers=headers,
-                                         json=body)
+                                         content=body)
             self._logger.debug(f'Response: {response}')
             response.raise_for_status()
             return response.json()
@@ -240,7 +240,7 @@ class ConnectionClient:
             self._logger.debug(f'posting {self._client_uri}/unpair with headers:\n{headers}\nand json:\n{body}')
             response = await client.post(f'{self._client_uri}/unpair',
                                          headers=headers,
-                                         json=body)
+                                         content=body)
             self._logger.debug(f'Response: {response}')
             response.raise_for_status()
             return response.status_code == 204
