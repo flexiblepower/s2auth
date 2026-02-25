@@ -1,16 +1,17 @@
+"""Script for running the reference implemntation of the S2 pairing client.
+"""
 import argparse
 import asyncio
 import logging
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import ConnectionClient, PairingClient
+from s2auth.client.pairing import ConnectionClient, pair
 from s2auth.common.model.s2_over_ip_common import S2NodeDescription, S2NodeId
 from s2auth.common.model.s2_over_ip_pairing import HmacHashingAlgorithm
 
 
-
-async def run_client():
+async def _run_client():
     logger = logging.getLogger("pairing client script")
 
     parser = argparse.ArgumentParser(description="S2 pairing client example implementation.")
@@ -40,43 +41,43 @@ async def run_client():
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
     logger.warning(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
 
-    s2_client_description: S2NodeDescription = S2NodeDescription(id = S2NodeId(clientS2NodeId),
-                                                                 brand = args.brand,
-                                                                 type = args.type,
-                                                                 modelName = args.model_name,
-                                                                 role = args.s2_role)
+    s2_client_description: S2NodeDescription = S2NodeDescription(id=S2NodeId(clientS2NodeId),
+                                                                 brand=args.brand,
+                                                                 type=args.type,
+                                                                 modelName=args.model_name,
+                                                                 role=args.s2_role)
 
     dao = Dao()
-    pairing_client: PairingClient = PairingClient(
-        pairing_uri = args.server_url,
-        pairing_token = args.access_token,
-        storage = dao,
-        role = args.s2_role,
-        deployment = args.deployment,
-        supported_s2_message_versions = args.supported_s2_message_versions,
-        supported_communication_protocols = args.communication_protocols,
-        supportedHmacHashingAlgorithms = list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
-        verify = not args.skip_cert_verify
-    )
 
-    logger.warning(f"Using access token: {pairing_client.pairing_token_str}")
-
-    assert await pairing_client.pair(s2_client_description = s2_client_description)
+    assert await pair(pairing_uri=args.server_url,
+                      pairing_token=args.access_token,
+                      storage=dao,
+                      role=args.s2_role,
+                      deployment=args.deployment,
+                      supported_s2_message_versions=args.supported_s2_message_versions,
+                      supported_communication_protocols=args.communication_protocols,
+                      supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
+                      s2_client_description=s2_client_description,
+                      verify=not args.skip_cert_verify)
 
     if args.s2_role == "RM":
         connection_client = ConnectionClient(args.server_url,
-                                             storage = dao,
-                                             role = args.s2_role,
-                                             deployment = args.deployment,
-                                             supported_s2_message_versions = args.supported_s2_message_versions,
-                                             supported_communication_protocols = args.communication_protocols,
-                                             verify = not args.skip_cert_verify)
+                                             storage=dao,
+                                             role=args.s2_role,
+                                             deployment=args.deployment,
+                                             supported_s2_message_versions=args.supported_s2_message_versions,
+                                             supported_communication_protocols=args.communication_protocols,
+                                             verify=not args.skip_cert_verify)
 
-        assert connection_client.connect(s2_client_description = s2_client_description, serverS2NodeId = str(clientS2NodeId), clientS2NodeId = str(clientS2NodeId))
+        assert connection_client.connect(s2_client_description=s2_client_description,
+                                         serverS2NodeId=str(clientS2NodeId),
+                                         clientS2NodeId=str(clientS2NodeId))
         logger.warning(f"Initiated connection with token : {connection_client.get_pairing_token_str(str(clientS2NodeId))}")
 
+
 def main():
-    asyncio.run(run_client())
+    asyncio.run(_run_client())
+
 
 if __name__ == "__main__":
     main()
