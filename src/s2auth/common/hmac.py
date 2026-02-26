@@ -37,19 +37,18 @@ _ALL_UTF8_CHARS = [chr(i) for i in range(0x110000) if not (0xD800 <= i <= 0xDFFF
 
 
 @register_provider()
-def create_pairing_token(length: int = 9) -> PairingToken:
+def create_pairing_code(s2_node_id: str | None = None, length: int = 9) -> PairingToken:
     """
-    Create the base64 encoded pairing token (sequence of random bytes) to be sent to the other side of the connection.
-    The token is a shared secret between the nodes to sign challenges.
-
-    This function is registered as a dependency provider and can be overridden
-    to customize token generation (e.g., static tokens for testing, different lengths, etc.).
-    See docs/pairing_token_override.md for override examples.
+    Create pairing code, which is [pairing S2 node ID]-[pairing token] if the S2 node id is set otherwise just the token
     """
     if length < 9:
         raise ValueError("The pairing token needs to be at least 9 bytes.")
     token = secrets.token_bytes(length)
-    return b64encode(token).decode("utf-8")
+    token_str = b64encode(token).decode("utf-8")
+
+    if s2_node_id:
+        return f"{s2_node_id}-{token_str}"
+    return token_str
 
 
 def random_utf8_string(length: int) -> str:

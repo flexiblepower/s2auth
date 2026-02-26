@@ -10,7 +10,7 @@ import httpx
 from pydantic import AnyUrl, TypeAdapter
 from s2auth.client.dao import Dao
 from s2auth.common.exceptions import S2PairingError, VerificationError
-from s2auth.common.hmac import (create_challenge, create_pairing_token,
+from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 verify_response)
 from s2auth.common.model.s2_over_ip_common import (AccessToken,
                                                    CommunicationProtocol,
@@ -44,7 +44,7 @@ event_hooks=HTTPX_HOOKS
 
 
 async def pair(pairing_uri: str,
-               pairing_token: str,
+               pairing_code: str,
                storage: Dao,
                role: str,
                deployment: str,
@@ -52,13 +52,12 @@ async def pair(pairing_uri: str,
                supported_communication_protocols: List[str],
                supportedHmacHashingAlgorithms: List[str],
                s2_client_description: S2NodeDescription,
-               pairing_s2_node_id: Optional[str] = None,
                verify: bool = True) -> bool:
     """
     Preform the initial pairing
     Attributes:
         pairing_uri: the uri of the pairing endpoint
-        pairing_token: the pairing token
+        pairing_code: the pairing code: [pairing S2 node ID]-[pairing token] or [pairing token] if no code is given
         storage: The storage backend for persisting pairing information.
         role: The S2 role (CEM/RM) of the client.
         deployment: The deployment (WAN/LAN) of this client
@@ -68,7 +67,6 @@ async def pair(pairing_uri: str,
         s2_client_description: Information about this client that will be send to the server,
         such as brand, model, logo URL etc. Also contains a globally unique identifier
         of the S2 node this client wants to pair to a node on the server
-        pairing_s2_node_id id of the node to pair if different from id in s2_client_description
         verify: should ssl certificates be verified
     """
     # Create client HMAC challenge that the server needs to solve
@@ -85,14 +83,22 @@ async def pair(pairing_uri: str,
     communication_protocols: List[CommunicationProtocol] = list(map(CommunicationProtocol, supported_communication_protocols))
     supported_hmac_hashing_algorithms: List[HmacHashingAlgorithm] = list(map(HmacHashingAlgorithm, supportedHmacHashingAlgorithms))
 
+    if '-' in pairing_code:
+        split_code = pairing_code.split('-')
+        pairing_s2_node_id, pairing_token = split_code[:-1], split_code[-1]
+    else:
+        pairing_s2_node_id, pairing_token = None, pairing_code
+
     if not pairing_token and s2_role == S2Role.RM:
         raise S2PairingError("Access token required for pairing RM")
     elif not pairing_token:
-        pairing_token = create_pairing_token()
+        pairing_token = create_pairing_code()
 
-    LOGGER.warning(f"Using access token: {pairing_token}")
-
+    # id logic seperately in case we get something like "-pairing_token" (i.e. an empty id but still combined)
     s2_node_id: str = str(pairing_s2_node_id) if pairing_s2_node_id else str(s2_client_description.id.model_dump(exclude_none=True))
+
+    LOGGER.warning(f"Using access token: {pairing_token} and s2_node_id {s2_node_id}")
+
     client_hmac_challenge = create_challenge()
     request_payload: RequestPairingPostRequest = RequestPairingPostRequest(
         clientS2NodeDescription=s2_client_description,
@@ -129,7 +135,7 @@ async def pair(pairing_uri: str,
                                                                            storage=storage,
                                                                            verify=verify)
                 # Store connection details in the database
-                storage.store_connection_details(pairing_uri, s2_node_id, connection_details_dict.get("accessToken", ""))
+                storage.store_connection_details(s2_node_id, connection_details_dict.get("accessToken", ""))
             else:  # s2_role.CEM
                 # Post connection details logic for CEM role
                 initiateConnectionUrl: AnyUrl = TypeAdapter(AnyUrl).validate_python(f"{pairing_uri}/initiateConnection")
@@ -262,17 +268,27 @@ async def connect(pairing_uri: str,
         )
 
         body = init_payload.model_dump_json(exclude_none=True)
-        headers = add_header(access_token=storage.load_connection_details(pairing_uri, client_s2_node_id))
+        headers = add_header(access_token=storage.load_token(client_s2_node_id))
         response = await client.post(
             f'{pairing_uri}/initiateConnection',
             headers=headers,
             content=body
         )
         response.raise_for_status()
-        confirmation = await confirmToken(pairing_uri, storage, client_s2_node_id, response.json().get("pendingToken"), verify)
+        access_token = response.json().get("accessToken")
+        supported_s2_message_version = response.json().get("selectedS2MessageVersion")
+        selected_communication_protocol = response.json().get("selectedCommunicationProtocol")
+
+        assert supported_s2_message_version in supported_s2_message_versions
+        assert selected_communication_protocol in supported_communication_protocols
+
         # Store connection details in the database
-        token: str = confirmation.json().get("websocketToken")
-        storage.store_connection_details(pairing_uri, client_s2_node_id, token)
+        storage.store_pending_token(client_s2_node_id, access_token, supported_s2_message_version, selected_communication_protocol)
+
+        confirmation = await confirmToken(pairing_uri, storage, client_s2_node_id, response.json().get("pendingToken"), verify)
+
+        # store websocek connectin details
+        storage.store_ws_connection_details(client_s2_node_id, confirmation.json().get("websocketToken"), confirmation.json().get("websocketUrl"))
         return confirmation.status_code == 200
 
 
@@ -289,8 +305,8 @@ async def confirmToken(pairing_uri: str, storage: Dao, client_s2_node_id: str, p
 
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
         body = '{"pendingToken": "pendingToken"}'
-        headers = add_header(access_token=storage.load_connection_details(pairing_uri, client_s2_node_id))
-        response = await client.post(f'{pairing_uri}/confirmToken',
+        headers = add_header(access_token=storage.load_pending_token(client_s2_node_id))
+        response = await client.post(f'{pairing_uri}/confirmAccessToken',
                                      headers=headers,
                                      content=body)
         response.raise_for_status()
@@ -312,7 +328,7 @@ async def unpair(pairing_uri: str, storage: Dao, pairing_s2_node_id: str, server
     client_s2_node_id: str = str(clientS2NodeId) if clientS2NodeId else str(serverS2NodeId)
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
         body = pairing_s2_node_id
-        headers = add_header(access_token=storage.load_connection_details(pairing_uri, client_s2_node_id))
+        headers = add_header(access_token=storage.load_token(client_s2_node_id))
         response = await client.post(f'{pairing_uri}/unpair',
                                      headers=headers,
                                      content=body)

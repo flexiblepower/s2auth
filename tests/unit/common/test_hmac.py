@@ -12,7 +12,7 @@ from s2auth.common.hmac import (
     create_challenge,
     create_response,
     verify_response,
-    create_pairing_token,
+    create_pairing_code,
     select_algorithm,
     get_supported_algorithms,
 )
@@ -57,10 +57,10 @@ def test_create_challenge():
     assert len(challenge.root) == 64
 
 
-def test_create_pairing_token_default_length():
-    """Test that create_pairing_token with default length returns valid token."""
+def test_create_pairing_code_default_length():
+    """Test that create_pairing_code with default length returns valid token."""
 
-    token = create_pairing_token()
+    token = create_pairing_code()
     assert isinstance(token, str)
     assert len(token) == 12  # 9 bytes -> 12 characters in base64 (no padding needed)
 
@@ -74,50 +74,63 @@ def test_create_pairing_token_default_length():
     assert validated == token
 
 
-def test_create_pairing_token_custom_length():
-    """Test that create_pairing_token with custom length returns valid token."""
+def test_create_pairing_code_custom_length():
+    """Test that create_pairing_code with custom length returns valid token."""
     adapter = TypeAdapter[str](PairingToken)
 
     # Test with 10 bytes (will have padding)
-    token10 = create_pairing_token(length=10)
+    token10 = create_pairing_code(length=10)
     assert len(b64decode(token10)) == 10
     validated10 = adapter.validate_python(token10)
     assert validated10 == token10
 
     # Test with 12 bytes (no padding)
-    token12 = create_pairing_token(length=12)
+    token12 = create_pairing_code(length=12)
     assert len(b64decode(token12)) == 12
     validated12 = adapter.validate_python(token12)
     assert validated12 == token12
 
     # Test with 20 bytes
-    token20 = create_pairing_token(length=20)
+    token20 = create_pairing_code(length=20)
     assert len(b64decode(token20)) == 20
     validated20 = adapter.validate_python(token20)
     assert validated20 == token20
 
 
-def test_create_pairing_token_too_short():
-    """Test that create_pairing_token raises ValueError for length < 9."""
+def test_create_pairing_code_too_short():
+    """Test that create_pairing_code raises ValueError for length < 9."""
     with pytest.raises(
         ValueError, match="The pairing token needs to be at least 9 bytes"
     ):
-        create_pairing_token(length=8)
+        create_pairing_code(length=8)
 
     with pytest.raises(
         ValueError, match="The pairing token needs to be at least 9 bytes"
     ):
-        create_pairing_token(length=0)
+        create_pairing_code(length=0)
 
     with pytest.raises(
         ValueError, match="The pairing token needs to be at least 9 bytes"
     ):
-        create_pairing_token(length=-1)
+        create_pairing_code(length=-1)
+
+
+def test_create_pairing_code_with_id():
+    """Test that create_pairing_code with custom length returns valid token."""
+    adapter = TypeAdapter[str](PairingToken)
+
+    # Test with 10 bytes (will have padding)
+    pairing_code = create_pairing_code("42", length=10)
+    pairing_s2_node_id, token10 = pairing_code.split('-', 1)
+    assert len(b64decode(token10)) == 10
+    validated10 = adapter.validate_python(token10)
+    assert validated10 == token10
+    assert pairing_s2_node_id == "42"
 
 
 def test_create_response_default_algorithm():
     """Test that create_response generates a valid HMAC signature with default algorithm."""
-    pairing_token = create_pairing_token()
+    pairing_token = create_pairing_code()
     challenge = create_challenge()
 
     response = create_response(pairing_token, challenge)
@@ -157,7 +170,7 @@ def test_create_response_invalid_algorithm():
 
 def test_create_response_with_different_challenge_lengths():
     """Test create_response works with different challenge lengths."""
-    pairing_token = create_pairing_token()
+    pairing_token = create_pairing_code()
 
     # Test with 32-byte challenge
     challenge32 = create_challenge(length=32)
@@ -181,7 +194,7 @@ def test_create_response_with_different_challenge_lengths():
 
 def test_create_and_verify_response_integration():
     """Integration test: create a response and verify it with the same token."""
-    pairing_token = create_pairing_token()
+    pairing_token = create_pairing_code()
     challenge = create_challenge()
 
     # Create response
@@ -193,8 +206,8 @@ def test_create_and_verify_response_integration():
 
 def test_create_and_verify_response_wrong_token():
     """Integration test: verify fails with different pairing token."""
-    pairing_token = create_pairing_token()
-    wrong_token = create_pairing_token()
+    pairing_token = create_pairing_code()
+    wrong_token = create_pairing_code()
     challenge = create_challenge()
 
     # Create response with first token
@@ -207,7 +220,7 @@ def test_create_and_verify_response_wrong_token():
 
 def test_create_and_verify_response_wrong_challenge():
     """Integration test: verify fails with different challenge."""
-    pairing_token = create_pairing_token()
+    pairing_token = create_pairing_code()
     challenge1 = create_challenge()
     challenge2 = create_challenge()
 
@@ -221,7 +234,7 @@ def test_create_and_verify_response_wrong_challenge():
 
 def test_create_response_deterministic():
     """Test that create_response is deterministic for same inputs."""
-    pairing_token = create_pairing_token()
+    pairing_token = create_pairing_code()
     # Create HmacChallenge with UTF-8 safe data
     consistent_data = "consistent_challenge_data_as_text"
     challenge = HmacChallenge(
