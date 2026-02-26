@@ -12,6 +12,7 @@ Base = declarative_base()
 class ConnectionDetail(Base):
     __tablename__ = "connection_details"
 
+    pairing_uri: Mapped[str] = mapped_column(String, nullable=False, index=True, primary_key=True)
     s2_node_id: Mapped[str] = mapped_column(String, nullable=False, index=True, primary_key=True)
     auth_token: Mapped[str] = mapped_column(String, nullable=False)
 
@@ -35,12 +36,12 @@ class Dao:
         )
         self._session: Session = self._SessionLocal()
 
-    def store_connection_details(self, s2_node_id: str, token: str) -> None:
+    def store_connection_details(self, pairing_uri: str, s2_node_id: str, token: str) -> None:
         """
         Insert or update a connection detail identified by s2_node_id
         """
         with self._session.begin():
-            obj: ConnectionDetail = self._session.query(ConnectionDetail).filter(ConnectionDetail.s2_node_id == s2_node_id).one_or_none()
+            obj: ConnectionDetail = self._session.query(ConnectionDetail).filter(ConnectionDetail.pairing_uri == pairing_uri, ConnectionDetail.s2_node_id == s2_node_id).one_or_none()
 
             if obj:
                 # Update existing record
@@ -48,12 +49,13 @@ class Dao:
             else:
                 # Insert new record
                 obj = ConnectionDetail(
+                    pairing_uri=pairing_uri,
                     s2_node_id=s2_node_id,
                     auth_token=token,
                 )
                 self._session.add(obj)
 
-    def load_connection_details(self, s2_node_id: str) -> Optional[str]:
+    def load_connection_details(self, pairing_uri: str, s2_node_id: str) -> Optional[str]:
         """
         Return the most recently inserted/updated auth_token for the given s2_node_id.
         (Uses id DESC to mimic the original intent to get the 'latest' record.)
@@ -61,7 +63,8 @@ class Dao:
         """
         stmt: Select[Any] = (
             select(ConnectionDetail.auth_token)
-            .where(ConnectionDetail.s2_node_id == s2_node_id)
+            .where(ConnectionDetail.pairing_uri == pairing_uri,
+                   ConnectionDetail.s2_node_id == s2_node_id)
             .limit(1)
         )
         return self._session.execute(stmt).scalars().first()

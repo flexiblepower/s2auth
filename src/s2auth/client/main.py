@@ -61,7 +61,7 @@ async def _run_client():
                       verify=not args.skip_cert_verify)
 
     if args.s2_role == "RM":
-        assert connect(client_uri=server_url,
+        assert connect(pairing_uri=server_url,
                        storage=dao,
                        supported_s2_message_versions=args.supported_s2_message_versions,
                        supported_communication_protocols=args.communication_protocols,
@@ -70,7 +70,7 @@ async def _run_client():
                        clientS2NodeId=str(clientS2NodeId),
                        verify=not args.skip_cert_verify)
 
-        logger.warning(f"Initiated connection with token : {dao.load_connection_details(str(clientS2NodeId))}")
+        logger.warning(f"Initiated connection with token : {dao.load_connection_details(server_url, str(clientS2NodeId))}")
 
 
 def main():

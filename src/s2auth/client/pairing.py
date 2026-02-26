@@ -129,7 +129,7 @@ async def pair(pairing_uri: str,
                                                                            storage=storage,
                                                                            verify=verify)
                 # Store connection details in the database
-                storage.store_connection_details(s2_node_id, connection_details_dict.get("accessToken", ""))
+                storage.store_connection_details(pairing_uri, s2_node_id, connection_details_dict.get("accessToken", ""))
             else:  # s2_role.CEM
                 # Post connection details logic for CEM role
                 initiateConnectionUrl: AnyUrl = TypeAdapter(AnyUrl).validate_python(f"{pairing_uri}/initiateConnection")
@@ -228,7 +228,7 @@ async def finalize_pairing(pairing_uri: str, attempt_id: str, success: Optional[
         return response
 
 
-async def connect(client_uri: str,
+async def connect(pairing_uri: str,
                   storage: Dao,
                   supported_s2_message_versions: List[str],
                   supported_communication_protocols: List[str],
@@ -239,7 +239,7 @@ async def connect(client_uri: str,
     """
     Connect with previously stablished pairing
     Attributes:
-        client_uri: the uri of the initiateConnection endpoint
+        pairing_uri: the uri of the initiateConnection endpoint
         storage: The storage backend for persisting pairing information.
         supported_s2_message_versions: List of versions of the S2 messages that the client supports
         supported_communication_protocols: List of communication protocols (e.g. WebSockets) that the client supports
@@ -262,25 +262,25 @@ async def connect(client_uri: str,
         )
 
         body = init_payload.model_dump_json(exclude_none=True)
-        headers = add_header(access_token=storage.load_connection_details(client_s2_node_id))
+        headers = add_header(access_token=storage.load_connection_details(pairing_uri, client_s2_node_id))
         response = await client.post(
-            f'{client_uri}/initiateConnection',
+            f'{pairing_uri}/initiateConnection',
             headers=headers,
             content=body
         )
         response.raise_for_status()
-        confirmation = await confirmToken(client_uri, storage, client_s2_node_id, response.json().get("pendingToken"), verify)
+        confirmation = await confirmToken(pairing_uri, storage, client_s2_node_id, response.json().get("pendingToken"), verify)
         # Store connection details in the database
         token: str = confirmation.json().get("websocketToken")
-        storage.store_connection_details(client_s2_node_id, token)
+        storage.store_connection_details(pairing_uri, client_s2_node_id, token)
         return confirmation.status_code == 200
 
 
-async def confirmToken(client_uri: str, storage: Dao, client_s2_node_id: str, pendingToken: str, verify: bool = True) -> httpx.Response:
+async def confirmToken(pairing_uri: str, storage: Dao, client_s2_node_id: str, pendingToken: str, verify: bool = True) -> httpx.Response:
     """
     Sent confirmation the token
     Attributes:
-        client_uri: the uri of the initiateConnection endpoint
+        pairing_uri: the uri of the initiateConnection endpoint
         storage: The storage backend for persisting pairing information.
         client_s2_node_id: The s2 node id of the client
         pendingToken: the token to send
@@ -289,19 +289,19 @@ async def confirmToken(client_uri: str, storage: Dao, client_s2_node_id: str, pe
 
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
         body = '{"pendingToken": "pendingToken"}'
-        headers = add_header(access_token=storage.load_connection_details(client_s2_node_id))
-        response = await client.post(f'{client_uri}/confirmToken',
+        headers = add_header(access_token=storage.load_connection_details(pairing_uri, client_s2_node_id))
+        response = await client.post(f'{pairing_uri}/confirmToken',
                                      headers=headers,
                                      content=body)
         response.raise_for_status()
         return response
 
 
-async def unpair(client_uri: str, storage: Dao, pairing_s2_node_id: str, serverS2NodeId: str, clientS2NodeId: Optional[str] = None, verify: bool = True) -> bool:
+async def unpair(pairing_uri: str, storage: Dao, pairing_s2_node_id: str, serverS2NodeId: str, clientS2NodeId: Optional[str] = None, verify: bool = True) -> bool:
     """
     Sent command to terminate the pairing
     Attributes:
-        client_uri: the uri of the initiateConnection endpoint
+        pairing_uri: the uri of the initiateConnection endpoint
         storage: The storage backend for persisting pairing information.
         pairing_s2_node_id id of the node to unpair
         serverS2NodeId: The s2 node id node of this pairing client/server instance server
@@ -312,8 +312,8 @@ async def unpair(client_uri: str, storage: Dao, pairing_s2_node_id: str, serverS
     client_s2_node_id: str = str(clientS2NodeId) if clientS2NodeId else str(serverS2NodeId)
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
         body = pairing_s2_node_id
-        headers = add_header(access_token=storage.load_connection_details(client_s2_node_id))
-        response = await client.post(f'{client_uri}/unpair',
+        headers = add_header(access_token=storage.load_connection_details(pairing_uri, client_s2_node_id))
+        response = await client.post(f'{pairing_uri}/unpair',
                                      headers=headers,
                                      content=body)
         response.raise_for_status()
