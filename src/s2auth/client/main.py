@@ -6,7 +6,7 @@ import logging
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import ConnectionClient, pair
+from s2auth.client.pairing import connect, pair, strip_pairing_url
 from s2auth.common.model.s2_over_ip_common import S2NodeDescription, S2NodeId
 from s2auth.common.model.s2_over_ip_pairing import HmacHashingAlgorithm
 
@@ -48,8 +48,8 @@ async def _run_client():
                                                                  role=args.s2_role)
 
     dao = Dao()
-
-    assert await pair(pairing_uri=args.server_url,
+    server_url: str = strip_pairing_url(args.server_url)
+    assert await pair(pairing_uri=server_url,
                       pairing_token=args.access_token,
                       storage=dao,
                       role=args.s2_role,
@@ -61,18 +61,16 @@ async def _run_client():
                       verify=not args.skip_cert_verify)
 
     if args.s2_role == "RM":
-        connection_client = ConnectionClient(args.server_url,
-                                             storage=dao,
-                                             role=args.s2_role,
-                                             deployment=args.deployment,
-                                             supported_s2_message_versions=args.supported_s2_message_versions,
-                                             supported_communication_protocols=args.communication_protocols,
-                                             verify=not args.skip_cert_verify)
+        assert connect(client_uri=server_url,
+                       storage=dao,
+                       supported_s2_message_versions=args.supported_s2_message_versions,
+                       supported_communication_protocols=args.communication_protocols,
+                       s2_client_description=s2_client_description,
+                       serverS2NodeId=str(clientS2NodeId),
+                       clientS2NodeId=str(clientS2NodeId),
+                       verify=not args.skip_cert_verify)
 
-        assert connection_client.connect(s2_client_description=s2_client_description,
-                                         serverS2NodeId=str(clientS2NodeId),
-                                         clientS2NodeId=str(clientS2NodeId))
-        logger.warning(f"Initiated connection with token : {connection_client.get_pairing_token_str(str(clientS2NodeId))}")
+        logger.warning(f"Initiated connection with token : {dao.load_connection_details(str(clientS2NodeId))}")
 
 
 def main():

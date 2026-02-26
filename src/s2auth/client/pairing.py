@@ -2,7 +2,6 @@
 """
 
 import logging
-import re
 from base64 import b64encode
 from typing import Any, List, Optional
 from uuid import UUID
@@ -44,14 +43,19 @@ async def pair(pairing_uri: str,
     """
     Preform the initial pairing
     Attributes:
-        storage (Dao): The storage backend for persisting pairing information.
+        pairing_uri: the uri of the pairing endpoint
+        pairing_token: the pairing token
+        storage: The storage backend for persisting pairing information.
         role: The S2 role (CEM/RM) of the client.
         deployment: The deployment (WAN/LAN) of this client
         supported_s2_message_versions: List of versions of the S2 messages that the client supports
         supported_communication_protocols: List of communication protocols (e.g. WebSockets) that the client supports
+        supportedHmacHashingAlgorithms: list of the supported hmac hashing algorithms
         s2_client_description: Information about this client that will be send to the server,
         such as brand, model, logo URL etc. Also contains a globally unique identifier
         of the S2 node this client wants to pair to a node on the server
+        pairing_s2_node_id id of the node to pair if different from id in s2_client_description
+        verify: should ssl certificates be verified
     """
     # Create client HMAC challenge that the server needs to solve
     # Create /requestPairing request body object
@@ -62,7 +66,6 @@ async def pair(pairing_uri: str,
     # In any case, store the connection details in the database.
 
     # If no id given use id from client
-    pairing_uri = strip_pairing_url(pairing_uri)
     s2_role: S2Role = S2Role(role)
     s2_deployment: Deployment = Deployment(deployment)
     communication_protocols: List[CommunicationProtocol] = list(map(CommunicationProtocol, supported_communication_protocols))
@@ -111,6 +114,7 @@ async def pair(pairing_uri: str,
                 connection_details_dict = await request_connection_details(pairing_uri=pairing_uri,
                                                                            attempt_id=pairing_response.pairingAttemptId.model_dump(exclude_none=True),
                                                                            serverHmacChallangeResponse=pairing_response.serverHmacChallenge,
+                                                                           storage=storage,
                                                                            verify=verify)
                 # Store connection details in the database
                 storage.store_connection_details(s2_node_id, connection_details_dict.get("accessToken", ""))
@@ -124,19 +128,28 @@ async def pair(pairing_uri: str,
                                                          pairing_response.pairingAttemptId.model_dump(exclude_none=True),
                                                          connection_details,
                                                          pairing_response.serverHmacChallenge,
+                                                         storage=storage,
                                                          verify=verify)
 
             final_response = await finalize_pairing(pairing_uri=pairing_uri,
                                                     attempt_id=pairing_response.pairingAttemptId.model_dump(exclude_none=True),
-                                                    verify=verify,
-                                                    success=True)
+                                                    success=True,
+                                                    verify=verify)
             return (final_response.status_code == 204)
     except httpx.HTTPError as e:
         # Handle HTTP error
         raise S2PairingError(f"Pairing connection failed: {e}") from e
 
 
-async def request_connection_details(pairing_uri: str, attempt_id: str, serverHmacChallangeResponse: HmacChallenge, verify: bool) -> dict[Any, Any]:
+async def request_connection_details(pairing_uri: str, attempt_id: str, serverHmacChallangeResponse: HmacChallenge, storage: Dao, verify: bool = True) -> dict[Any, Any]:
+    """
+    Request connection details from server
+    Attributes:
+        pairing_uri: the uri of the pairing endpoint
+        attempt_id: a unique id of this pairing attempt
+        serverHmacChallangeResponse: the response to the hmac challange received from teh server
+        verify: should ssl certificates be verified
+    """
     async with httpx.AsyncClient(verify=verify) as client:
         payload: RequestConnectionDetailsPostRequest = RequestConnectionDetailsPostRequest(
             serverHmacChallengeResponse=HmacChallengeResponse(serverHmacChallangeResponse.model_dump(exclude_none=True))
@@ -157,7 +170,17 @@ async def post_connection_details(pairing_uri: str,
                                   attempt_id: str,
                                   connection_details: ConnectionDetails,
                                   serverHmacChallangeResponse: HmacChallenge,
-                                  verify: bool) -> None:
+                                  storage: Dao,
+                                  verify: bool = True) -> None:
+    """
+    Post connection details to server
+    Attributes:
+        pairing_uri: the uri of the pairing endpoint
+        attempt_id: a unique id of this pairing attempt
+        connection_details: details object for this connection in a ConnectionDetails object
+        serverHmacChallangeResponse: the response to the hmac challange received from teh server
+        verify: should ssl certificates be verified
+    """
     payload: PostConnectionDetailsPostRequest = PostConnectionDetailsPostRequest(
         serverHmacChallengeResponse=HmacChallengeResponse(serverHmacChallangeResponse.model_dump()),
         connectionDetails=connection_details,
@@ -177,7 +200,15 @@ async def post_connection_details(pairing_uri: str,
             raise S2PairingError("postConnectionDetails failed")
 
 
-async def finalize_pairing(pairing_uri: str, attempt_id: str, verify: bool, success: Optional[bool] = None) -> httpx.Response:
+async def finalize_pairing(pairing_uri: str, attempt_id: str, success: Optional[bool] = None, verify: bool = True,) -> httpx.Response:
+    """
+    Finalise the pairing process: post statusthe to finalizePairing endpoint
+    Attributes:
+        pairing_uri: the uri of the pairing endpoint
+        attempt_id: a unique id of this pairing attempt
+        success: did pairing succeed
+        verify: should ssl certificates be verified
+    """
     finalize_pairing_postRequest = FinalizePairingPostRequest(success=success)
 
     async with httpx.AsyncClient(verify=verify) as client:
@@ -191,85 +222,137 @@ async def finalize_pairing(pairing_uri: str, attempt_id: str, verify: bool, succ
         return response
 
 
-class ConnectionClient:
-    def __init__(self, client_uri: str,
-                 storage: Dao, role: str,
-                 deployment: str,
-                 supported_s2_message_versions: List[str],
-                 supported_communication_protocols: List[str],
-                 verify: bool = True) -> None:
-        self._logger = logging.getLogger("ConnectionClient")
+async def connect(client_uri: str,
+                  storage: Dao,
+                  supported_s2_message_versions: List[str],
+                  supported_communication_protocols: List[str],
+                  s2_client_description: S2NodeDescription,
+                  serverS2NodeId: str,
+                  clientS2NodeId: Optional[str] = None,
+                  verify: bool = True):
+    """
+    Connect with previously stablished pairing
+    Attributes:
+        client_uri: the uri of the initiateConnection endpoint
+        storage: The storage backend for persisting pairing information.
+        supported_s2_message_versions: List of versions of the S2 messages that the client supports
+        supported_communication_protocols: List of communication protocols (e.g. WebSockets) that the client supports
+        serverS2NodeId: The s2 node id node of this pairing client/server instance server
+        clientS2NodeId: The s2 node id of the client node if different e.g. if this server takes care of multile S2 devices
+        attempt_id: a unique id of this pairing attempt
+        verify: should ssl certificates be verified
+    """
 
-        self._client_uri: str = strip_pairing_url(client_uri)
-        self._storage: Dao = storage
-        self._deployment = Deployment(deployment)
-        self._role: S2Role = S2Role(role)
-        self._supported_s2_message_versions: List[str] = supported_s2_message_versions
-        self._supported_communication_protocols: List[CommunicationProtocol] = list(map(CommunicationProtocol, supported_communication_protocols))
-        self._verify = verify
+    supported_comms_protocols: List[CommunicationProtocol] = list(map(CommunicationProtocol, supported_communication_protocols))
+    # If no id given use id from client
+    client_s2_node_id: str = str(clientS2NodeId) if clientS2NodeId else str(serverS2NodeId)
 
-    async def connect(self, s2_client_description: S2NodeDescription, serverS2NodeId: str, clientS2NodeId: Optional[str] = None):
-        # If no id given use id from client
-        client_s2_node_id: str = str(clientS2NodeId) if clientS2NodeId else str(serverS2NodeId)
+    async with httpx.AsyncClient(verify=verify) as client:
+        init_payload: InitiateConnectionPostRequest = InitiateConnectionPostRequest(
+            serverS2NodeId=S2NodeId(UUID(serverS2NodeId)),
+            clientS2NodeId=S2NodeId(UUID(client_s2_node_id)),
+            supportedS2MessageVersions=supported_s2_message_versions,
+            supportedCommunicationProtocols=supported_comms_protocols,
+        )
 
-        async with httpx.AsyncClient(verify=self._verify) as client:
-            init_payload: InitiateConnectionPostRequest = InitiateConnectionPostRequest(
-                serverS2NodeId=S2NodeId(UUID(serverS2NodeId)),
-                clientS2NodeId=S2NodeId(UUID(client_s2_node_id)),
-                supportedS2MessageVersions=self._supported_s2_message_versions,
-                supportedCommunicationProtocols=self._supported_communication_protocols,
-            )
+        body = init_payload.model_dump_json(exclude_none=True)
+        headers = add_header(access_token=storage.load_connection_details(client_s2_node_id))
+        LOGGER.debug(f'posting {client_uri}/initiateConnection with headers:\n{headers}\nand json:\n{body}')
+        response = await client.post(
+            f'{client_uri}/initiateConnection',
+            headers=headers,
+            content=body
+        )
+        LOGGER.debug(f'Response: {response}')
+        response.raise_for_status()
+        confirmation = await confirmToken(client_uri, storage, client_s2_node_id, response.json().get("pendingToken"), verify)
+        # Store connection details in the database
+        token: str = confirmation.json().get("websocketToken")
+        storage.store_connection_details(client_s2_node_id, token)
+        return confirmation.status_code == 200
 
-            body = init_payload.model_dump_json(exclude_none=True)
-            headers = add_header(access_token=self.get_pairing_token_str(client_s2_node_id))
-            self._logger.debug(f'posting {self._client_uri}/initiateConnection with headers:\n{headers}\nand json:\n{body}')
-            response = await client.post(
-                f'{self._client_uri}/initiateConnection',
-                headers=headers,
-                content=body
-            )
-            self._logger.debug(f'Response: {response}')
-            response.raise_for_status()
-            confirmation = await self.confirmToken(client_s2_node_id, response.json().get("pendingToken"))
-            # Store connection details in the database
-            token: str = confirmation.json().get("websocketToken")
-            self._storage.store_connection_details(client_s2_node_id, token)
-            return confirmation.status_code == 200
 
-    def get_pairing_token_str(self, s2_node_id: str) -> Optional[str]:
-        return self._storage.load_connection_details(s2_node_id)
+async def confirmToken(client_uri: str, storage: Dao, client_s2_node_id: str, pendingToken: str, verify: bool = True):
+    """
+    Sent confirmation the token
+    Attributes:
+        client_uri: the uri of the initiateConnection endpoint
+        storage: The storage backend for persisting pairing information.
+        client_s2_node_id: The s2 node id of the client
+        pendingToken: the token to send
+        verify: should ssl certificates be verified
+    """
 
-    async def confirmToken(self, client_s2_node_id: str, pendingToken: str):
-        async with httpx.AsyncClient(verify=self._verify) as client:
-            body = '{"pendingToken": "pendingToken"}'
-            headers = add_header(access_token=self.get_pairing_token_str(client_s2_node_id))
-            self._logger.debug(f'posting {self._client_uri}/confirmToken with headers:\n{headers}\nand json:\n{body}')
-            response = await client.post(f'{self._client_uri}/confirmToken',
-                                         headers=headers,
-                                         content=body)
-            self._logger.debug(f'Response: {response}')
-            response.raise_for_status()
-            return response.json()
+    async with httpx.AsyncClient(verify=verify) as client:
+        body = '{"pendingToken": "pendingToken"}'
+        headers = add_header(access_token=storage.load_connection_details(client_s2_node_id))
+        LOGGER.debug(f'posting {client_uri}/confirmToken with headers:\n{headers}\nand json:\n{body}')
+        response = await client.post(f'{client_uri}/confirmToken',
+                                     headers=headers,
+                                     content=body)
+        LOGGER.debug(f'Response: {response}')
+        response.raise_for_status()
+        return response.json()
 
-    async def unpair(self, pairing_s2_node_id: str, serverS2NodeId: str, clientS2NodeId: Optional[str] = None):
-        client_s2_node_id: str = str(clientS2NodeId) if clientS2NodeId else str(serverS2NodeId)
-        async with httpx.AsyncClient(verify=self._verify) as client:
-            body = pairing_s2_node_id
-            headers = add_header(access_token=self.get_pairing_token_str(client_s2_node_id))
-            self._logger.debug(f'posting {self._client_uri}/unpair with headers:\n{headers}\nand json:\n{body}')
-            response = await client.post(f'{self._client_uri}/unpair',
-                                         headers=headers,
-                                         content=body)
-            self._logger.debug(f'Response: {response}')
-            response.raise_for_status()
-            return response.status_code == 204
+
+async def unpair(client_uri: str, storage: Dao, pairing_s2_node_id: str, serverS2NodeId: str, clientS2NodeId: Optional[str] = None, verify: bool = True):
+    """
+    Sent command to terminate the pairing
+    Attributes:
+        client_uri: the uri of the initiateConnection endpoint
+        storage: The storage backend for persisting pairing information.
+        pairing_s2_node_id id of the node to unpair
+        serverS2NodeId: The s2 node id node of this pairing client/server instance server
+        clientS2NodeId: The s2 node id of the client node if different e.g. if this server takes care of multile S2 devices
+        verify: should ssl certificates be verified
+    """
+
+    client_s2_node_id: str = str(clientS2NodeId) if clientS2NodeId else str(serverS2NodeId)
+    async with httpx.AsyncClient(verify=verify) as client:
+        body = pairing_s2_node_id
+        headers = add_header(access_token=storage.load_connection_details(client_s2_node_id))
+        LOGGER.debug(f'posting {client_uri}/unpair with headers:\n{headers}\nand json:\n{body}')
+        response = await client.post(f'{client_uri}/unpair',
+                                     headers=headers,
+                                     content=body)
+        LOGGER.debug(f'Response: {response}')
+        response.raise_for_status()
+        return response.status_code == 204
 
 
 def strip_pairing_url(url_str: str):
-    return re.sub('/$', '', re.sub('requestPairing$', '', re.sub('initiateConnection$', '', url_str)))
+    """
+    Remove the endpoint suffixes from a url_str. This is a conveniance method to allow a user to enter  for example
+    https://www.example.com/v1/requestPairing as well as https://www.example.com/v1/
+    Attributes:
+        url_str: the uri to process
+    """
+
+    endpoint_suffixes = (
+        "/requestPairing",
+        "/initiateConnection",
+        "/requestConnectionDetails",
+        "/postConnectionDetails",
+        "/finalizePairing",
+        "/confirmToken",
+    )
+    url_str = url_str.rstrip("/")
+
+    for suffix in endpoint_suffixes:
+        if url_str.endswith(suffix):
+            url_str = url_str[: -len(suffix)]
+            break
+    return url_str.rstrip("/")
 
 
 def add_header(access_token: Optional[str] = None, pairing_attempt_id: Optional[str] = None):
+    """
+    Returns an appropriate header dicti for pairing requests
+    Attributes:
+        access_token: for calls where we need an access token added
+        pairing_attempt_id: for calls where we need an pairing_attempt_id added
+    """
+
     header = {"Content-Type": "application/json"}
     if access_token:
         header["accessToken"] = access_token

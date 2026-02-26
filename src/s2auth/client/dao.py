@@ -35,8 +35,7 @@ class Dao:
         )
         self._session: Session = self._SessionLocal()
 
-    def store_connection_details(
-        self, s2_node_id: str, token: str) -> None:
+    def store_connection_details(self, s2_node_id: str, token: str) -> None:
         """
         Insert or update a connection detail identified by s2_node_id
         """
