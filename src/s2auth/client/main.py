@@ -49,8 +49,10 @@ async def _run_client():
 
     dao = Dao()
     server_url: str = strip_pairing_url(args.server_url)
+
+    pairing_code: str = f"{args.pairing_s2_node_id}-{args.access_token}" if args.pairing_s2_node_id else args.access_token
     assert await pair(pairing_uri=server_url,
-                      pairing_token=args.access_token,
+                      pairing_code=pairing_code,
                       storage=dao,
                       role=args.s2_role,
                       deployment=args.deployment,
@@ -60,17 +62,17 @@ async def _run_client():
                       s2_client_description=s2_client_description,
                       verify=not args.skip_cert_verify)
 
-    if args.s2_role == "RM":
-        assert connect(pairing_uri=server_url,
-                       storage=dao,
-                       supported_s2_message_versions=args.supported_s2_message_versions,
-                       supported_communication_protocols=args.communication_protocols,
-                       s2_client_description=s2_client_description,
-                       serverS2NodeId=str(clientS2NodeId),
-                       clientS2NodeId=str(clientS2NodeId),
-                       verify=not args.skip_cert_verify)
+    assert connect(pairing_uri=server_url,
+                   storage=dao,
+                   supported_s2_message_versions=args.supported_s2_message_versions,
+                   supported_communication_protocols=args.communication_protocols,
+                   s2_client_description=s2_client_description,
+                   serverS2NodeId=str(clientS2NodeId),
+                   clientS2NodeId=str(clientS2NodeId),
+                   verify=not args.skip_cert_verify)
 
-        logger.warning(f"Initiated connection with token : {dao.load_connection_details(server_url, str(clientS2NodeId))}")
+    logger.warning(f"Initiated connection with token : {dao.load_token(str(clientS2NodeId))}")
+    logger.warning(f"Retreived communication defauls : {dao.load_ws_connection_details(str(clientS2NodeId))}")
 
 
 def main():

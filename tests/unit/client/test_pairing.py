@@ -15,18 +15,14 @@ from s2auth.client.dao import Dao
 from s2auth.client.pairing import (add_header, confirmToken, finalize_pairing,
                                    pair, post_connection_details,
                                    request_connection_details,
-                                   strip_pairing_url, unpair)
+                                   strip_pairing_url, unpair, connect)
 from s2auth.common.exceptions import S2PairingError
-from s2auth.common.hmac import create_challenge, create_response
+from s2auth.common.hmac import create_challenge, create_pairing_code, create_response
 from s2auth.common.model.s2_over_ip_common import (AccessToken,
-                                                   CommunicationProtocol,
-                                                   CommunicationToken,
                                                    Deployment,
                                                    S2EndpointDescription,
                                                    S2NodeDescription, S2NodeId,
                                                    S2Role)
-from s2auth.common.model.s2_over_ip_connection_init import \
-    WebSocketCommunicationDetails
 from s2auth.common.model.s2_over_ip_pairing import (
     ConnectionDetails, FinalizePairingPostRequest, HmacChallengeResponse,
     HmacHashingAlgorithm, PairingAttemptId,
@@ -34,6 +30,7 @@ from s2auth.common.model.s2_over_ip_pairing import (
     RequestPairingPostResponse)
 
 PAIRING_TOKEN: str = 'nua9nov3QNUd'
+PAIRING_CODE: str = '550e8400-e29b-41d4-a716-446655440000-nua9nov3QNUd'
 
 
 @pytest.fixture()
@@ -64,7 +61,7 @@ def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> Reque
     endpoint_description = S2EndpointDescription(name='Cem p50 endpoint', deployment=Deployment("WAN"))
 
     return RequestPairingPostResponse(
-        pairingAttemptId=PairingAttemptId(b64encode(b"42").decode('utf-8')),
+        pairingAttemptId=PairingAttemptId(b64encode(b"550e8400-e29b-41d4-a716-446655440000").decode('utf-8')),
         serverS2NodeDescription=s2_server_description,
         serverS2EndpointDescription=endpoint_description,
         selectedHmacHashingAlgorithm=HmacHashingAlgorithm.SHA256,
@@ -72,12 +69,12 @@ def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> Reque
         serverHmacChallenge=pairing_request.clientHmacChallenge)
 
 
-async def test_paiting_wront_url(dao: Dao, s2_client_description: S2NodeDescription) -> None:
+async def test_paiting_wrong_url(dao: Dao, s2_client_description: S2NodeDescription) -> None:
     # testing calling url that does not exist
     with pytest.raises(S2PairingError) as excinfo:
 
         assert await pair(pairing_uri='http://s2server.example.com/v1',
-                          pairing_token=PAIRING_TOKEN,
+                          pairing_code=PAIRING_CODE,
                           storage=dao,
                           role="RM",
                           deployment="WAN",
@@ -126,7 +123,7 @@ def mock_AsyncClient_404(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
 async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, MagicMock], s2_client_description: S2NodeDescription) -> None:
     with pytest.raises(S2PairingError) as excinfo:
         assert await pair(pairing_uri='http://s2server.example.com/v1',
-                          pairing_token=PAIRING_TOKEN,
+                          pairing_code=PAIRING_TOKEN,
                           storage=dao,
                           role="RM",
                           deployment="WAN",
@@ -192,20 +189,25 @@ def mock_AsyncClient(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
                 headers={"Content-Type": "application/json"},
                 request=request,
             )
-        elif url.endswith('/confirmToken'):
-            web_socket_communication_details: WebSocketCommunicationDetails = \
-                WebSocketCommunicationDetails(communicationProtocol=CommunicationProtocol.WebSocket,
-                                              websocketToken=CommunicationToken('\U000b708a\U00031996\U000b3048\U0002fc4d\U00075b6b\U00109703'),
-                                              websocketUrl='wss://example.com/wbsocket_endpoint')
-            return httpx.Response(
-                status_code=200,
-                content=web_socket_communication_details.model_dump_json(),
-                headers={"Content-Type": "application/json"},
-                request=request,
-            )
         elif url.endswith('/unpair'):
             return httpx.Response(
                 status_code=204,
+                headers={"Content-Type": "application/json"},
+                request=request,
+            )
+        elif url.endswith('/initiateConnection'):
+            return httpx.Response(
+                status_code=200,
+                content=json.dumps({"selectedCommunicationProtocol": "WebSocket",
+                                    "selectedS2MessageVersion": "NEN-EN 50491-12-2",
+                                     "accessToken": create_pairing_code()}),
+                headers={"Content-Type": "application/json"},
+                request=request,
+            )
+        elif url.endswith('/confirmAccessToken'):
+            return httpx.Response(
+                status_code=200,
+                content=json.dumps({"websocketToken": create_pairing_code(), "websocketUrl": "wss://example.com/v1/s2exampleWS"}),
                 headers={"Content-Type": "application/json"},
                 request=request,
             )
@@ -227,7 +229,7 @@ def mock_AsyncClient(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
 
 async def test_request_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock]) -> None:
     resp = await request_connection_details(pairing_uri='http://s2server.example.com/v1',
-                                            attempt_id="42",
+                                            attempt_id="550e8400-e29b-41d4-a716-446655440000",
                                             serverHmacChallangeResponse=create_challenge(),
                                             storage=dao,
                                             verify=True)
@@ -252,10 +254,10 @@ def test_strip_pairing_url():
 
 
 async def test_finalize_pairing(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock]) -> None:
-    response = await finalize_pairing("http://localhost", "42", True, True)
+    response = await finalize_pairing("http://localhost", "550e8400-e29b-41d4-a716-446655440000", True, True)
     assert response.status_code == 204
 
-    response = await finalize_pairing("http://localhost", "42", False, True)
+    response = await finalize_pairing("http://localhost", "550e8400-e29b-41d4-a716-446655440000", False, True)
     assert response.status_code == 401
 
 
@@ -270,7 +272,7 @@ async def test_paiting_rm(dao: Dao,
     post_connection_details_spy = mocker.spy(pairing, "post_connection_details")
 
     assert await pair(pairing_uri='http://s2server.example.com/v1',
-                      pairing_token=PAIRING_TOKEN,
+                      pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="RM",
                       deployment="WAN",
@@ -282,6 +284,19 @@ async def test_paiting_rm(dao: Dao,
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_not_awaited()
 
+    server_s2_node_id: str = str(s2_client_description.id.model_dump(exclude_none=True))
+    assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["NEN-EN 50491-12-2"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
+    pending_token = dao.load_pending_token(server_s2_node_id)
+    assert pending_token is not None
+    assert len(str(pending_token)) == 12
+
+    ws_token, url = dao.load_ws_connection_details(server_s2_node_id)
+
+    assert ws_token != pending_token
+    assert ws_token is not None
+    assert len(str(ws_token)) == 12
+    assert url == 'wss://example.com/v1/s2exampleWS'
+
 
 async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tuple[MagicMock, MagicMock], s2_client_description: S2NodeDescription) -> None:
     import s2auth.client.pairing as pairing
@@ -291,7 +306,7 @@ async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tu
     post_connection_details_spy = mocker.spy(pairing, "post_connection_details")
 
     assert await pair(pairing_uri='http://s2server.example.com/v1',
-                      pairing_token=PAIRING_TOKEN,
+                      pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="CEM",
                       deployment="WAN",
@@ -309,7 +324,7 @@ async def test_get_pairing_token_str(dao: Dao,
                                      mock_AsyncClient: tuple[MagicMock, MagicMock],
                                      s2_client_description: S2NodeDescription) -> None:
     assert await pair(pairing_uri='http://s2server.example.com/v1',
-                      pairing_token=PAIRING_TOKEN,
+                      pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="RM",
                       deployment="WAN",
@@ -319,8 +334,8 @@ async def test_get_pairing_token_str(dao: Dao,
                       s2_client_description=s2_client_description)
 
     client_s2_node_id: str = s2_client_description.id.model_dump(exclude_none=True)
-    token = dao.load_connection_details('http://s2server.example.com/v1', client_s2_node_id)
-    assert isinstance(token, str)
+    token = dao.load_token(client_s2_node_id)
+    assert isinstance(token, str), token
     assert len(token) == 60
 
 
@@ -330,7 +345,7 @@ async def test_post_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMo
         ConnectionDetails(accessToken=AccessToken(b64encode(urlsafe_b64encode(token_bytes(32))).decode('UTF-8')),
                           initiateConnectionUrl=validated_url)
     await post_connection_details('http://s2server.example.com/v1',
-                                  "42", connection_details,
+                                  "550e8400-e29b-41d4-a716-446655440000", connection_details,
                                   create_challenge(),
                                   storage=dao,
                                   verify=True)
@@ -338,9 +353,9 @@ async def test_post_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMo
 
 async def test_confirmToken(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
                             s2_client_description: S2NodeDescription) -> None:
-    await confirmToken('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "exampleid42", False)
+    await confirmToken('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "550e8400-e29b-41d4-a716-446655440000", False)
 
 
 async def test_unpair(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
                       s2_client_description: S2NodeDescription) -> None:
-    assert await unpair('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "exampleid42", verify=True)
+    assert await unpair('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "550e8400-e29b-41d4-a716-446655440000", verify=True)
