@@ -12,6 +12,7 @@ from s2auth.common.exceptions import (
     IncompatibleHmacHashingAlgorithms,
     VerificationError,
 )
+from s2auth.common.model.s2_over_ip_common import AccessToken
 from s2auth.common.model.s2_over_ip_pairing import HmacChallenge, HmacHashingAlgorithm
 
 # Ensure the algorithms are sorted with the most secure/desirable algorithms last.
@@ -34,6 +35,21 @@ PairingToken = Annotated[
 ]
 
 _ALL_UTF8_CHARS = [chr(i) for i in range(0x110000) if not (0xD800 <= i <= 0xDFFF)]
+
+
+@register_provider()
+def generate_access_token(length: int = 32) -> AccessToken:
+    """
+    Create the base64 encoded access token (sequence of random bytes) to be sent to the other side of the connection for authentication.
+
+    This function is registered as a dependency provider and can be overridden
+    to customize token generation (e.g., static tokens for testing, different lengths, etc.).
+    See docs/access_token_override.md for override examples.
+    """
+    if length < 32:
+        raise ValueError("The access token needs to be at least 32 bytes.")
+    token = secrets.token_bytes(length)
+    return AccessToken(root=b64encode(token).decode("utf-8"))
 
 
 @register_provider()
