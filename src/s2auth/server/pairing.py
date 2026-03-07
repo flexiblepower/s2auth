@@ -4,20 +4,25 @@ from base64 import b64encode
 from typing import Awaitable, Callable
 from uuid import uuid4
 from s2auth.common.model.s2_over_ip_pairing import (
+    ConnectionDetails,
     HmacChallengeResponse,
     PairingAttemptId as S2PairingAttemptId,
     PairingS2NodeId,
+    RequestConnectionDetailsPostRequest,
     RequestPairingPostRequest,
     RequestPairingPostResponse,
 )
-from s2auth.common.model.s2_over_ip_common import S2NodeId
+from s2auth.common.model.s2_over_ip_common import AccessToken, S2NodeId
 from s2auth.common.dependencies import Depends, inject
 from s2auth.server.context import (
     ClientContext,
+    ClientState,
     PairingAttemptContext,
     PairingAttemptId,
+    PairingState,
     ReadOnlyClientContext,
     ReadOnlyPairingAttemptContext,
+    client_context,
     pairing_attempt_context,
     pairing_attempt_id_var,
     s2_client_node_id_var,
@@ -29,10 +34,17 @@ from s2auth.common.hmac import (
     create_challenge,
     create_pairing_token,
     create_response,
+    generate_access_token,
     select_algorithm,
+    verify_response,
 )
 from s2auth.server.settings import Settings, settings
-from s2auth.server.hooks import HookRegistry, hook_registry, pairing_attempt_request
+from s2auth.server.hooks import (
+    HookRegistry,
+    get_server_endpoint,
+    hook_registry,
+    pairing_attempt_request,
+)
 
 
 @inject
@@ -82,21 +94,30 @@ async def request_pairing(
 
     # Set the contextvars
     client_node_id = request.clientS2NodeDescription.id.root
-    client_ctx = ClientContext(client_node_id=client_node_id, state="pairing")
+    client_ctx = ClientContext(
+        client_node_id=client_node_id,
+        state=ClientState.PAIRING,
+        s2_endpoint_description=request.clientS2EndpointDescription,
+        s2_node_description=request.clientS2NodeDescription,
+    )
     await store_client_ctx(client_ctx)
     s2_client_node_id_var.set(S2NodeId(root=client_node_id))
 
     pairing_context.client_node_id = client_node_id
 
     algorithm = select_algorithm(request.supportedHmacHashingAlgorithms)
+    pairing_context.algorithm = algorithm
+
     client_response = create_response(
         pairing_token=pairing_context.pairing_token,
         challenge=request.clientHmacChallenge,
         algorithm=algorithm,
     )
     # Set the state to "initiated" and store both IDs
-    pairing_context.state = "initiated"
+    pairing_context.state = PairingState.INITIATED
     server_challenge = create_challenge()
+
+    pairing_context.server_hmac_challenge = server_challenge
 
     # Call the hook to get server descriptions (can be overridden)
     # Pass read-only copies to enforce immutability in hooks
@@ -118,4 +139,48 @@ async def request_pairing(
                 str(pairing_context.pairing_attempt_id).encode("ascii")
             ).decode("ascii")
         ),
+    )
+
+
+@inject
+async def handle_client_response(
+    request: RequestConnectionDetailsPostRequest,
+    pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
+    client_ctx: ClientContext = Depends[client_context],
+    hooks: HookRegistry = Depends[hook_registry],
+    generate_access_token: Callable[[], AccessToken] = Depends[generate_access_token],
+) -> ConnectionDetails:
+    """Handle the client's response and return the server's connection details.
+
+    Args:
+        request: The request from the client for connection details
+        pairing_context: The pairing attempt context
+        client_ctx: The client context with its connection and endpoint details
+        hooks: Hook registry for calling server hooks
+
+    Returns:
+        The ConnectionDetails for the client to setup the s2 connection.
+
+
+    """
+    challenge_response = request.serverHmacChallengeResponse.root
+    assert pairing_context.algorithm is not None, "No algorithm selected."
+    assert pairing_context.server_hmac_challenge is not None, "No known hmac challenge."
+    verify_response(
+        pairing_token=pairing_context.pairing_token,
+        algorithm=pairing_context.algorithm,
+        challenge=pairing_context.server_hmac_challenge,
+        response=challenge_response,
+    )
+
+    endpoint_hook = hooks.get(get_server_endpoint)
+    server_endpoint = await endpoint_hook(
+        ReadOnlyClientContext.model_validate(client_ctx),
+    )
+    access_token = generate_access_token()
+    client_ctx.access_token = access_token
+    client_ctx.state = ClientState.PAIRED
+    pairing_context.state = PairingState.COMPLETED
+    return ConnectionDetails(
+        initiateConnectionUrl=server_endpoint, accessToken=access_token
     )

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from enum import StrEnum
 import aiologic
 from collections.abc import AsyncGenerator
 from contextvars import ContextVar
@@ -9,10 +10,17 @@ from pydantic import BaseModel, ConfigDict
 
 from s2auth.common.hmac import PairingToken
 from s2auth.common.model.s2_over_ip_pairing import (
+    HmacChallenge,
+    HmacHashingAlgorithm,
     PairingAttemptId as S2PairingAttemptId,
     PairingS2NodeId,
 )
-from s2auth.common.model.s2_over_ip_common import S2NodeId
+from s2auth.common.model.s2_over_ip_common import (
+    AccessToken,
+    S2EndpointDescription,
+    S2NodeDescription,
+    S2NodeId,
+)
 from s2auth.common.dependencies import Depends, register_provider
 
 
@@ -29,6 +37,19 @@ pairing_attempt_id_var: ContextVar[S2PairingAttemptId | None] = ContextVar(
 )
 
 
+class ClientState(StrEnum):
+    PAIRING = "Pairing"
+    PAIRED = "Paired"
+    CONNECTED = "Connected"
+    DISCONNECTED = "Disconnected"
+
+
+class PairingState(StrEnum):
+    INITIATED = "Initiated"
+    COMPLETED = "Completed"
+    FAILED = "Failed"
+
+
 class ClientContext(BaseModel):
     """Context data for a client connection.
 
@@ -37,8 +58,14 @@ class ClientContext(BaseModel):
     mechanisms if implementing complex state updates.
     """
 
-    state: str = "default"
+    # TODO: implement validators to ensure certain combinations of values are invalid
+    # for instance with state PAIRED, we also need to have an access_token
+
+    state: ClientState | None = None
     client_node_id: ClientNodeId | None = None
+    s2_node_description: S2NodeDescription | None = None
+    s2_endpoint_description: S2EndpointDescription | None = None
+    access_token: AccessToken | None = None
 
 
 class PairingAttemptContext(BaseModel):
@@ -49,11 +76,13 @@ class PairingAttemptContext(BaseModel):
     mechanisms if implementing complex state updates.
     """
 
-    state: str = "default"
+    state: PairingState | None = None
     client_node_id: ClientNodeId | None = None
     pairing_attempt_id: PairingAttemptId
     pairing_node_id: PairingS2NodeId
     pairing_token: PairingToken
+    algorithm: HmacHashingAlgorithm | None = None
+    server_hmac_challenge: HmacChallenge | None = None
 
 
 class ReadOnlyClientContext(ClientContext):

@@ -9,6 +9,8 @@ See docs/hooks.md for detailed documentation on each hook and how to override th
 
 from typing import Any, Callable
 
+from pydantic import AnyUrl
+
 from s2auth.common.dependencies import Depends, inject, register_provider
 from s2auth.common.model.s2_over_ip_common import S2NodeId, S2Role
 from s2auth.common.model.s2_over_ip_pairing import (
@@ -20,6 +22,23 @@ from s2auth.server.context import (
     ReadOnlyPairingAttemptContext,
 )
 from s2auth.server.settings import Settings, settings
+
+
+@inject
+async def get_server_endpoint(
+    client_context: ReadOnlyClientContext,
+    server_settings: Settings = Depends[settings],
+) -> AnyUrl:
+    """Default hook implementation to get the server endpoint.
+
+    This hook is called during the pairing phase to retrieve the server's endpoint
+    so the S2 Client Node can connect to the server side to establish an S2 connection.
+
+    Args:
+        client_context: Read-only view of the client's context (contains client_node_id, state, etc.)
+        server_settings: Server configuration settings
+    """
+    return server_settings.cem_url
 
 
 @inject
@@ -66,7 +85,9 @@ class HookRegistry:
             pairing_attempt_request: pairing_attempt_request,
         }
 
-    def register(self, original_hook: Callable[..., Any], custom_hook: Callable[..., Any]) -> None:
+    def register(
+        self, original_hook: Callable[..., Any], custom_hook: Callable[..., Any]
+    ) -> None:
         """Register a custom hook implementation.
 
         Args:
@@ -78,7 +99,9 @@ class HookRegistry:
             KeyError: If the original hook is not recognized
         """
         if original_hook not in self._hooks:
-            raise KeyError(f"Unknown hook function. Available hooks: {list(self._hooks.keys())}")
+            raise KeyError(
+                f"Unknown hook function. Available hooks: {list(self._hooks.keys())}"
+            )
         if self._hooks[original_hook] is not original_hook:
             raise RuntimeError(
                 "Hook already has a custom implementation registered. "
@@ -109,7 +132,9 @@ def hook_registry() -> HookRegistry:
     return HookRegistry()
 
 
-def register_hook(original_hook: Callable[..., Any]) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def register_hook(
+    original_hook: Callable[..., Any],
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to register a custom hook implementation.
 
     This decorator allows client code to override default hook implementations.
@@ -141,9 +166,11 @@ def register_hook(original_hook: Callable[..., Any]) -> Callable[[Callable[..., 
             ...
         ```
     """
+
     def decorator(custom_hook: Callable[..., Any]) -> Callable[..., Any]:
         # Get the singleton registry instance by calling the provider
         registry = hook_registry()
         registry.register(original_hook, custom_hook)
         return custom_hook
+
     return decorator
