@@ -1,5 +1,5 @@
 from typing import Annotated
-from pydantic import StringConstraints
+from pydantic import AnyUrl, StringConstraints
 from pydantic.types import UUID4
 from pydantic_settings import BaseSettings
 
@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     cem_type: str
     cem_model_name: str
     cem_brand: str
+    cem_url: AnyUrl
 
 
 @register_provider(singleton=True)
