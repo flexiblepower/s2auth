@@ -44,7 +44,7 @@ event_hooks=HTTPX_HOOKS
 
 
 async def pair(pairing_uri: str,
-               pairing_code: str,
+               pairing_code: str | None,
                storage: Dao,
                role: str,
                deployment: str,
@@ -83,7 +83,7 @@ async def pair(pairing_uri: str,
     communication_protocols: List[CommunicationProtocol] = list(map(CommunicationProtocol, supported_communication_protocols))
     supported_hmac_hashing_algorithms: List[HmacHashingAlgorithm] = list(map(HmacHashingAlgorithm, supportedHmacHashingAlgorithms))
 
-    if '-' in pairing_code:
+    if pairing_code is not None and '-' in pairing_code:
         split_code = pairing_code.split('-')
         pairing_s2_node_id, pairing_token = split_code[:-1], split_code[-1]
     else:
