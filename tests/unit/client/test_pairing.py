@@ -78,7 +78,7 @@ async def test_paiting_wrong_url(dao: Dao, s2_client_description: S2NodeDescript
                           storage=dao,
                           role="RM",
                           deployment="WAN",
-                          supported_s2_message_versions=["NEN-EN 50491-12-2"],
+                          supported_s2_message_versions=["v0.0.2-beta"],
                           supported_communication_protocols=["WebSocket"],
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description)
@@ -127,7 +127,7 @@ async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, Magi
                           storage=dao,
                           role="RM",
                           deployment="WAN",
-                          supported_s2_message_versions=["NEN-EN 50491-12-2"],
+                          supported_s2_message_versions=["v0.0.2-beta"],
                           supported_communication_protocols=["WebSocket"],
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description)
@@ -199,7 +199,7 @@ def mock_AsyncClient(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
             return httpx.Response(
                 status_code=200,
                 content=json.dumps({"selectedCommunicationProtocol": "WebSocket",
-                                    "selectedS2MessageVersion": "NEN-EN 50491-12-2",
+                                    "selectedS2MessageVersion": "v0.0.2-beta",
                                      "accessToken": create_pairing_code()}),
                 headers={"Content-Type": "application/json"},
                 request=request,
@@ -276,7 +276,7 @@ async def test_paiting_rm(dao: Dao,
                       storage=dao,
                       role="RM",
                       deployment="WAN",
-                      supported_s2_message_versions=["NEN-EN 50491-12-2"],
+                      supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description)
@@ -285,7 +285,7 @@ async def test_paiting_rm(dao: Dao,
     post_connection_details_spy.assert_not_awaited()
 
     server_s2_node_id: str = str(s2_client_description.id.model_dump(exclude_none=True))
-    assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["NEN-EN 50491-12-2"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
+    assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["v0.0.2-beta"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
     pending_token = dao.load_pending_token(server_s2_node_id)
     assert pending_token is not None
     assert len(str(pending_token)) == 12
@@ -310,7 +310,7 @@ async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tu
                       storage=dao,
                       role="CEM",
                       deployment="WAN",
-                      supported_s2_message_versions=["NEN-EN 50491-12-2"],
+                      supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description)
@@ -328,7 +328,7 @@ async def test_get_pairing_token_str(dao: Dao,
                       storage=dao,
                       role="RM",
                       deployment="WAN",
-                      supported_s2_message_versions=["NEN-EN 50491-12-2"],
+                      supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description)
