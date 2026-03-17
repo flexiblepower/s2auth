@@ -35,6 +35,7 @@ async def _log_request(request: httpx.Request):
     LOGGER.debug(f"Content: {request.content}")
 
 async def _log_response(response: httpx.Response):
+    await response.aread()
     LOGGER.info(f"Rsponse: {response.status_code}")
     LOGGER.info(f"Headers: {response.headers}")
     LOGGER.info(f"Content: {response.text}")
