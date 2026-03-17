@@ -17,12 +17,13 @@ async def _run_client():
     parser = argparse.ArgumentParser(description="S2 pairing client example implementation.")
 
     parser.add_argument("--server_url", default="http://localhost", help="The pairing URL of the pairing server (default: http://localhost)")
+    parser.add_argument("--pairing_S2_nodeId", default=None, help="The id of the client S2 node, (default: None, examle A0)")
     parser.add_argument("--client_S2_nodeId", default=None, help="The id of the client S2 node, (default: auto generated)")
     parser.add_argument("--server_S2_nodeId", default=None, help="The id of the server S2 node, (default: auto generated)")
     parser.add_argument("--access_token", help="Access token for pairing, (default: auto generated, but auto generated is only valid if we are pairing server)")
     parser.add_argument("--s2_role", default="RM", help="The S2 role we are fulfilling, Either RM or CEM (Default: RM)")
     parser.add_argument("--deployment", default="LAN", help="The deployment of this client (WAM or LAN)")
-    parser.add_argument("--supported_s2_message_versions", default=["NEN-EN 50491-12-2"], help="The supported S2 message versions (one per use of the parameter, default: NEN-EN 50491-12-2)")
+    parser.add_argument("--supported_s2_message_versions", default=["v0.0.2-beta"], help="The supported S2 message versions (one per use of the parameter, default: v0.0.2-beta)")
     parser.add_argument("--communication_protocols", default=["WebSocket"], action="append", help="The communication protocols supported (one per use of the parameter, default: Websocket)")
     parser.add_argument("--supported_hmac_hashingAlgorithms", default=["SHA256"], action="append", help="The Hmac Hashing Algorithms supported (one per use of the parameter, default: \"SHA256\")")
 
@@ -39,6 +40,7 @@ async def _run_client():
 
     # generate client id if not given
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
+    serverS2NodeId: UUID = UUID(args.server_S2_nodeId) if args.server_S2_nodeId else clientS2NodeId
     logger.warning(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
 
     s2_client_description: S2NodeDescription = S2NodeDescription(id=S2NodeId(clientS2NodeId),
@@ -60,6 +62,7 @@ async def _run_client():
                       supported_communication_protocols=args.communication_protocols,
                       supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
                       s2_client_description=s2_client_description,
+                      pairingS2NodeId=args.pairing_S2_nodeId,
                       verify=not args.skip_cert_verify)
 
     assert connect(pairing_uri=server_url,
@@ -67,7 +70,7 @@ async def _run_client():
                    supported_s2_message_versions=args.supported_s2_message_versions,
                    supported_communication_protocols=args.communication_protocols,
                    s2_client_description=s2_client_description,
-                   serverS2NodeId=str(clientS2NodeId),
+                   serverS2NodeId=str(serverS2NodeId),
                    clientS2NodeId=str(clientS2NodeId),
                    verify=not args.skip_cert_verify)
 
