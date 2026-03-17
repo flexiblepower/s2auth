@@ -17,7 +17,7 @@ async def _run_client():
     parser = argparse.ArgumentParser(description="S2 pairing client example implementation.")
 
     parser.add_argument("--server_url", default="http://localhost", help="The pairing URL of the pairing server (default: http://localhost)")
-    parser.add_argument("--pairing_S2_nodeId", default=None, help="The id of the client S2 node, (default: None, examle A0)")
+    parser.add_argument("--pairing_S2_nodeId", default=None, help="The id of the client S2 node, (default: None, examle ninechars)")
     parser.add_argument("--client_S2_nodeId", default=None, help="The id of the client S2 node, (default: auto generated)")
     parser.add_argument("--server_S2_nodeId", default=None, help="The id of the server S2 node, (default: auto generated)")
     parser.add_argument("--access_token", help="Access token for pairing, (default: auto generated, but auto generated is only valid if we are pairing server)")
