@@ -24,7 +24,7 @@ from s2auth.common.model.s2_over_ip_pairing import (
     ConnectionDetails, FinalizePairingPostRequest, HmacChallenge,
     HmacChallengeResponse, HmacHashingAlgorithm,
     PostConnectionDetailsPostRequest, RequestConnectionDetailsPostRequest,
-    RequestPairingPostRequest, RequestPairingPostResponse)
+    RequestPairingPostRequest, RequestPairingPostResponse, PairingS2NodeId)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ async def pair(pairing_uri: str,
                supported_communication_protocols: List[str],
                supportedHmacHashingAlgorithms: List[str],
                s2_client_description: S2NodeDescription,
+               pairingS2NodeId: Optional[str] = None,
                verify: bool = True) -> bool:
     """
     Preform the initial pairing
@@ -107,12 +108,12 @@ async def pair(pairing_uri: str,
             logoUrl=s2_client_description.logoUrl,
             deployment=s2_deployment,
         ),
-        pairingS2NodeId=None,
+        pairingS2NodeId=PairingS2NodeId(str(pairingS2NodeId)) if pairingS2NodeId is not None else None,
         supportedCommunicationProtocols=communication_protocols,
         supportedS2MessageVersions=supported_s2_message_versions,
         supportedHmacHashingAlgorithms=supported_hmac_hashing_algorithms,
         clientHmacChallenge=client_hmac_challenge,
-        forcePairing=True
+        forcePairing=True,
     )
     body = request_payload.model_dump_json(exclude_none=True)
 
