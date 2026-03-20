@@ -46,7 +46,11 @@ if [[ $# -gt 0 ]]; then
 fi
 
 if [ "$GEN_MODELS" = true ]; then
-	poetry run datamodel-codegen --input specification/ --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output src/s2auth/common/model/ --formatters=ruff-format --use-annotated --use-exact-imports  --openapi-scopes schemas parameters paths
+	poetry run datamodel-codegen  --type-mappings "string+byte=Base64Bytes" --input specification/ --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output src/s2auth/common/model/ --formatters=ruff-format --use-annotated --use-exact-imports  --openapi-scopes schemas parameters paths
+
+        # Replace Base64Str -> Base64Bytes and ensure import exists
+        grep -Rl --include='*.py' '\bBase64Str\b' src/s2auth/common/model | xargs sed -i 's/\bBase64Str\b/Base64Bytes/g'
+
 fi
 
 # TODO: replace by another way to generate fastAPI server stubs; fastapi-codegen is unmaintained
