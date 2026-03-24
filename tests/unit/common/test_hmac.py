@@ -23,7 +23,7 @@ def test_invalid_algorithm():
     """Test that specifying an unsupported hashing algorithm raises a VerificationError."""
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
-    signature = "random signature"
+    signature = b"random signature"
 
     # Create a mock algorithm object that isn't in the supported list
     # Don't use spec to allow setting __str__
@@ -51,7 +51,7 @@ def test_create_challenge():
     assert isinstance(challenge, HmacChallenge)
 
     # challenge.root should be a string
-    assert isinstance(challenge.root, str)
+    assert isinstance(challenge.root, bytes)
 
     # The root should be the decoded random string (length=64)
     assert len(challenge.root) == 64
@@ -136,20 +136,19 @@ def test_create_response_default_algorithm():
     response = create_response(pairing_token, challenge)
 
     # Response should be base64 encoded
-    assert isinstance(response, str)
-    decoded_response = b64decode(response)
+    assert isinstance(response, bytes)
 
     # SHA256 produces 32 bytes
-    assert len(decoded_response) == 32
+    assert len(response) == 32
 
     # Manually compute expected HMAC and verify it matches
     expected_hmac = hmac.new(
         b64decode(pairing_token),
-        msg=challenge.root.encode("utf-8"),
+        msg=challenge.root,
         digestmod=hashlib.sha256
     ).digest()
 
-    assert decoded_response == expected_hmac
+    assert response == expected_hmac
 
 
 def test_create_response_invalid_algorithm():
@@ -175,17 +174,17 @@ def test_create_response_with_different_challenge_lengths():
     # Test with 32-byte challenge
     challenge32 = create_challenge(length=32)
     response32 = create_response(pairing_token, challenge32)
-    assert len(b64decode(response32)) == 32
+    assert len(response32) == 32
 
     # Test with 128-byte challenge (default)
     challenge128 = create_challenge(length=128)
     response128 = create_response(pairing_token, challenge128)
-    assert len(b64decode(response128)) == 32
+    assert len(response128) == 32
 
     # Test with 256-byte challenge
     challenge256 = create_challenge(length=256)
     response256 = create_response(pairing_token, challenge256)
-    assert len(b64decode(response256)) == 32
+    assert len(response256) == 32
 
     # Different challenges should produce different responses
     assert response32 != response128
@@ -238,7 +237,7 @@ def test_create_response_deterministic():
     # Create HmacChallenge with UTF-8 safe data
     consistent_data = "consistent_challenge_data_as_text"
     challenge = HmacChallenge(
-        root=b64encode(consistent_data.encode("utf-8")).decode("utf-8")
+        root=b64encode(b64encode(consistent_data.encode("utf-8")))
     )
 
     # Create response multiple times

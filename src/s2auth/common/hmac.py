@@ -61,12 +61,8 @@ def create_challenge(length: int = 128) -> HmacChallenge:
     The challenge needs to be passed to the the other side of the connection, who should sign it with a shared pairing token.
     verify_response can then be used to verify that signature.
     """
-    # TODO if using Base64Bytes for the HmacChallenge rather than Base64Str, use this and remove the random_utf8_string function.
-    # challenge_value = secrets.token_bytes(length)
-    challenge_value = random_utf8_string(length)
-    return HmacChallenge(
-        root=b64encode(challenge_value.encode("utf-8")).decode("ascii")
-    )
+    challenge_value: bytes = secrets.token_bytes(length)
+    return HmacChallenge(root=b64encode(challenge_value))
 
 
 def get_supported_algorithms() -> list[HmacHashingAlgorithm]:
@@ -94,26 +90,18 @@ def create_response(
     pairing_token: PairingToken,
     challenge: HmacChallenge,
     algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256,
-) -> str:
+) -> bytes:
     try:
         digestmod = _get_hashing_algorithm(algorithm)
     except ValueError as e:
         raise VerificationError(str(e)) from e
-    return b64encode(
-        hmac.new(
-            b64decode(pairing_token),
-            msg=challenge.root.encode(
-                "utf-8"
-            ),  # if using Base64Bytes for the HmacChallenge, remove the .encode()
-            digestmod=digestmod,
-        ).digest()
-    ).decode("ascii")
+    return hmac.new(b64decode(pairing_token), msg=challenge.root, digestmod=digestmod).digest()
 
 
 def verify_response(
-    pairing_token: PairingToken,
+    pairing_token: str,
     challenge: HmacChallenge,
-    response: str,
+    response: bytes,
     algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256,
 ) -> bool:
     """
@@ -123,14 +111,8 @@ def verify_response(
         digestmod = _get_hashing_algorithm(algorithm)
     except ValueError as e:
         raise VerificationError(str(e)) from e
-    verify_digest = b64decode(response)
-    correct_digest = hmac.new(
-        b64decode(pairing_token),
-        msg=challenge.root.encode(
-            "utf-8"
-        ),  # if using Base64Bytes for the HmacChallenge, remove the .encode()
-        digestmod=digestmod,
-    ).digest()
-    if not hmac.compare_digest(correct_digest, verify_digest):
+    correct_digest = hmac.new(b64decode(pairing_token), msg=challenge.root, digestmod=digestmod).digest()
+
+    if not hmac.compare_digest(correct_digest, response):
         raise VerificationError("Signature is invalid.")
     return True

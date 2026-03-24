@@ -11,15 +11,17 @@ import httpx
 import pytest
 from pydantic import AnyUrl, TypeAdapter
 from pytest_mock.plugin import MockerFixture
+
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import (add_header, confirmToken, finalize_pairing,
-                                   pair, post_connection_details,
+from s2auth.client.pairing import (add_header, confirmToken, connect,
+                                   finalize_pairing, pair,
+                                   post_connection_details,
                                    request_connection_details,
-                                   strip_pairing_url, unpair, connect)
+                                   strip_pairing_url, unpair)
 from s2auth.common.exceptions import S2PairingError
-from s2auth.common.hmac import create_challenge, create_pairing_code, create_response
-from s2auth.common.model.s2_over_ip_common import (AccessToken,
-                                                   Deployment,
+from s2auth.common.hmac import (create_challenge, create_pairing_code,
+                                create_response)
+from s2auth.common.model.s2_over_ip_common import (AccessToken, Deployment,
                                                    S2EndpointDescription,
                                                    S2NodeDescription, S2NodeId,
                                                    S2Role)
@@ -48,9 +50,8 @@ def s2_client_description() -> S2NodeDescription:
 
 
 def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> RequestPairingPostResponse:
-
     response = create_response(PAIRING_TOKEN, pairing_request.clientHmacChallenge)
-    challenge_response: HmacChallengeResponse = HmacChallengeResponse(b64encode(response.encode("utf-8")).decode("ascii"))
+    challenge_response: HmacChallengeResponse = HmacChallengeResponse(b64encode(response))
 
     s2_server_description = S2NodeDescription(id=S2NodeId(UUID("12345678-1234-1234-1234-123456789abc")),
                                               brand="ExampleCemCo",
@@ -60,8 +61,9 @@ def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> Reque
 
     endpoint_description = S2EndpointDescription(name='Cem p50 endpoint', deployment=Deployment("WAN"))
 
+    pid = PairingAttemptId(b"550e8400-e29b-41d4-a716-446655440000")
     return RequestPairingPostResponse(
-        pairingAttemptId=PairingAttemptId(b64encode(b"550e8400-e29b-41d4-a716-446655440000").decode('utf-8')),
+        pairingAttemptId=pid,
         serverS2NodeDescription=s2_server_description,
         serverS2EndpointDescription=endpoint_description,
         selectedHmacHashingAlgorithm=HmacHashingAlgorithm.SHA256,
@@ -72,7 +74,6 @@ def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> Reque
 async def test_paiting_wrong_url(dao: Dao, s2_client_description: S2NodeDescription) -> None:
     # testing calling url that does not exist
     with pytest.raises(S2PairingError) as excinfo:
-
         assert await pair(pairing_uri='http://s2server.example.com/v1',
                           pairing_code=PAIRING_CODE,
                           storage=dao,
@@ -200,7 +201,7 @@ def mock_AsyncClient(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
                 status_code=200,
                 content=json.dumps({"selectedCommunicationProtocol": "WebSocket",
                                     "selectedS2MessageVersion": "v0.0.2-beta",
-                                     "accessToken": create_pairing_code()}),
+                                    "accessToken": create_pairing_code()}),
                 headers={"Content-Type": "application/json"},
                 request=request,
             )
