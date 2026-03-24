@@ -8,6 +8,7 @@ from uuid import UUID
 
 import httpx
 from pydantic import AnyUrl, TypeAdapter
+
 from s2auth.client.dao import Dao
 from s2auth.common.exceptions import S2PairingError, VerificationError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
@@ -22,9 +23,9 @@ from s2auth.common.model.s2_over_ip_connection_init import \
     InitiateConnectionPostRequest
 from s2auth.common.model.s2_over_ip_pairing import (
     ConnectionDetails, FinalizePairingPostRequest, HmacChallenge,
-    HmacChallengeResponse, HmacHashingAlgorithm,
+    HmacChallengeResponse, HmacHashingAlgorithm, PairingS2NodeId,
     PostConnectionDetailsPostRequest, RequestConnectionDetailsPostRequest,
-    RequestPairingPostRequest, RequestPairingPostResponse, PairingS2NodeId)
+    RequestPairingPostRequest, RequestPairingPostResponse)
 
 LOGGER = logging.getLogger(__name__)
 
