@@ -13,19 +13,28 @@ from s2auth.client.dao import Dao
 from s2auth.common.exceptions import S2PairingError, VerificationError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 verify_response)
-from s2auth.common.model.s2_over_ip_common import (AccessToken,
-                                                   CommunicationProtocol,
-                                                   Deployment,
-                                                   S2EndpointDescription,
-                                                   S2NodeDescription, S2NodeId,
-                                                   S2Role)
-from s2auth.common.model.s2_over_ip_connection_init import \
-    InitiateConnectionPostRequest
-from s2auth.common.model.s2_over_ip_pairing import (
-    ConnectionDetails, FinalizePairingPostRequest, HmacChallenge,
-    HmacChallengeResponse, HmacHashingAlgorithm, PairingS2NodeId,
-    PostConnectionDetailsPostRequest, RequestConnectionDetailsPostRequest,
-    RequestPairingPostRequest, RequestPairingPostResponse)
+from s2auth.common.model.s2_connect_common import (
+    AccessToken,
+    CommunicationProtocol,
+    Deployment,
+    EndpointDescription,
+    NodeDescription,
+    NodeId,
+    Role,
+)
+from s2auth.common.model.s2_connect_connection_init import InitiateConnectionPostRequest
+from s2auth.common.model.s2_connect_pairing import (
+    ConnectionDetails,
+    FinalizePairingPostRequest,
+    HmacChallenge,
+    HmacChallengeResponse,
+    HmacHashingAlgorithm,
+    NodeIdAlias,
+    PostConnectionDetailsPostRequest,
+    RequestConnectionDetailsPostRequest,
+    RequestPairingPostRequest,
+    RequestPairingPostResponse,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +62,7 @@ async def pair(pairing_uri: str,
                supported_s2_message_versions: List[str],
                supported_communication_protocols: List[str],
                supportedHmacHashingAlgorithms: List[str],
-               s2_client_description: S2NodeDescription,
+               s2_client_description: NodeDescription,
                pairingS2NodeId: Optional[str] = None,
                verify: bool = True) -> bool:
     """
@@ -81,18 +90,18 @@ async def pair(pairing_uri: str,
     # In any case, store the connection details in the database.
 
     # If no id given use id from client
-    s2_role: S2Role = S2Role(role)
+    s2_role: Role = Role(role)
     s2_deployment: Deployment = Deployment(deployment)
     communication_protocols: List[CommunicationProtocol] = list(map(CommunicationProtocol, supported_communication_protocols))
     supported_hmac_hashing_algorithms: List[HmacHashingAlgorithm] = list(map(HmacHashingAlgorithm, supportedHmacHashingAlgorithms))
 
     if pairing_code is not None and '-' in pairing_code:
         split_code = pairing_code.split('-')
-        pairing_s2_node_id, pairing_token = split_code[:-1], split_code[-1]
+        pairing_s2_node_id, pairing_token = "".join(split_code[:-1]), split_code[-1]
     else:
         pairing_s2_node_id, pairing_token = None, pairing_code
 
-    if not pairing_token and s2_role == S2Role.RM:
+    if not pairing_token and s2_role == Role.RM:
         raise S2PairingError("Access token required for pairing RM")
     elif not pairing_token:
         pairing_token = create_pairing_code()
@@ -104,13 +113,13 @@ async def pair(pairing_uri: str,
 
     client_hmac_challenge = create_challenge()
     request_payload: RequestPairingPostRequest = RequestPairingPostRequest(
-        clientS2NodeDescription=s2_client_description,
-        clientS2EndpointDescription=S2EndpointDescription(
+        clientNodeDescription=s2_client_description,
+        clientEndpointDescription=EndpointDescription(
             name=f"{s2_client_description.userDefinedName if s2_client_description.userDefinedName else s2_client_description.brand} endpoint",
             logoUrl=s2_client_description.logoUrl,
             deployment=s2_deployment,
         ),
-        pairingS2NodeId=PairingS2NodeId(str(pairingS2NodeId)) if pairingS2NodeId is not None else None,
+        nodeIdAlias=NodeIdAlias(str(pairing_s2_node_id)) if pairing_s2_node_id is not None else None,
         supportedCommunicationProtocols=communication_protocols,
         supportedS2MessageVersions=supported_s2_message_versions,
         supportedHmacHashingAlgorithms=supported_hmac_hashing_algorithms,
@@ -130,8 +139,8 @@ async def pair(pairing_uri: str,
                                    response=pairing_response.clientHmacChallengeResponse.root,
                                    algorithm=pairing_response.selectedHmacHashingAlgorithm):
                 raise VerificationError("HMAC chellange does not match")
-            assert s2_role in (S2Role.RM, S2Role.CEM)
-            if s2_role == S2Role.RM:
+            assert s2_role in (Role.RM, Role.CEM)
+            if s2_role == Role.RM:
                 connection_details_dict = await request_connection_details(pairing_uri=pairing_uri,
                                                                            attempt_id=pairing_response.pairingAttemptId.model_dump(exclude_none=True),
                                                                            serverHmacChallangeResponse=pairing_response.serverHmacChallenge,
@@ -143,7 +152,7 @@ async def pair(pairing_uri: str,
                 # Post connection details logic for CEM role
                 initiateConnectionUrl: AnyUrl = TypeAdapter(AnyUrl).validate_python(f"{pairing_uri}/initiateConnection")
                 b64str_token = b64encode(pairing_token.encode("utf-8")).decode("ascii")
-                access_token: AccessToken = AccessToken(b64str_token)
+                access_token: AccessToken = AccessToken(b64str_token.encode("ascii"))
                 connection_details: ConnectionDetails = ConnectionDetails(initiateConnectionUrl=initiateConnectionUrl, accessToken=access_token)
                 response = await post_connection_details(pairing_uri,
                                                          pairing_response.pairingAttemptId.model_dump(exclude_none=True),
@@ -241,7 +250,7 @@ async def connect(pairing_uri: str,
                   storage: Dao,
                   supported_s2_message_versions: List[str],
                   supported_communication_protocols: List[str],
-                  s2_client_description: S2NodeDescription,
+                  s2_client_description: NodeDescription,
                   serverS2NodeId: str,
                   clientS2NodeId: Optional[str] = None,
                   verify: bool = True) -> bool:
@@ -264,8 +273,8 @@ async def connect(pairing_uri: str,
 
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
         init_payload: InitiateConnectionPostRequest = InitiateConnectionPostRequest(
-            serverS2NodeId=S2NodeId(UUID(serverS2NodeId)),
-            clientS2NodeId=S2NodeId(UUID(client_s2_node_id)),
+            serverNodeId=NodeId(UUID(serverS2NodeId)),
+            clientNodeId=NodeId(UUID(client_s2_node_id)),
             supportedS2MessageVersions=supported_s2_message_versions,
             supportedCommunicationProtocols=supported_comms_protocols,
         )

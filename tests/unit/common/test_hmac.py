@@ -16,7 +16,7 @@ from s2auth.common.hmac import (
     select_algorithm,
     get_supported_algorithms,
 )
-from s2auth.common.model.s2_over_ip_pairing import HmacChallenge, HmacHashingAlgorithm
+from s2auth.common.model.s2_connect_pairing import HmacChallenge, HmacHashingAlgorithm
 
 
 def test_invalid_algorithm():
