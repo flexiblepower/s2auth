@@ -12,7 +12,7 @@ from s2auth.common.exceptions import (
     IncompatibleHmacHashingAlgorithms,
     VerificationError,
 )
-from s2auth.common.model.s2_over_ip_pairing import HmacChallenge, HmacHashingAlgorithm
+from s2auth.common.model.s2_connect_pairing import HmacChallenge, HmacHashingAlgorithm
 
 # Ensure the algorithms are sorted with the most secure/desirable algorithms last.
 _ALGORITHM_MAP: OrderedDict[HmacHashingAlgorithm, Callable[..., Any]] = OrderedDict(
