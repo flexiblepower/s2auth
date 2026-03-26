@@ -1,0 +1,3 @@
+[submodule "specification/s2-connect"]
+	path = specification/s2-connect
+	url = https://github.com/flexiblepower/s2-connect.git
