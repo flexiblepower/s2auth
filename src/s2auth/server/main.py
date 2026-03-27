@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 import s2auth
 
-from s2auth.common.model.s2_over_ip_connection_init import (
+from s2auth.common.model.s2_connect_connection_init import (
     CommunicationDetailsErrorMessage,
     ConfirmAccessTokenPostResponse,
     InitiateConnectionPostRequest,
     InitiateConnectionPostResponse,
     UnpairPostRequest,
 )
-from s2auth.common.model.s2_over_ip_pairing import (
+from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails,
     FinalizePairingPostRequest,
     PairingResponseErrorMessage,
@@ -20,7 +20,7 @@ from s2auth.common.model.s2_over_ip_pairing import (
     WaitForPairingPostRequest,
     WaitForPairingPostResponse,
 )
-from s2auth.common.model.s2_over_ip_common import S2NodeId
+from s2auth.common.model.s2_connect_common import NodeId
 
 app = FastAPI(
     version=s2auth.__version__,
@@ -72,7 +72,7 @@ def unpair(body: UnpairPostRequest = None) -> None:  # pyright: ignore[reportArg
 @app.post(
     "/cancelPreparePairing", response_model=None, tags=["LAN-LAN only extensions"]
 )
-def cancel_prepare_pairing(body: S2NodeId = None) -> None:  # pyright: ignore[reportArgumentType]
+def cancel_prepare_pairing(body: NodeId = None) -> None:  # pyright: ignore[reportArgumentType]
     """
     Cancel a previous call to preparePairing
     """
