@@ -7,8 +7,8 @@ from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
 from s2auth.client.pairing import connect, pair, strip_pairing_url
-from s2auth.common.model.s2_over_ip_common import S2NodeDescription, S2NodeId
-from s2auth.common.model.s2_over_ip_pairing import HmacHashingAlgorithm
+from s2auth.common.model.s2_connect_common import NodeDescription, NodeId
+from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
 
 
 async def _run_client():
@@ -43,11 +43,11 @@ async def _run_client():
     serverS2NodeId: UUID = UUID(args.server_S2_nodeId) if args.server_S2_nodeId else clientS2NodeId
     logger.warning(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
 
-    s2_client_description: S2NodeDescription = S2NodeDescription(id=S2NodeId(clientS2NodeId),
-                                                                 brand=args.brand,
-                                                                 type=args.type,
-                                                                 modelName=args.model_name,
-                                                                 role=args.s2_role)
+    s2_client_description: NodeDescription = NodeDescription(id=NodeId(clientS2NodeId),
+                                                             brand=args.brand,
+                                                             type=args.type,
+                                                             modelName=args.model_name,
+                                                             role=args.s2_role)
 
     dao = Dao()
     server_url: str = strip_pairing_url(args.server_url)
