@@ -33,6 +33,7 @@ from s2auth.common.model.s2_connect_pairing import (
 
 PAIRING_TOKEN: str = 'nua9nov3QNUd'
 PAIRING_CODE: str = '550e8400-nua9nov3QNUd'
+HMAC_SALT = 's2.example.com'
 
 
 @pytest.fixture()
@@ -50,7 +51,7 @@ def s2_client_description() -> NodeDescription:
 
 
 def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> RequestPairingPostResponse:
-    response = create_response(PAIRING_TOKEN, pairing_request.clientHmacChallenge)
+    response = create_response(PAIRING_TOKEN, pairing_request.clientHmacChallenge, hmac_salt=HMAC_SALT)
     challenge_response: HmacChallengeResponse = HmacChallengeResponse(b64encode(response))
 
     s2_server_description = NodeDescription(id=NodeId(UUID("12345678-1234-1234-1234-123456789abc")),
@@ -82,7 +83,8 @@ async def test_paiting_wrong_url(dao: Dao, s2_client_description: NodeDescriptio
                           supported_s2_message_versions=["v0.0.2-beta"],
                           supported_communication_protocols=["WebSocket"],
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
-                          s2_client_description=s2_client_description)
+                          s2_client_description=s2_client_description,
+                          hmac_salt=HMAC_SALT)
     assert 'No address associated with hostname' in str(excinfo.value)
 
 
@@ -131,7 +133,8 @@ async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, Magi
                           supported_s2_message_versions=["v0.0.2-beta"],
                           supported_communication_protocols=["WebSocket"],
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
-                          s2_client_description=s2_client_description)
+                          s2_client_description=s2_client_description,
+                          hmac_salt=HMAC_SALT)
     assert "Client error '404 Not Found'" in str(excinfo.value)
 
 
@@ -280,7 +283,8 @@ async def test_paiting_rm(dao: Dao,
                       supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
-                      s2_client_description=s2_client_description)
+                      s2_client_description=s2_client_description,
+                      hmac_salt=HMAC_SALT)
     request_connection_details_spy.assert_awaited_once()
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_not_awaited()
@@ -289,13 +293,13 @@ async def test_paiting_rm(dao: Dao,
     assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["v0.0.2-beta"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
     pending_token = dao.load_pending_token(server_s2_node_id)
     assert pending_token is not None
-    assert len(str(pending_token)) == 12
+    assert len(str(pending_token)) == 9
 
     ws_token, url = dao.load_ws_connection_details(server_s2_node_id)
 
     assert ws_token != pending_token
     assert ws_token is not None
-    assert len(str(ws_token)) == 12
+    assert len(str(ws_token)) == 9
     assert url == 'wss://example.com/v1/s2exampleWS'
 
 
@@ -314,7 +318,8 @@ async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tu
                       supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
-                      s2_client_description=s2_client_description)
+                      s2_client_description=s2_client_description,
+                      hmac_salt=HMAC_SALT)
     request_connection_details_spy.assert_not_awaited()
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_awaited_once()
@@ -332,7 +337,8 @@ async def test_get_pairing_token_str(dao: Dao,
                       supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
-                      s2_client_description=s2_client_description)
+                      s2_client_description=s2_client_description,
+                      hmac_salt=HMAC_SALT)
 
     client_s2_node_id: str = s2_client_description.id.model_dump(exclude_none=True)
     token = dao.load_token(client_s2_node_id)

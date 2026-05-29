@@ -3,17 +3,15 @@
 #   timestamp: 2026-03-26T20:28:20+00:00
 
 from __future__ import annotations
-from pydantic import BaseModel, Field, RootModel
-from .s2_connect_common import (
-    AccessToken,
-    CommunicationProtocol,
-    CommunicationToken,
-    EndpointDescription,
-    NodeDescription,
-    NodeId,
-)
-from typing import Annotated, Literal
+
 from enum import Enum
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, RootModel
+
+from .s2_connect_common import (AccessToken, CommunicationProtocol,
+                                CommunicationToken, EndpointDescription,
+                                NodeDescription, NodeId)
 
 
 class CommunicationDetails(BaseModel):

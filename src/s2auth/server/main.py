@@ -1,26 +1,17 @@
 from fastapi import FastAPI
-import s2auth
 
-from s2auth.common.model.s2_connect_connection_init import (
-    CommunicationDetailsErrorMessage,
-    ConfirmAccessTokenPostResponse,
-    InitiateConnectionPostRequest,
-    InitiateConnectionPostResponse,
-    UnpairPostRequest,
-)
-from s2auth.common.model.s2_connect_pairing import (
-    ConnectionDetails,
-    FinalizePairingPostRequest,
-    PairingResponseErrorMessage,
-    PostConnectionDetailsPostRequest,
-    PreparePairingPostRequest,
-    RequestConnectionDetailsPostRequest,
-    RequestPairingPostRequest,
-    RequestPairingPostResponse,
-    WaitForPairingPostRequest,
-    WaitForPairingPostResponse,
-)
+import s2auth
 from s2auth.common.model.s2_connect_common import NodeId
+from s2auth.common.model.s2_connect_connection_init import (
+    CommunicationDetailsErrorMessage, ConfirmAccessTokenPostResponse,
+    InitiateConnectionPostRequest, InitiateConnectionPostResponse,
+    UnpairPostRequest)
+from s2auth.common.model.s2_connect_pairing import (
+    ConnectionDetails, FinalizePairingPostRequest, PairingResponseErrorMessage,
+    PostConnectionDetailsPostRequest, PreparePairingPostRequest,
+    RequestConnectionDetailsPostRequest, RequestPairingPostRequest,
+    RequestPairingPostResponse, WaitForPairingPostRequest,
+    WaitForPairingPostResponse)
 
 app = FastAPI(
     version=s2auth.__version__,

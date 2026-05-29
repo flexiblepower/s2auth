@@ -3,17 +3,14 @@
 #   timestamp: 2026-03-26T20:28:20+00:00
 
 from __future__ import annotations
-from pydantic import Base64Bytes
+
 from enum import Enum
-from pydantic import AnyUrl, BaseModel, Field, RootModel
 from typing import Annotated
-from .s2_connect_common import (
-    AccessToken,
-    CommunicationProtocol,
-    EndpointDescription,
-    NodeDescription,
-    NodeId,
-)
+
+from pydantic import AnyUrl, Base64Bytes, BaseModel, Field, RootModel
+
+from .s2_connect_common import (AccessToken, CommunicationProtocol,
+                                EndpointDescription, NodeDescription, NodeId)
 
 
 class ErrorMessage(str, Enum):

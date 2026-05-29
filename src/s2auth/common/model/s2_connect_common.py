@@ -3,11 +3,13 @@
 #   timestamp: 2026-03-26T20:28:20+00:00
 
 from __future__ import annotations
-from pydantic import Base64Bytes
-from uuid import UUID
-from typing import Annotated
-from pydantic import AnyUrl, BaseModel, Field, RootModel, field_serializer
+
 from enum import Enum
+from typing import Annotated
+from uuid import UUID
+
+from pydantic import (AnyUrl, Base64Bytes, BaseModel, Field, RootModel,
+                      field_serializer)
 
 
 class NodeId(RootModel[UUID]):

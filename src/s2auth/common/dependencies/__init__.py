@@ -67,25 +67,15 @@ async def broken_provider():
 4. The try-finally pattern works for both success and failure cases
 """
 
-from typing import (
-    Any,
-    Callable,
-    Coroutine,
-    Dict,
-    List,
-    Optional,
-    Set,
-    TypeVar,
-    Union,
-    overload,
-)
-from dependency_injector import containers, providers
-from contextlib import contextmanager
+import asyncio
 import functools
 import inspect
 import logging
+from contextlib import contextmanager
+from typing import (Any, Callable, Coroutine, Dict, List, Optional, Set,
+                    TypeVar, Union, overload)
 
-import asyncio
+from dependency_injector import containers, providers
 
 logger = logging.getLogger(__name__)
 
