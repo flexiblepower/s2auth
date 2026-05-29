@@ -1,22 +1,23 @@
 import hashlib
 import hmac
+import string
+from base64 import b64encode
 from unittest.mock import MagicMock
 
 import pytest
-from base64 import b64encode, b64decode
 from pydantic import TypeAdapter
 
-from s2auth.common.exceptions import IncompatibleHmacHashingAlgorithms, VerificationError
-from s2auth.common.hmac import (
-    PairingToken,
-    create_challenge,
-    create_response,
-    verify_response,
-    create_pairing_code,
-    select_algorithm,
-    get_supported_algorithms,
-)
-from s2auth.common.model.s2_connect_pairing import HmacChallenge, HmacHashingAlgorithm
+from s2auth.common.exceptions import (IncompatibleHmacHashingAlgorithms,
+                                      VerificationError)
+from s2auth.common.hmac import (PairingToken, create_challenge,
+                                create_pairing_code, create_response,
+                                get_supported_algorithms, select_algorithm,
+                                verify_response)
+from s2auth.common.model.s2_connect_pairing import (HmacChallenge,
+                                                    HmacHashingAlgorithm)
+
+HMAC_SALT = 's2.example.com'
+CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
 
 def test_invalid_algorithm():
@@ -39,6 +40,7 @@ def test_invalid_algorithm():
             pairing_token=pairing_token,
             challenge=challenge,
             response=signature,
+            hmac_salt=HMAC_SALT,
             algorithm=invalid_algorithm,  # pyright: ignore[reportArgumentType]
         )
 
@@ -62,11 +64,9 @@ def test_create_pairing_code_default_length():
 
     token = create_pairing_code()
     assert isinstance(token, str)
-    assert len(token) == 12  # 9 bytes -> 12 characters in base64 (no padding needed)
+    assert len(token) == 9
 
-    # Should be valid base64
-    decoded = b64decode(token)
-    assert len(decoded) == 9
+    assert all(c in CHARS for c in token)
 
     # Should validate as PairingToken
     adapter = TypeAdapter[str](PairingToken)
@@ -80,19 +80,19 @@ def test_create_pairing_code_custom_length():
 
     # Test with 10 bytes (will have padding)
     token10 = create_pairing_code(length=10)
-    assert len(b64decode(token10)) == 10
+    assert len(token10) == 10
     validated10 = adapter.validate_python(token10)
     assert validated10 == token10
 
     # Test with 12 bytes (no padding)
     token12 = create_pairing_code(length=12)
-    assert len(b64decode(token12)) == 12
+    assert len(token12) == 12
     validated12 = adapter.validate_python(token12)
     assert validated12 == token12
 
     # Test with 20 bytes
     token20 = create_pairing_code(length=20)
-    assert len(b64decode(token20)) == 20
+    assert len(token20) == 20
     validated20 = adapter.validate_python(token20)
     assert validated20 == token20
 
@@ -122,7 +122,7 @@ def test_create_pairing_code_with_id():
     # Test with 10 bytes (will have padding)
     pairing_code = create_pairing_code("42", length=10)
     pairing_s2_node_id, token10 = pairing_code.split('-', 1)
-    assert len(b64decode(token10)) == 10
+    assert len(token10) == 10
     validated10 = adapter.validate_python(token10)
     assert validated10 == token10
     assert pairing_s2_node_id == "42"
@@ -133,7 +133,7 @@ def test_create_response_default_algorithm():
     pairing_token = create_pairing_code()
     challenge = create_challenge()
 
-    response = create_response(pairing_token, challenge)
+    response = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
 
     # Response should be base64 encoded
     assert isinstance(response, bytes)
@@ -142,9 +142,10 @@ def test_create_response_default_algorithm():
     assert len(response) == 32
 
     # Manually compute expected HMAC and verify it matches
+    msg_bin = (pairing_token + HMAC_SALT).encode("utf-8")
     expected_hmac = hmac.new(
-        b64decode(pairing_token),
-        msg=challenge.root,
+        key=challenge.root,
+        msg=msg_bin,
         digestmod=hashlib.sha256
     ).digest()
 
@@ -164,7 +165,7 @@ def test_create_response_invalid_algorithm():
     with pytest.raises(
         VerificationError, match="Hashing algorithm .* is not supported"
     ):
-        create_response(pairing_token, challenge, algorithm=invalid_algorithm)  # pyright: ignore[reportArgumentType]
+        create_response(pairing_token, challenge, algorithm=invalid_algorithm, hmac_salt=HMAC_SALT)  # pyright: ignore[reportArgumentType]
 
 
 def test_create_response_with_different_challenge_lengths():
@@ -173,17 +174,17 @@ def test_create_response_with_different_challenge_lengths():
 
     # Test with 32-byte challenge
     challenge32 = create_challenge(length=32)
-    response32 = create_response(pairing_token, challenge32)
+    response32 = create_response(pairing_token, challenge32, hmac_salt=HMAC_SALT)
     assert len(response32) == 32
 
     # Test with 128-byte challenge (default)
     challenge128 = create_challenge(length=128)
-    response128 = create_response(pairing_token, challenge128)
+    response128 = create_response(pairing_token, challenge128, hmac_salt=HMAC_SALT)
     assert len(response128) == 32
 
     # Test with 256-byte challenge
     challenge256 = create_challenge(length=256)
-    response256 = create_response(pairing_token, challenge256)
+    response256 = create_response(pairing_token, challenge256, hmac_salt=HMAC_SALT)
     assert len(response256) == 32
 
     # Different challenges should produce different responses
@@ -197,10 +198,10 @@ def test_create_and_verify_response_integration():
     challenge = create_challenge()
 
     # Create response
-    response = create_response(pairing_token, challenge)
+    response = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
 
     # Verify response with same token should succeed
-    assert verify_response(pairing_token, challenge, response)
+    assert verify_response(pairing_token, challenge, response, hmac_salt=HMAC_SALT)
 
 
 def test_create_and_verify_response_wrong_token():
@@ -210,11 +211,11 @@ def test_create_and_verify_response_wrong_token():
     challenge = create_challenge()
 
     # Create response with first token
-    response = create_response(pairing_token, challenge)
+    response = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
 
     # Verify with different token should fail
     with pytest.raises(VerificationError):
-        verify_response(wrong_token, challenge, response)
+        verify_response(wrong_token, challenge, response, hmac_salt=HMAC_SALT)
 
 
 def test_create_and_verify_response_wrong_challenge():
@@ -224,11 +225,11 @@ def test_create_and_verify_response_wrong_challenge():
     challenge2 = create_challenge()
 
     # Create response for first challenge
-    response = create_response(pairing_token, challenge1)
+    response = create_response(pairing_token, challenge1, hmac_salt=HMAC_SALT)
 
     # Verify with different challenge should fail
     with pytest.raises(VerificationError):
-        verify_response(pairing_token, challenge2, response)
+        verify_response(pairing_token, challenge2, response, hmac_salt=HMAC_SALT)
 
 
 def test_create_response_deterministic():
@@ -241,9 +242,9 @@ def test_create_response_deterministic():
     )
 
     # Create response multiple times
-    response1 = create_response(pairing_token, challenge)
-    response2 = create_response(pairing_token, challenge)
-    response3 = create_response(pairing_token, challenge)
+    response1 = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
+    response2 = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
+    response3 = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
 
     # All responses should be identical
     assert response1 == response2 == response3

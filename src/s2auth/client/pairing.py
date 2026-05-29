@@ -13,28 +13,19 @@ from s2auth.client.dao import Dao
 from s2auth.common.exceptions import S2PairingError, VerificationError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 verify_response)
-from s2auth.common.model.s2_connect_common import (
-    AccessToken,
-    CommunicationProtocol,
-    Deployment,
-    EndpointDescription,
-    NodeDescription,
-    NodeId,
-    Role,
-)
-from s2auth.common.model.s2_connect_connection_init import InitiateConnectionPostRequest
+from s2auth.common.model.s2_connect_common import (AccessToken,
+                                                   CommunicationProtocol,
+                                                   Deployment,
+                                                   EndpointDescription,
+                                                   NodeDescription, NodeId,
+                                                   Role)
+from s2auth.common.model.s2_connect_connection_init import \
+    InitiateConnectionPostRequest
 from s2auth.common.model.s2_connect_pairing import (
-    ConnectionDetails,
-    FinalizePairingPostRequest,
-    HmacChallenge,
-    HmacChallengeResponse,
-    HmacHashingAlgorithm,
-    NodeIdAlias,
-    PostConnectionDetailsPostRequest,
-    RequestConnectionDetailsPostRequest,
-    RequestPairingPostRequest,
-    RequestPairingPostResponse,
-)
+    ConnectionDetails, FinalizePairingPostRequest, HmacChallenge,
+    HmacChallengeResponse, HmacHashingAlgorithm, NodeIdAlias,
+    PostConnectionDetailsPostRequest, RequestConnectionDetailsPostRequest,
+    RequestPairingPostRequest, RequestPairingPostResponse)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -63,6 +54,7 @@ async def pair(pairing_uri: str,
                supported_communication_protocols: List[str],
                supportedHmacHashingAlgorithms: List[str],
                s2_client_description: NodeDescription,
+               hmac_salt:str,
                pairingS2NodeId: Optional[str] = None,
                verify: bool = True) -> bool:
     """
@@ -137,6 +129,7 @@ async def pair(pairing_uri: str,
             if not verify_response(pairing_token=pairing_token,
                                    challenge=client_hmac_challenge,
                                    response=pairing_response.clientHmacChallengeResponse.root,
+                                   hmac_salt=hmac_salt,
                                    algorithm=pairing_response.selectedHmacHashingAlgorithm):
                 raise VerificationError("HMAC chellange does not match")
             assert s2_role in (Role.RM, Role.CEM)

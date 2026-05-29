@@ -1,18 +1,21 @@
 import hashlib
 import hmac
+import random
 import secrets
-from base64 import b64decode, b64encode
-from typing import Annotated, Any, OrderedDict
+import string
+from base64 import b64encode
 from collections.abc import Callable
+from typing import Annotated, Any, OrderedDict
 
 from pydantic import StringConstraints
 
 from s2auth.common.dependencies import register_provider
-from s2auth.common.exceptions import (
-    IncompatibleHmacHashingAlgorithms,
-    VerificationError,
-)
-from s2auth.common.model.s2_connect_pairing import HmacChallenge, HmacHashingAlgorithm
+from s2auth.common.exceptions import (IncompatibleHmacHashingAlgorithms,
+                                      VerificationError)
+from s2auth.common.model.s2_connect_pairing import (HmacChallenge,
+                                                    HmacHashingAlgorithm)
+
+CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
 # Ensure the algorithms are sorted with the most secure/desirable algorithms last.
 _ALGORITHM_MAP: OrderedDict[HmacHashingAlgorithm, Callable[..., Any]] = OrderedDict(
@@ -30,7 +33,7 @@ def _get_hashing_algorithm(algorithm: HmacHashingAlgorithm) -> Callable[..., Any
 
 
 PairingToken = Annotated[
-    str, StringConstraints(pattern=r"^[A-Za-z0-9+/]{12,}={0,2}$", min_length=12)
+    str, StringConstraints(pattern=r"^[A-Za-z0-9+/]{4,}={0,2}$", min_length=4)
 ]
 
 _ALL_UTF8_CHARS = [chr(i) for i in range(0x110000) if not (0xD800 <= i <= 0xDFFF)]
@@ -43,16 +46,11 @@ def create_pairing_code(s2_node_id: str | None = None, length: int = 9) -> Pairi
     """
     if length < 9:
         raise ValueError("The pairing token needs to be at least 9 bytes.")
-    token = secrets.token_bytes(length)
-    token_str = b64encode(token).decode("utf-8")
+    token_str = ''.join(random.choice(CHARS) for _ in range(length))
 
     if s2_node_id:
         return f"{s2_node_id}-{token_str}"
     return token_str
-
-
-def random_utf8_string(length: int) -> str:
-    return "".join(secrets.choice(_ALL_UTF8_CHARS) for _ in range(length))
 
 
 def create_challenge(length: int = 128) -> HmacChallenge:
@@ -89,30 +87,43 @@ def select_algorithm(
 def create_response(
     pairing_token: PairingToken,
     challenge: HmacChallenge,
-    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256,
+    hmac_salt: str,
+    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256
 ) -> bytes:
     try:
         digestmod = _get_hashing_algorithm(algorithm)
     except ValueError as e:
         raise VerificationError(str(e)) from e
-    return hmac.new(b64decode(pairing_token), msg=challenge.root, digestmod=digestmod).digest()
+    msg_bin = (pairing_token + hmac_salt).encode("utf-8")
+    return hmac.new(key=challenge.root, msg=msg_bin, digestmod=digestmod).digest()
 
 
 def verify_response(
     pairing_token: str,
     challenge: HmacChallenge,
     response: bytes,
+    hmac_salt: str,
     algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256,
 ) -> bool:
     """
     Verify that a received challenge response signature for correctness based on pairing token and algorithm.
     """
+    print(f"pairing_token: {pairing_token}")
+    print(f"challenge: {challenge.root}")
+    print(f"challenge (as str): {b64encode(challenge.root)}")
+    print(f"response: {response}")
+    print(f"response (as str): {b64encode(response)}")
+    print(f"algorithm: {algorithm}")
+    print(f"hmac_salt: {hmac_salt}")
     try:
         digestmod = _get_hashing_algorithm(algorithm)
     except ValueError as e:
         raise VerificationError(str(e)) from e
-    correct_digest = hmac.new(b64decode(pairing_token), msg=challenge.root, digestmod=digestmod).digest()
+    msg_bin = (pairing_token + hmac_salt).encode("utf-8")
+    correct_digest = hmac.new(key=challenge.root, msg=msg_bin, digestmod=digestmod).digest()
 
+    print(f"expected response: {correct_digest}")
+    print(f"expected response as str: {b64encode(correct_digest)}")
     if not hmac.compare_digest(correct_digest, response):
         raise VerificationError("Signature is invalid.")
     return True

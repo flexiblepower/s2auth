@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
 from s2auth.client.pairing import connect, pair, strip_pairing_url
+from s2auth.common.exceptions import S2PairingError
 from s2auth.common.model.s2_connect_common import NodeDescription, NodeId
 from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
 
@@ -17,10 +18,14 @@ async def _run_client():
     parser = argparse.ArgumentParser(description="S2 pairing client example implementation.")
 
     parser.add_argument("--server_url", default="http://localhost", help="The pairing URL of the pairing server (default: http://localhost)")
+
+    parser.add_argument("--domain", default=None, help="The id of the client S2 node, (default: None, examle ninechars)")
+    parser.add_argument("--fingerprint", default=None, help="The id of the client S2 node, (default: None, examle ninechars)")
+
     parser.add_argument("--pairing_S2_nodeId", default=None, help="The id of the client S2 node, (default: None, examle ninechars)")
     parser.add_argument("--client_S2_nodeId", default=None, help="The id of the client S2 node, (default: auto generated)")
     parser.add_argument("--server_S2_nodeId", default=None, help="The id of the server S2 node, (default: auto generated)")
-    parser.add_argument("--access_token", help="Access token for pairing, (default: auto generated, but auto generated is only valid if we are pairing server)")
+    parser.add_argument("--pairing_token", help="Pairing token for pairing, (default: auto generated, but auto generated is only valid if we are pairing server)")
     parser.add_argument("--s2_role", default="RM", help="The S2 role we are fulfilling, Either RM or CEM (Default: RM)")
     parser.add_argument("--deployment", default="LAN", help="The deployment of this client (WAM or LAN)")
     parser.add_argument("--supported_s2_message_versions", default=["v0.0.2-beta"], help="The supported S2 message versions (one per use of the parameter, default: v0.0.2-beta)")
@@ -38,6 +43,10 @@ async def _run_client():
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
+    if (args.domain is None) == (args.fingerprint is None):
+        raise S2PairingError("Must have either a domain or a fingerprint (and not both)")
+    hmac_salt = args.domain if args.domain is not None else args.fingerprint
+
     # generate client id if not given
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
     serverS2NodeId: UUID = UUID(args.server_S2_nodeId) if args.server_S2_nodeId else clientS2NodeId
@@ -52,7 +61,7 @@ async def _run_client():
     dao = Dao()
     server_url: str = strip_pairing_url(args.server_url)
 
-    pairing_code: str = f"{args.pairing_s2_node_id}-{args.access_token}" if args.pairing_s2_node_id else args.access_token
+    pairing_code: str = f"{args.pairing_s2_node_id}-{args.pairing_token}" if args.pairing_s2_node_id else args.pairing_token
     assert await pair(pairing_uri=server_url,
                       pairing_code=pairing_code,
                       storage=dao,
@@ -62,6 +71,7 @@ async def _run_client():
                       supported_communication_protocols=args.communication_protocols,
                       supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
                       s2_client_description=s2_client_description,
+                      hmac_salt=hmac_salt,
                       pairingS2NodeId=args.pairing_S2_nodeId,
                       verify=not args.skip_cert_verify)
 
