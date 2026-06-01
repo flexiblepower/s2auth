@@ -39,15 +39,13 @@ from s2auth.common.hmac import (
     verify_response,
 )
 from s2auth.server.settings import Settings, settings
+from s2auth.server.config import Config, config
 from s2auth.server.hooks import (
     HookRegistry,
     get_server_endpoint,
     hook_registry,
     pairing_attempt_request,
 )
-
-
-HMAC_SALT = 's2.example.com'
 
 
 @inject
@@ -80,6 +78,7 @@ async def request_pairing(
     ],
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
     hooks: HookRegistry = Depends[hook_registry],
+    cfg: Config = Depends[config],
 ) -> RequestPairingPostResponse:
     """Initiate a new pairing attempt.
 
@@ -113,7 +112,7 @@ async def request_pairing(
         pairing_token=pairing_context.pairing_token,
         challenge=request.clientHmacChallenge,
         algorithm=algorithm,
-        hmac_salt=HMAC_SALT
+        hmac_salt=cfg.hmac_salt,
     )
     # Set the state to "initiated" and store both IDs
     pairing_context.state = PairingState.INITIATED
@@ -150,6 +149,7 @@ async def handle_client_response(
     client_ctx: ClientContext = Depends[client_context],
     hooks: HookRegistry = Depends[hook_registry],
     generate_access_token: Callable[[], AccessToken] = Depends[generate_access_token],
+    cfg: Config = Depends[config],
 ) -> ConnectionDetails:
     """Handle the client's response and return the server's connection details.
 
@@ -172,6 +172,7 @@ async def handle_client_response(
         algorithm=pairing_context.algorithm,
         challenge=pairing_context.server_hmac_challenge,
         response=challenge_response,
+        hmac_salt=cfg.hmac_salt,
     )
 
     endpoint_hook = hooks.get(get_server_endpoint)
