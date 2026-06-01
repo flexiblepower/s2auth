@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from enum import StrEnum
+from enum import Enum
 import aiologic
 from collections.abc import AsyncGenerator
 from contextvars import ContextVar
@@ -9,17 +9,17 @@ from pydantic import BaseModel, ConfigDict
 
 
 from s2auth.common.hmac import PairingToken
-from s2auth.common.model.s2_over_ip_pairing import (
+from s2auth.common.model.s2_connect_pairing import (
     HmacChallenge,
     HmacHashingAlgorithm,
     PairingAttemptId as S2PairingAttemptId,
-    PairingS2NodeId,
+    NodeIdAlias,
 )
-from s2auth.common.model.s2_over_ip_common import (
+from s2auth.common.model.s2_connect_common import (
     AccessToken,
-    S2EndpointDescription,
-    S2NodeDescription,
-    S2NodeId,
+    EndpointDescription,
+    NodeDescription,
+    NodeId,
 )
 from s2auth.common.dependencies import Depends, register_provider
 
@@ -29,7 +29,7 @@ ClientNodeId = UUID
 PairingAttemptId = UUID
 
 # Context variables
-s2_client_node_id_var: ContextVar[S2NodeId | None] = ContextVar(
+s2_client_node_id_var: ContextVar[NodeId | None] = ContextVar(
     "s2_client_node_id", default=None
 )
 pairing_attempt_id_var: ContextVar[S2PairingAttemptId | None] = ContextVar(
@@ -37,14 +37,14 @@ pairing_attempt_id_var: ContextVar[S2PairingAttemptId | None] = ContextVar(
 )
 
 
-class ClientState(StrEnum):
+class ClientState(str, Enum):
     PAIRING = "Pairing"
     PAIRED = "Paired"
     CONNECTED = "Connected"
     DISCONNECTED = "Disconnected"
 
 
-class PairingState(StrEnum):
+class PairingState(str, Enum):
     INITIATED = "Initiated"
     COMPLETED = "Completed"
     FAILED = "Failed"
@@ -63,8 +63,8 @@ class ClientContext(BaseModel):
 
     state: ClientState | None = None
     client_node_id: ClientNodeId | None = None
-    s2_node_description: S2NodeDescription | None = None
-    s2_endpoint_description: S2EndpointDescription | None = None
+    s2_node_description: NodeDescription | None = None
+    s2_endpoint_description: EndpointDescription | None = None
     access_token: AccessToken | None = None
 
 
@@ -79,7 +79,7 @@ class PairingAttemptContext(BaseModel):
     state: PairingState | None = None
     client_node_id: ClientNodeId | None = None
     pairing_attempt_id: PairingAttemptId
-    pairing_node_id: PairingS2NodeId
+    pairing_node_id: NodeIdAlias
     pairing_token: PairingToken
     algorithm: HmacHashingAlgorithm | None = None
     server_hmac_challenge: HmacChallenge | None = None
@@ -317,7 +317,7 @@ def pairing_attempt_id() -> PairingAttemptId:
     p_id = pairing_attempt_id_var.get()
     if p_id is None:
         raise ValueError("pairing_attempt_id not set in context")
-    return UUID(p_id.root)
+    return UUID(p_id.root.decode("utf-8"))
 
 
 @register_provider()

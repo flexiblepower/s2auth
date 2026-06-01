@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 from s2auth.common.dependencies import setup, Depends, inject, provider_overrides
 from s2auth.server.context import (
+    ClientState,
     client_node_id,
     context_storage_singleton,
     client_context,
@@ -16,6 +17,7 @@ from s2auth.server.context import (
     InMemoryContextStorage,
     PairingAttemptContext,
     PairingAttemptId,
+    PairingState,
 )
 
 
@@ -82,9 +84,9 @@ async def test_client_context_with_multiple_clients():
 
     test_storage = MockContextStorage(
         client_contexts={
-            test_uuid_1: ClientContext(state="client_1_state"),
-            test_uuid_2: ClientContext(state="client_2_state"),
-            test_uuid_3: ClientContext(state="client_3_state"),
+            test_uuid_1: ClientContext(state=ClientState.PAIRING),
+            test_uuid_2: ClientContext(state=ClientState.PAIRED),
+            test_uuid_3: ClientContext(state=ClientState.CONNECTED),
         }
     )
 
@@ -115,7 +117,7 @@ async def test_client_context_with_multiple_clients():
         }
     ):
         result = await get_context()
-        assert result.state == "client_1_state"
+        assert result.state == ClientState.PAIRING
 
     # Test client 2
     with provider_overrides(
@@ -125,7 +127,7 @@ async def test_client_context_with_multiple_clients():
         }
     ):
         result = await get_context()
-        assert result.state == "client_2_state"
+        assert result.state == ClientState.PAIRED
 
     # Test client 3
     with provider_overrides(
@@ -135,7 +137,7 @@ async def test_client_context_with_multiple_clients():
         }
     ):
         result = await get_context()
-        assert result.state == "client_3_state"
+        assert result.state == ClientState.CONNECTED
 
 
 @pytest.mark.skip_wire
@@ -154,7 +156,7 @@ async def test_context_storage_singleton_is_singleton():
     ) -> None:
         test_uuid = UUID("00000000-0000-0000-0000-000000000999")
         # Create and modify the storage
-        storage._client_states[test_uuid] = ClientContext(state="modified_state")  # type: ignore[attr-defined]
+        storage._client_states[test_uuid] = ClientContext(state=ClientState.CONNECTED)  # type: ignore[attr-defined]
 
     setup()
 
@@ -174,7 +176,7 @@ async def test_context_storage_singleton_is_singleton():
     # Verify the modification persisted
     test_uuid = UUID("00000000-0000-0000-0000-000000000999")
     async with get_context_once(storage2, test_uuid) as ctx:
-        assert ctx.state == "modified_state", "Modified state should be preserved"
+        assert ctx.state == ClientState.CONNECTED, "Modified state should be preserved"
 
 
 @pytest.mark.skip_wire
@@ -183,7 +185,7 @@ async def test_client_context_returns_existing_context():
     test_uuid = UUID("00000000-0000-0000-0000-00000000002a")
 
     # Create a test storage with pre-populated data
-    existing_context = ClientContext(state="existing_state")
+    existing_context = ClientContext(state=ClientState.PAIRED)
     test_storage = MockContextStorage(
         client_contexts={test_uuid: existing_context}
     )
@@ -208,7 +210,7 @@ async def test_client_context_returns_existing_context():
         }
     ):
         result = await get_context()
-        assert result.state == "existing_state"
+        assert result.state == ClientState.PAIRED
 
         # Verify the context is the same object from the storage
         assert result is existing_context
@@ -274,23 +276,23 @@ async def test_async_in_memory_storage_multiple_contexts():
     test_uuid_2 = UUID("00000000-0000-0000-0000-000000000002")
 
     # Pre-populate the storage
-    storage._client_states[test_uuid_1] = ClientContext(state="state_1")  # type: ignore[attr-defined]
-    storage._client_states[test_uuid_2] = ClientContext(state="state_2")  # type: ignore[attr-defined]
+    storage._client_states[test_uuid_1] = ClientContext(state=ClientState.PAIRING)  # type: ignore[attr-defined]
+    storage._client_states[test_uuid_2] = ClientContext(state=ClientState.DISCONNECTED)  # type: ignore[attr-defined]
 
     async with get_context_once(storage, test_uuid_1) as ctx1:
         async with get_context_once(storage, test_uuid_2) as ctx2:
             # Verify contexts are different
             assert ctx1 is not ctx2
-            assert ctx1.state == "state_1"
-            assert ctx2.state == "state_2"
+            assert ctx1.state == ClientState.PAIRING
+            assert ctx2.state == ClientState.DISCONNECTED
 
     # Verify contexts are persistent
     async with get_context_once(storage, test_uuid_1) as ctx1_again:
         async with get_context_once(storage, test_uuid_2) as ctx2_again:
             assert ctx1_again is ctx1
             assert ctx2_again is ctx2
-            assert ctx1_again.state == "state_1"
-            assert ctx2_again.state == "state_2"
+            assert ctx1_again.state == ClientState.PAIRING
+            assert ctx2_again.state == ClientState.DISCONNECTED
 
 
 @pytest.mark.skip_wire
@@ -308,8 +310,8 @@ async def test_async_in_memory_storage_keyerror_for_unknown_id():
 async def test_async_in_memory_storage_pairing_attempt_contexts():
     """Test that InMemoryContextStorage handles pairing attempt contexts correctly."""
     from uuid import uuid4
-    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
-    from s2auth.common.hmac import create_pairing_token
+    from s2auth.common.model.s2_connect_pairing import NodeIdAlias
+    from s2auth.common.hmac import create_pairing_code
 
     storage = InMemoryContextStorage()
 
@@ -317,19 +319,19 @@ async def test_async_in_memory_storage_pairing_attempt_contexts():
     pairing_id_2 = uuid4()
 
     test_uuid_1 = UUID("00000000-0000-0000-0000-000000000001")
-    test_pairing_node_id = PairingS2NodeId(root="testnodeid123")
-    test_token = create_pairing_token()
+    test_pairing_node_id = NodeIdAlias(root="testnodeid123")
+    test_token = create_pairing_code()
 
     # Pre-populate the storage
     storage._pairing_attempt_states[pairing_id_1] = PairingAttemptContext(  # type: ignore[reportPrivateUsage]
-        state="pairing_1_state",
+        state=PairingState.INITIATED,
         client_node_id=test_uuid_1,
         pairing_attempt_id=pairing_id_1,
         pairing_node_id=test_pairing_node_id,
         pairing_token=test_token
     )  # type: ignore[attr-defined]
     storage._pairing_attempt_states[pairing_id_2] = PairingAttemptContext(  # type: ignore[reportPrivateUsage]
-        state="pairing_2_state",
+        state=PairingState.COMPLETED,
         pairing_attempt_id=pairing_id_2,
         pairing_node_id=test_pairing_node_id,
         pairing_token=test_token
@@ -340,8 +342,8 @@ async def test_async_in_memory_storage_pairing_attempt_contexts():
         async with get_context_once(storage, pairing_id_2, is_pairing=True) as ctx2:
             # Verify contexts are different
             assert ctx1 is not ctx2
-            assert ctx1.state == "pairing_1_state"
-            assert ctx2.state == "pairing_2_state"
+            assert ctx1.state == PairingState.INITIATED
+            assert ctx2.state == PairingState.COMPLETED
             assert ctx1.client_node_id == test_uuid_1
             assert ctx2.client_node_id is None
 
@@ -404,23 +406,23 @@ async def test_sync_in_memory_storage_multiple_contexts():
     test_uuid_2 = UUID("00000000-0000-0000-0000-000000000002")
 
     # Pre-populate the storage
-    storage._client_states[test_uuid_1] = ClientContext(state="state_1")  # type: ignore[attr-defined]
-    storage._client_states[test_uuid_2] = ClientContext(state="state_2")  # type: ignore[attr-defined]
+    storage._client_states[test_uuid_1] = ClientContext(state=ClientState.PAIRING)  # type: ignore[attr-defined]
+    storage._client_states[test_uuid_2] = ClientContext(state=ClientState.DISCONNECTED)  # type: ignore[attr-defined]
 
     async with get_context_once(storage, test_uuid_1) as ctx1:
         async with get_context_once(storage, test_uuid_2) as ctx2:
             # Verify contexts are different
             assert ctx1 is not ctx2
-            assert ctx1.state == "state_1"
-            assert ctx2.state == "state_2"
+            assert ctx1.state == ClientState.PAIRING
+            assert ctx2.state == ClientState.DISCONNECTED
 
     # Verify contexts are persistent
     async with get_context_once(storage, test_uuid_1) as ctx1_again:
         async with get_context_once(storage, test_uuid_2) as ctx2_again:
             assert ctx1_again is ctx1
             assert ctx2_again is ctx2
-            assert ctx1_again.state == "state_1"
-            assert ctx2_again.state == "state_2"
+            assert ctx1_again.state == ClientState.PAIRING
+            assert ctx2_again.state == ClientState.DISCONNECTED
 
 
 @pytest.mark.skip_wire
@@ -438,8 +440,8 @@ async def test_sync_in_memory_storage_keyerror_for_unknown_id():
 async def test_sync_in_memory_storage_pairing_attempt_contexts():
     """Test that InMemoryContextStorage handles pairing attempt contexts correctly."""
     from uuid import uuid4
-    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
-    from s2auth.common.hmac import create_pairing_token
+    from s2auth.common.model.s2_connect_pairing import NodeIdAlias
+    from s2auth.common.hmac import create_pairing_code
 
     storage = InMemoryContextStorage()
 
@@ -447,19 +449,19 @@ async def test_sync_in_memory_storage_pairing_attempt_contexts():
     pairing_id_2 = uuid4()
 
     test_uuid_1 = UUID("00000000-0000-0000-0000-000000000001")
-    test_pairing_node_id = PairingS2NodeId(root="testnodeid123")
-    test_token = create_pairing_token()
+    test_pairing_node_id = NodeIdAlias(root="testnodeid123")
+    test_token = create_pairing_code()
 
     # Pre-populate the storage
     storage._pairing_attempt_states[pairing_id_1] = PairingAttemptContext(  # type: ignore[reportPrivateUsage]
-        state="pairing_1_state",
+        state=PairingState.INITIATED,
         client_node_id=test_uuid_1,
         pairing_attempt_id=pairing_id_1,
         pairing_node_id=test_pairing_node_id,
         pairing_token=test_token
     )  # type: ignore[attr-defined]
     storage._pairing_attempt_states[pairing_id_2] = PairingAttemptContext(  # type: ignore[reportPrivateUsage]
-        state="pairing_2_state",
+        state=PairingState.COMPLETED,
         pairing_attempt_id=pairing_id_2,
         pairing_node_id=test_pairing_node_id,
         pairing_token=test_token
@@ -470,8 +472,8 @@ async def test_sync_in_memory_storage_pairing_attempt_contexts():
         async with get_context_once(storage, pairing_id_2, is_pairing=True) as ctx2:
             # Verify contexts are different
             assert ctx1 is not ctx2
-            assert ctx1.state == "pairing_1_state"
-            assert ctx2.state == "pairing_2_state"
+            assert ctx1.state == PairingState.INITIATED
+            assert ctx2.state == PairingState.COMPLETED
             assert ctx1.client_node_id == test_uuid_1
             assert ctx2.client_node_id is None
 
@@ -507,9 +509,9 @@ async def test_sync_storage_keyerror_behavior():
             pass
 
     # After pre-populating, it should work
-    storage._client_states[test_uuid] = ClientContext(state="modified")  # type: ignore[attr-defined]
+    storage._client_states[test_uuid] = ClientContext(state=ClientState.CONNECTED)  # type: ignore[attr-defined]
     async with get_context_once(storage, test_uuid) as ctx:
-        assert ctx.state == "modified"
+        assert ctx.state == ClientState.CONNECTED
 
 
 @pytest.mark.skip_wire
@@ -519,7 +521,7 @@ async def test_client_node_id_provider_with_contextvar_set():
         s2_client_node_id_var,
         client_node_id as client_node_id_provider,
     )
-    from s2auth.common.model.s2_over_ip_common import S2NodeId
+    from s2auth.common.model.s2_connect_common import NodeId
 
     test_uuid = UUID("00000000-0000-0000-0000-000000000042")
 
@@ -530,7 +532,7 @@ async def test_client_node_id_provider_with_contextvar_set():
     setup()
 
     # Set the contextvar
-    token = s2_client_node_id_var.set(S2NodeId(root=test_uuid))
+    token = s2_client_node_id_var.set(NodeId(root=test_uuid))
     try:
         result = get_client_node_id()
         assert result == test_uuid
@@ -568,7 +570,7 @@ async def test_pairing_attempt_id_provider_with_contextvar_set():
         pairing_attempt_id_var,
         pairing_attempt_id as pairing_attempt_id_provider,
     )
-    from s2auth.common.model.s2_over_ip_pairing import PairingAttemptId as S2PairingAttemptId
+    from s2auth.common.model.s2_connect_pairing import PairingAttemptId as S2PairingAttemptId
 
     test_pairing_id = uuid4()
 
@@ -579,7 +581,7 @@ async def test_pairing_attempt_id_provider_with_contextvar_set():
     setup()
 
     # Set the contextvar with base64-encoded UUID
-    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8')).decode('utf-8')))
+    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8'))))
     try:
         result = get_pairing_attempt_id()
         assert result == test_pairing_id
@@ -616,11 +618,11 @@ async def test_pairing_attempt_context_provider():
         pairing_attempt_id_var,
         pairing_attempt_context as pairing_attempt_context_provider,
     )
-    from s2auth.common.model.s2_over_ip_pairing import PairingAttemptId as S2PairingAttemptId
+    from s2auth.common.model.s2_connect_pairing import PairingAttemptId as S2PairingAttemptId
 
     from uuid import uuid4
-    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
-    from s2auth.common.hmac import create_pairing_token
+    from s2auth.common.model.s2_connect_pairing import NodeIdAlias
+    from s2auth.common.hmac import create_pairing_code
 
     test_pairing_id = uuid4()
 
@@ -635,10 +637,10 @@ async def test_pairing_attempt_context_provider():
     # Create a custom storage with pre-populated context
     test_storage = InMemoryContextStorage()
     test_uuid = UUID("00000000-0000-0000-0000-000000000099")
-    test_pairing_node_id = PairingS2NodeId(root="testnodeid123")
-    test_token = create_pairing_token()
+    test_pairing_node_id = NodeIdAlias(root="testnodeid123")
+    test_token = create_pairing_code()
     test_storage._pairing_attempt_states[test_pairing_id] = PairingAttemptContext(  # type: ignore[reportPrivateUsage]
-        state="modified",
+        state=PairingState.INITIATED,
         client_node_id=test_uuid,
         pairing_attempt_id=test_pairing_id,
         pairing_node_id=test_pairing_node_id,
@@ -649,12 +651,12 @@ async def test_pairing_attempt_context_provider():
         return test_storage
 
     # Set the contextvar with base64-encoded UUID
-    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8')).decode('utf-8')))
+    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8'))))
     try:
         with provider_overrides({context_storage_singleton: get_test_storage}):
             # Should return the pre-populated context
             result = await get_pairing_context()
-            assert result.state == "modified"
+            assert result.state == PairingState.INITIATED
             assert result.client_node_id == test_uuid
     finally:
         # Clean up
@@ -669,7 +671,7 @@ async def test_pairing_attempt_context_raises_keyerror_for_unknown_id():
         pairing_attempt_id_var,
         pairing_attempt_context as pairing_attempt_context_provider,
     )
-    from s2auth.common.model.s2_over_ip_pairing import PairingAttemptId as S2PairingAttemptId
+    from s2auth.common.model.s2_connect_pairing import PairingAttemptId as S2PairingAttemptId
 
     test_pairing_id = uuid4()
 
@@ -688,7 +690,7 @@ async def test_pairing_attempt_context_raises_keyerror_for_unknown_id():
     setup()
 
     # Set the contextvar with base64-encoded UUID
-    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8')).decode('utf-8')))
+    token = pairing_attempt_id_var.set(S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode('utf-8'))))
     try:
         with provider_overrides({context_storage_singleton: test_context_storage}):
             # Should raise KeyError for unknown ID
@@ -727,13 +729,12 @@ async def test_async_fine_grained_locking_concurrent_different_contexts():
         """Access a context, simulate work, record timing."""
         start_time = asyncio.get_event_loop().time()
         start_times.append(start_time)
-        async with get_context_once(storage, client_id) as ctx:
+        async with get_context_once(storage, client_id):
             # Simulate some work while holding the lock
             await asyncio.sleep(delay)
-            ctx.state = f"accessed_{client_id}"
             end_time = asyncio.get_event_loop().time()
             end_times.append(end_time)
-            return ctx.state
+            return f"accessed_{client_id}"
 
     # Access all 5 different contexts concurrently with 0.1s delay each
     overall_start = asyncio.get_event_loop().time()
@@ -819,7 +820,7 @@ async def test_async_fine_grained_locking_same_context_serializes():
 
     # Create storage with pre-populated context
     storage = InMemoryContextStorage()
-    storage._client_states[test_uuid] = ClientContext(state="")  # type: ignore[attr-defined]
+    storage._client_states[test_uuid] = ClientContext()  # type: ignore[attr-defined]
 
     # Override providers
     def test_client_id() -> UUID:
@@ -838,13 +839,13 @@ async def test_async_fine_grained_locking_same_context_serializes():
         start_time = asyncio.get_event_loop().time()
 
         # Read current state
-        current_state = ctx.state or ""
+        #current_state = ctx.state or ""
 
         # Simulate work while holding the lock
         await asyncio.sleep(delay)
 
         # Modify the context
-        ctx.state = current_state + f"task_{task_id}|"
+        ctx.state = ClientState.CONNECTED if ctx.state != ClientState.CONNECTED else ClientState.PAIRED # type: ignore[attr-defined]
 
         end_time = asyncio.get_event_loop().time()
         access_times.append({
@@ -882,11 +883,8 @@ async def test_async_fine_grained_locking_same_context_serializes():
             f"Current end: {current_end}, Next start: {next_start}"
 
     # Verify that each task saw the modifications from the previous task
-    expected_states = [
-        f"task_{access_times[0]['task_id']}|",
-        f"task_{access_times[0]['task_id']}|task_{access_times[1]['task_id']}|",
-        f"task_{access_times[0]['task_id']}|task_{access_times[1]['task_id']}|task_{access_times[2]['task_id']}|",
-    ]
+    expected_states = [ClientState.CONNECTED, ClientState.PAIRED, ClientState.CONNECTED]
+
     actual_states = [t['state_after'] for t in access_times]
     assert actual_states == expected_states, \
         f"Each access should see modifications from previous accesses. Expected {expected_states}, got {actual_states}"
@@ -901,15 +899,15 @@ async def test_async_fine_grained_locking_same_context_serializes():
 async def test_async_fine_grained_locking_pairing_attempts():
     """Test fine-grained locking for pairing attempt contexts."""
     from uuid import uuid4
-    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
-    from s2auth.common.hmac import create_pairing_token
+    from s2auth.common.model.s2_connect_pairing import NodeIdAlias
+    from s2auth.common.hmac import create_pairing_code
 
     storage = InMemoryContextStorage()
 
     pairing_id_1 = uuid4()
     pairing_id_2 = uuid4()
-    test_pairing_node_id = PairingS2NodeId(root="testnodeid123")
-    test_token = create_pairing_token()
+    test_pairing_node_id = NodeIdAlias(root="testnodeid123")
+    test_token = create_pairing_code()
 
     # Pre-populate the storage
     storage._pairing_attempt_states[pairing_id_1] = PairingAttemptContext(  # type: ignore[reportPrivateUsage]
@@ -928,16 +926,15 @@ async def test_async_fine_grained_locking_pairing_attempts():
     async def access_pairing_context(pairing_id: UUID, delay: float) -> str:
         """Access a pairing context, simulate work, record timing."""
         start_time = asyncio.get_event_loop().time()
-        async with get_context_once(storage, pairing_id, is_pairing=True) as ctx:
+        async with get_context_once(storage, pairing_id, is_pairing=True):
             await asyncio.sleep(delay)
-            ctx.state = f"accessed_{pairing_id}"
             end_time = asyncio.get_event_loop().time()
             access_times.append({
                 'pairing_id': pairing_id,
                 'start': start_time,
                 'end': end_time
             })
-            return ctx.state
+            return f"accessed_{pairing_id}"
 
     # Access two different pairing contexts concurrently
     results = await asyncio.gather(
@@ -990,9 +987,9 @@ async def test_sync_fine_grained_locking_concurrent_different_contexts():
 
             ctx_gen = storage.get_client_context(client_id)
             ctx = await anext(ctx_gen)
+            ctx.state = ClientState.CONNECTED  # Simulate some modification to ensure lock is held
             # Simulate some work while holding the lock
             time.sleep(delay)
-            ctx.state = f"accessed_{client_id}"
 
             end_time = time.time()
             with lock:
@@ -1101,7 +1098,7 @@ async def test_sync_fine_grained_locking_same_context_serializes():
 
     # Create storage with pre-populated context
     storage = InMemoryContextStorage()
-    storage._client_states[test_uuid] = ClientContext(state="")  # type: ignore[attr-defined]
+    storage._client_states[test_uuid] = ClientContext()  # type: ignore[attr-defined]
 
     # Override providers - async versions for async storage
     def test_client_id() -> UUID:
@@ -1128,14 +1125,11 @@ async def test_sync_fine_grained_locking_same_context_serializes():
         """Access a context via DI, simulate work, record timing."""
         start_time = time.time()
 
-        # Read current state
-        current_state = ctx.state or ""
-
         # Simulate work while holding the lock
         time.sleep(delay)
 
         # Modify the context
-        ctx.state = current_state + f"thread_{thread_id}|"
+        ctx.state = ClientState.CONNECTED if ctx.state != ClientState.CONNECTED else ClientState.PAIRED # type: ignore[attr-defined]
 
         end_time = time.time()
 
@@ -1146,7 +1140,7 @@ async def test_sync_fine_grained_locking_same_context_serializes():
                 'end': end_time,
                 'state_after': ctx.state
             })
-        return ctx.state
+        return f"thread_{thread_id}|"
 
     def thread_func(thread_id: int, delay: float) -> None:
         """Thread function that runs async code."""
@@ -1182,11 +1176,7 @@ async def test_sync_fine_grained_locking_same_context_serializes():
             f"Current end: {current_end}, Next start: {next_start}"
 
     # Verify that each thread saw the modifications from the previous thread
-    expected_states = [
-        f"thread_{access_times[0]['thread_id']}|",
-        f"thread_{access_times[0]['thread_id']}|thread_{access_times[1]['thread_id']}|",
-        f"thread_{access_times[0]['thread_id']}|thread_{access_times[1]['thread_id']}|thread_{access_times[2]['thread_id']}|",
-    ]
+    expected_states = [ClientState.CONNECTED, ClientState.PAIRED, ClientState.CONNECTED]
     actual_states = [t['state_after'] for t in access_times]
     assert actual_states == expected_states, \
         f"Each access should see modifications from previous accesses. Expected {expected_states}, got {actual_states}"
@@ -1201,15 +1191,15 @@ async def test_sync_fine_grained_locking_same_context_serializes():
 async def test_sync_fine_grained_locking_pairing_attempts():
     """Test fine-grained locking for pairing attempt contexts in sync storage."""
     from uuid import uuid4
-    from s2auth.common.model.s2_over_ip_pairing import PairingS2NodeId
-    from s2auth.common.hmac import create_pairing_token
+    from s2auth.common.model.s2_connect_pairing import NodeIdAlias
+    from s2auth.common.hmac import create_pairing_code
 
     storage = InMemoryContextStorage()
 
     pairing_id_1 = uuid4()
     pairing_id_2 = uuid4()
-    test_pairing_node_id = PairingS2NodeId(root="testnodeid123")
-    test_token = create_pairing_token()
+    test_pairing_node_id = NodeIdAlias(root="testnodeid123")
+    test_token = create_pairing_code()
 
     # Pre-populate the storage
     storage._pairing_attempt_states[pairing_id_1] = PairingAttemptContext(  # type: ignore[reportPrivateUsage]
@@ -1233,8 +1223,8 @@ async def test_sync_fine_grained_locking_pairing_attempts():
             start_time = time.time()
             ctx_gen = storage.get_pairing_attempt_context(pairing_id)
             ctx = await anext(ctx_gen)
+            ctx.state = PairingState.INITIATED  # Simulate some modification to ensure lock is held
             time.sleep(delay)
-            ctx.state = f"accessed_{pairing_id}"
             end_time = time.time()
 
             with lock:

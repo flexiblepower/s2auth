@@ -12,10 +12,10 @@ from typing import Any, Callable
 from pydantic import AnyUrl
 
 from s2auth.common.dependencies import Depends, inject, register_provider
-from s2auth.common.model.s2_over_ip_common import S2NodeId, S2Role
-from s2auth.common.model.s2_over_ip_pairing import (
-    S2EndpointDescription,
-    S2NodeDescription,
+from s2auth.common.model.s2_connect_common import NodeId, Role
+from s2auth.common.model.s2_connect_pairing import (
+    EndpointDescription,
+    NodeDescription,
 )
 from s2auth.server.context import (
     ReadOnlyClientContext,
@@ -28,7 +28,7 @@ from s2auth.server.settings import Settings, settings
 async def get_server_endpoint(
     client_context: ReadOnlyClientContext,
     server_settings: Settings = Depends[settings],
-) -> AnyUrl:
+) -> AnyUrl | None:
     """Default hook implementation to get the server endpoint.
 
     This hook is called during the pairing phase to retrieve the server's endpoint
@@ -46,7 +46,7 @@ async def pairing_attempt_request(
     client_context: ReadOnlyClientContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     server_settings: Settings = Depends[settings],
-) -> tuple[S2EndpointDescription, S2NodeDescription]:
+) -> tuple[EndpointDescription, NodeDescription]:
     """Default hook implementation for pairing request.
 
     This hook is called during the pairing request phase to generate the server's
@@ -59,17 +59,17 @@ async def pairing_attempt_request(
         server_settings: Server configuration settings
 
     Returns:
-        A tuple of (S2EndpointDescription, S2NodeDescription) for the server
+        A tuple of (EndpointDescription, NodeDescription) for the server
 
     Raises:
         S2PairingError: To refuse the pairing attempt with a specific error message
     """
     # Default implementation: return basic server descriptions from settings
-    endpoint_description = S2EndpointDescription()
-    node_description = S2NodeDescription(
-        id=S2NodeId(root=server_settings.cem_s2_node_id),
+    endpoint_description = EndpointDescription()
+    node_description = NodeDescription(
+        id=NodeId(root=server_settings.cem_s2_node_id),
         brand=server_settings.cem_brand,
-        role=S2Role.CEM,
+        role=Role.CEM,
         type=server_settings.cem_type,
         modelName=server_settings.cem_model_name,
     )
@@ -161,7 +161,7 @@ def register_hook(
             client_context: ClientContext,
             pairing_context: PairingAttemptContext,
             server_settings: Settings = Depends[settings],
-        ) -> tuple[S2EndpointDescription, S2NodeDescription]:
+        ) -> tuple[EndpointDescription, NodeDescription]:
             # Custom implementation
             ...
         ```
