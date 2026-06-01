@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from s2auth.server.storage import store_object
 from s2auth.server.models import Base, StoredObject
-from s2auth.common.model.s2_over_ip_common import AccessToken
-from s2auth.common.model.s2_over_ip_pairing import ConnectionDetails
+from s2auth.common.model.s2_connect_common import AccessToken
+from s2auth.common.model.s2_connect_pairing import ConnectionDetails
 from s2auth.server.config import Config, config
 from s2auth.server.db import async_session
 from s2auth.common.dependencies import Depends, provider_overrides, setup
@@ -95,7 +95,7 @@ async def test_store_object(test_storage_db: StorageDbFixture) -> None:
         test_connection_details = ConnectionDetails(
             initiateConnectionUrl=AnyUrl("http://test.com/1234"),
             accessToken=AccessToken(
-                root=b64encode(token.encode("utf-8")).decode("ascii")
+                root=b64encode(token.encode("utf-8"))
             ),
         )
 
