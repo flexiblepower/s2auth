@@ -3,16 +3,16 @@
 from base64 import b64encode
 from typing import Awaitable, Callable
 from uuid import uuid4
-from s2auth.common.model.s2_over_ip_pairing import (
+from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails,
     HmacChallengeResponse,
     PairingAttemptId as S2PairingAttemptId,
-    PairingS2NodeId,
+    NodeIdAlias,
     RequestConnectionDetailsPostRequest,
     RequestPairingPostRequest,
     RequestPairingPostResponse,
 )
-from s2auth.common.model.s2_over_ip_common import AccessToken, S2NodeId
+from s2auth.common.model.s2_connect_common import AccessToken, NodeId
 from s2auth.common.dependencies import Depends, inject
 from s2auth.server.context import (
     ClientContext,
@@ -32,8 +32,8 @@ from s2auth.server.context import (
 from s2auth.common.hmac import (
     PairingToken,
     create_challenge,
-    create_pairing_token,
     create_response,
+    create_pairing_code,
     generate_access_token,
     select_algorithm,
     verify_response,
@@ -47,25 +47,26 @@ from s2auth.server.hooks import (
 )
 
 
+HMAC_SALT = 's2.example.com'
+
+
 @inject
 async def initiate_pairing(
     store_pairing_ctx: Callable[[PairingAttemptContext], Awaitable[None]] = Depends[
         store_pairing_attempt_context
     ],
     server_settings: Settings = Depends[settings],
-    pairing_token: PairingToken = Depends[create_pairing_token],
+    pairing_token: PairingToken = Depends[create_pairing_code],
 ):
     pairing_attempt_id: PairingAttemptId = uuid4()
-    # Encode UUID string as base64 for S2PairingAttemptId (Base64Str requires valid UTF-8)
-    pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode("utf-8")).decode(
-        "utf-8"
-    )
+    # Encode UUID string as base64 bytes for S2PairingAttemptId (Base64Bytes)
+    pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode("utf-8"))
     pairing_attempt_id_var.set(S2PairingAttemptId(root=pairing_attempt_id_b64))
     pairing_node_id = server_settings.pairing_node_id
     ctx = PairingAttemptContext(
         pairing_attempt_id=pairing_attempt_id,
         pairing_token=pairing_token,
-        pairing_node_id=PairingS2NodeId(root=pairing_node_id),
+        pairing_node_id=NodeIdAlias(root=pairing_node_id),
     )
     await store_pairing_ctx(ctx)
     return ctx
@@ -93,15 +94,15 @@ async def request_pairing(
     """
 
     # Set the contextvars
-    client_node_id = request.clientS2NodeDescription.id.root
+    client_node_id = request.clientNodeDescription.id.root
     client_ctx = ClientContext(
         client_node_id=client_node_id,
         state=ClientState.PAIRING,
-        s2_endpoint_description=request.clientS2EndpointDescription,
-        s2_node_description=request.clientS2NodeDescription,
+        s2_endpoint_description=request.clientEndpointDescription,
+        s2_node_description=request.clientNodeDescription,
     )
     await store_client_ctx(client_ctx)
-    s2_client_node_id_var.set(S2NodeId(root=client_node_id))
+    s2_client_node_id_var.set(NodeId(root=client_node_id))
 
     pairing_context.client_node_id = client_node_id
 
@@ -112,6 +113,7 @@ async def request_pairing(
         pairing_token=pairing_context.pairing_token,
         challenge=request.clientHmacChallenge,
         algorithm=algorithm,
+        hmac_salt=HMAC_SALT
     )
     # Set the state to "initiated" and store both IDs
     pairing_context.state = PairingState.INITIATED
@@ -129,15 +131,14 @@ async def request_pairing(
 
     return RequestPairingPostResponse(
         selectedHmacHashingAlgorithm=algorithm,
-        serverS2NodeDescription=server_node_description,
-        serverS2EndpointDescription=server_endpoint_description,
+        serverNodeDescription=server_node_description,
+        serverEndpointDescription=server_endpoint_description,
         clientHmacChallengeResponse=HmacChallengeResponse(root=client_response),
         serverHmacChallenge=server_challenge,
         pairingAttemptId=S2PairingAttemptId(
-            # TODO should probably be a regular UUID or str, not Base64Str
             root=b64encode(
-                str(pairing_context.pairing_attempt_id).encode("ascii")
-            ).decode("ascii")
+                str(pairing_context.pairing_attempt_id).encode("utf-8")
+            )
         ),
     )
 

@@ -1,6 +1,6 @@
 from typing import ClassVar
 
-from s2auth.common.model.s2_over_ip_pairing import ErrorMessage
+from s2auth.common.model.s2_connect_pairing import ErrorMessage
 
 
 class S2PairingError(Exception):

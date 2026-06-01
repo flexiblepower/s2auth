@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     cem_type: str
     cem_model_name: str
     cem_brand: str
-    cem_url: AnyUrl
+    cem_url: AnyUrl | None = None
 
 
 @register_provider(singleton=True)

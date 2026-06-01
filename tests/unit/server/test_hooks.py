@@ -7,16 +7,18 @@ from pydantic import AnyUrl
 
 from s2auth.common.dependencies import Depends, inject, provider_overrides
 from s2auth.common.exceptions import S2PairingError
-from s2auth.common.model.s2_over_ip_common import S2NodeId, S2Role
-from s2auth.common.model.s2_over_ip_pairing import (
+from s2auth.common.model.s2_connect_common import NodeId, Role
+from s2auth.common.model.s2_connect_pairing import (
     ErrorMessage,
-    PairingS2NodeId,
-    S2EndpointDescription,
-    S2NodeDescription,
+    NodeIdAlias,
+    EndpointDescription,
+    NodeDescription,
 )
 from s2auth.server.context import (
     ClientContext,
+    ClientState,
     PairingAttemptContext,
+    PairingState,
     ReadOnlyClientContext,
     ReadOnlyPairingAttemptContext,
 )
@@ -27,19 +29,21 @@ from s2auth.server.settings import Settings, settings
 class CustomPairingError(S2PairingError):
     """Custom error for testing."""
 
-    error_type = ErrorMessage.S2NodeNotFound
+    error_type = ErrorMessage.NodeNotFound
 
 
 async def test_pairing_attempt_request_default():
     """Test the default pairing_attempt_request hook returns correct descriptions."""
     # Create test contexts
     client_id = uuid4()
-    client_ctx = ReadOnlyClientContext(client_node_id=client_id, state="pairing")
+    client_ctx = ReadOnlyClientContext(
+        client_node_id=client_id, state=ClientState.PAIRING
+    )
     pairing_ctx = ReadOnlyPairingAttemptContext(
         pairing_attempt_id=uuid4(),
-        pairing_node_id=PairingS2NodeId(root="PAIR123"),
+        pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",  # base64 encoded "test_token"
-        state="initiated",
+        state=PairingState.INITIATED,
     )
 
     # Create test settings
@@ -66,18 +70,18 @@ async def test_pairing_attempt_request_default():
         endpoint_desc, node_desc = await hook(client_ctx, pairing_ctx)
 
     # Verify endpoint description
-    assert isinstance(endpoint_desc, S2EndpointDescription)
+    assert isinstance(endpoint_desc, EndpointDescription)
     assert endpoint_desc.name is None
     assert endpoint_desc.logoUrl is None
     assert endpoint_desc.deployment is None
 
     # Verify node description
-    assert isinstance(node_desc, S2NodeDescription)
-    assert node_desc.id == S2NodeId(root=cem_node_id)
+    assert isinstance(node_desc, NodeDescription)
+    assert node_desc.id == NodeId(root=cem_node_id)
     assert node_desc.brand == "TestBrand"
     assert node_desc.type == "TestType"
     assert node_desc.modelName == "TestModel"
-    assert node_desc.role == S2Role.CEM
+    assert node_desc.role == Role.CEM
     assert node_desc.logoUrl is None
     assert node_desc.userDefinedName is None
 
@@ -85,12 +89,14 @@ async def test_pairing_attempt_request_default():
 async def test_pairing_attempt_request_override_custom_descriptions():
     """Test overriding the hook to provide custom descriptions."""
     client_id = uuid4()
-    client_ctx = ReadOnlyClientContext(client_node_id=client_id, state="pairing")
+    client_ctx = ReadOnlyClientContext(
+        client_node_id=client_id, state=ClientState.PAIRING
+    )
     pairing_ctx = ReadOnlyPairingAttemptContext(
         pairing_attempt_id=uuid4(),
-        pairing_node_id=PairingS2NodeId(root="PAIR123"),
+        pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",
-        state="initiated",
+        state=PairingState.INITIATED,
     )
 
     custom_node_id = uuid4()
@@ -99,15 +105,15 @@ async def test_pairing_attempt_request_override_custom_descriptions():
     async def custom_hook(
         client_context: ReadOnlyClientContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[S2EndpointDescription, S2NodeDescription]:
-        endpoint = S2EndpointDescription(
+    ) -> tuple[EndpointDescription, NodeDescription]:
+        endpoint = EndpointDescription(
             name="Custom Endpoint",
             logoUrl=AnyUrl("https://example.com/logo.png"),
         )
-        node = S2NodeDescription(
-            id=S2NodeId(root=custom_node_id),
+        node = NodeDescription(
+            id=NodeId(root=custom_node_id),
             brand="CustomBrand",
-            role=S2Role.CEM,
+            role=Role.CEM,
             type="CustomType",
             modelName="CustomModel",
             userDefinedName="My Custom Node",
@@ -123,7 +129,7 @@ async def test_pairing_attempt_request_override_custom_descriptions():
     assert endpoint_desc.name == "Custom Endpoint"
     assert str(endpoint_desc.logoUrl) == "https://example.com/logo.png"
 
-    assert node_desc.id == S2NodeId(root=custom_node_id)
+    assert node_desc.id == NodeId(root=custom_node_id)
     assert node_desc.brand == "CustomBrand"
     assert node_desc.type == "CustomType"
     assert node_desc.modelName == "CustomModel"
@@ -133,12 +139,15 @@ async def test_pairing_attempt_request_override_custom_descriptions():
 async def test_pairing_attempt_request_override_raises_error():
     """Test overriding the hook to refuse pairing by raising an error."""
     blocked_client_id = uuid4()
-    client_ctx = ReadOnlyClientContext(client_node_id=blocked_client_id, state="pairing")
+    client_ctx = ReadOnlyClientContext(
+        client_node_id=blocked_client_id,
+        state=ClientState.PAIRING,
+    )
     pairing_ctx = ReadOnlyPairingAttemptContext(
         pairing_attempt_id=uuid4(),
-        pairing_node_id=PairingS2NodeId(root="PAIR123"),
+        pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",
-        state="initiated",
+        state=PairingState.INITIATED,
     )
 
     # Define hook that blocks certain clients
@@ -146,16 +155,16 @@ async def test_pairing_attempt_request_override_raises_error():
     async def blocking_hook(
         client_context: ReadOnlyClientContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[S2EndpointDescription, S2NodeDescription]:
+    ) -> tuple[EndpointDescription, NodeDescription]:
         if client_context.client_node_id == blocked_client_id:
             raise CustomPairingError("Client is blocked")
 
         # Would return normal descriptions if not blocked (won't reach here in test)
-        endpoint = S2EndpointDescription()
-        node = S2NodeDescription(
-            id=S2NodeId(root=uuid4()),
+        endpoint = EndpointDescription()
+        node = NodeDescription(
+            id=NodeId(root=uuid4()),
             brand="TestBrand",
-            role=S2Role.CEM,
+            role=Role.CEM,
             type="TestType",
             modelName="TestModel",
         )
@@ -175,12 +184,12 @@ async def test_pairing_attempt_request_context_values():
     client_node_id = uuid4()
     pairing_attempt_id = uuid4()
 
-    client_ctx = ClientContext(client_node_id=client_node_id, state="pairing")
+    client_ctx = ClientContext(client_node_id=client_node_id, state=ClientState.PAIRING)
     pairing_ctx = PairingAttemptContext(
         pairing_attempt_id=pairing_attempt_id,
-        pairing_node_id=PairingS2NodeId(root="PAIR123"),
+        pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",
-        state="initiated",
+        state=PairingState.INITIATED,
     )
     server_node_id = uuid4()
     cem_node_id = uuid4()
@@ -205,18 +214,18 @@ async def test_pairing_attempt_request_context_values():
         client_context: ClientContext,
         pairing_context: PairingAttemptContext,
         server_settings: Settings = Depends[settings],
-    ) -> tuple[S2EndpointDescription, S2NodeDescription]:
+    ) -> tuple[EndpointDescription, NodeDescription]:
         # Store what we received
         received_contexts["client"] = client_context
         received_contexts["pairing"] = pairing_context
         received_contexts["settings"] = server_settings
 
         # Return default descriptions
-        endpoint = S2EndpointDescription()
-        node = S2NodeDescription(
-            id=S2NodeId(root=server_settings.cem_s2_node_id),
+        endpoint = EndpointDescription()
+        node = NodeDescription(
+            id=NodeId(root=server_settings.cem_s2_node_id),
             brand=server_settings.cem_brand,
-            role=S2Role.CEM,
+            role=Role.CEM,
             type=server_settings.cem_type,
             modelName=server_settings.cem_model_name,
         )
@@ -241,11 +250,11 @@ async def test_pairing_attempt_request_context_values():
 
     assert isinstance(client_received, ClientContext)
     assert client_received.client_node_id == client_node_id
-    assert client_received.state == "pairing"
+    assert client_received.state == ClientState.PAIRING
 
     assert isinstance(pairing_received, PairingAttemptContext)
     assert pairing_received.pairing_attempt_id == pairing_attempt_id
-    assert pairing_received.pairing_node_id == PairingS2NodeId(root="PAIR123")
+    assert pairing_received.pairing_node_id == NodeIdAlias(root="PAIR123")
 
     assert isinstance(settings_received, Settings)
     assert settings_received.cem_brand == "TestBrand"
@@ -255,21 +264,21 @@ async def test_readonly_contexts_are_immutable():
     """Test that ReadOnly contexts raise ValidationError when modified."""
     from pydantic import ValidationError
 
-    client_ctx = ReadOnlyClientContext(client_node_id=uuid4(), state="test")
+    client_ctx = ReadOnlyClientContext(client_node_id=uuid4(), state=ClientState.PAIRING)
     pairing_ctx = ReadOnlyPairingAttemptContext(
         pairing_attempt_id=uuid4(),
-        pairing_node_id=PairingS2NodeId(root="PAIR123"),
+        pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",
-        state="initiated",
+        state=PairingState.INITIATED,
     )
 
     # Attempt to modify client context should raise ValidationError
     with pytest.raises(ValidationError, match="frozen"):
-        client_ctx.state = "modified"
+        client_ctx.state = ClientState.PAIRING
 
     # Attempt to modify pairing context should raise ValidationError
     with pytest.raises(ValidationError, match="frozen"):
-        pairing_ctx.state = "modified"
+        pairing_ctx.state = PairingState.COMPLETED
 
 
 async def test_register_unknown_hook_raises_keyerror():
@@ -296,11 +305,11 @@ async def test_register_hook_twice_raises_runtimeerror():
     async def first_custom_hook(
         client_context: ReadOnlyClientContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[S2EndpointDescription, S2NodeDescription]:
-        return S2EndpointDescription(), S2NodeDescription(
-            id=S2NodeId(root=uuid4()),
+    ) -> tuple[EndpointDescription, NodeDescription]:
+        return EndpointDescription(), NodeDescription(
+            id=NodeId(root=uuid4()),
             brand="First",
-            role=S2Role.CEM,
+            role=Role.CEM,
             type="Test",
             modelName="Test",
         )
@@ -312,11 +321,11 @@ async def test_register_hook_twice_raises_runtimeerror():
     async def second_custom_hook(
         client_context: ReadOnlyClientContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[S2EndpointDescription, S2NodeDescription]:
-        return S2EndpointDescription(), S2NodeDescription(
-            id=S2NodeId(root=uuid4()),
+    ) -> tuple[EndpointDescription, NodeDescription]:
+        return EndpointDescription(), NodeDescription(
+            id=NodeId(root=uuid4()),
             brand="Second",
-            role=S2Role.CEM,
+            role=Role.CEM,
             type="Test",
             modelName="Test",
         )
@@ -370,11 +379,11 @@ async def test_register_hook_decorator():
     async def decorated_hook(
         client_context: ReadOnlyClientContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[S2EndpointDescription, S2NodeDescription]:
-        return S2EndpointDescription(name="Decorated"), S2NodeDescription(
-            id=S2NodeId(root=custom_node_id),
+    ) -> tuple[EndpointDescription, NodeDescription]:
+        return EndpointDescription(name="Decorated"), NodeDescription(
+            id=NodeId(root=custom_node_id),
             brand="Decorated",
-            role=S2Role.CEM,
+            role=Role.CEM,
             type="DecoratedType",
             modelName="DecoratedModel",
         )
@@ -387,12 +396,12 @@ async def test_register_hook_decorator():
     assert hook is decorated_hook
 
     # Call it to verify it works
-    client_ctx = ReadOnlyClientContext(client_node_id=uuid4(), state="test")
+    client_ctx = ReadOnlyClientContext(client_node_id=uuid4(), state=ClientState.PAIRING)
     pairing_ctx = ReadOnlyPairingAttemptContext(
         pairing_attempt_id=uuid4(),
-        pairing_node_id=PairingS2NodeId(root="PAIR123"),
+        pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",
-        state="initiated",
+        state=PairingState.INITIATED,
     )
 
     endpoint, node = await hook(client_ctx, pairing_ctx)
@@ -408,11 +417,11 @@ async def test_register_hook_decorator_with_singleton_registry():
     async def test_hook(
         client_context: ReadOnlyClientContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[S2EndpointDescription, S2NodeDescription]:
-        return S2EndpointDescription(), S2NodeDescription(
-            id=S2NodeId(root=uuid4()),
+    ) -> tuple[EndpointDescription, NodeDescription]:
+        return EndpointDescription(), NodeDescription(
+            id=NodeId(root=uuid4()),
             brand="Test",
-            role=S2Role.CEM,
+            role=Role.CEM,
             type="Test",
             modelName="Test",
         )
