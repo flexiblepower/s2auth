@@ -166,6 +166,53 @@ poetry install --extras server
 pip install s2auth[server]
 ```
 
+## Server configuration
+
+The server has two settings sources, both backed by Pydantic `BaseSettings` and both loaded from `.env` and `.env.docker` in the project root:
+
+- `Config` in `src/s2auth/server/config.py` covers runtime infrastructure such as the database and HMAC secret material.
+- `Settings` in `src/s2auth/server/settings.py` covers pairing identity metadata and the default values returned by server hooks.
+
+In short, `Config` controls how the server connects and verifies data, while `Settings` controls what identity and endpoint information the server advertises during pairing.
+
+### Config
+
+`Config` is consumed by the server database and pairing logic.
+
+Available values:
+- `SQLALCHEMY_DB_URI` - PostgreSQL database URI used by the server. Default: `postgresql://postgres:postgres@localhost/s2auth`
+- `HMAC_SALT` - Salt used when generating and verifying HMAC values. Default: `s2.example.com`
+
+Example `.env` file:
+```env
+SQLALCHEMY_DB_URI=postgresql://postgres:postgres@localhost/s2auth
+HMAC_SALT=s2.example.com
+```
+
+### Settings
+
+`Settings` is injected with `Depends[settings]` and is used by the pairing flow and the default hook implementations.
+
+Available values:
+- `PAIRING_NODE_ID` - node ID used while creating pairing attempts. Must be 8 to 12 characters.
+- `SERVER_S2_NODE_ID` - UUID for the server S2 node identity.
+- `CEM_S2_NODE_ID` - UUID for the CEM node identity returned during pairing.
+- `CEM_TYPE` - device type reported in the server node description.
+- `CEM_MODEL_NAME` - model name reported in the server node description.
+- `CEM_BRAND` - brand reported in the server node description.
+- `CEM_URL` - optional server endpoint returned by the default hook.
+
+Example `.env` file:
+```env
+PAIRING_NODE_ID=pairnode1
+SERVER_S2_NODE_ID=00000000-0000-0000-0000-000000000001
+CEM_S2_NODE_ID=00000000-0000-0000-0000-000000000002
+CEM_TYPE=server
+CEM_MODEL_NAME=default
+CEM_BRAND=s2auth
+CEM_URL=http://localhost:8000
+```
+
 # Readding OpenAPI specs through swagger docs
 ```bash
 ./serve_specs.sh
