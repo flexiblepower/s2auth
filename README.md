@@ -12,25 +12,23 @@ ci/setup_dev_environment.sh
 # Call the client
 The pairing client is exposed as the Python module `s2auth.client.main`.
 
-From a development checkout, run it with:
-
-```bash
-PYTHONPATH=src poetry run python -m s2auth.client.main --help
-```
+From a development checkout, run it by:
+- first creating and activating a virtual environment: `python -m venv .venv` and `source .venv/bin/activate`
+- installing all dependancies `ci/install_dependancies.sh` (you may need to run `ci/setup_dev_environment` if poetry is not yet installed)
+- then calling `poetry run python -client --help`
 
 There is also a helper script in the repository:
-
-```bash
-./run_client.sh
-```
 
 Typical example:
 
 ```bash
-PYTHONPATH=src poetry run python -m s2auth.client.main \
-  --server_url http://localhost:8000 \
-  --domain example.com \
+poetry run client \
+  --server_url https://localhost:8005/v1 \
+  --domain s2.example.com \
   --pairing_token your-pairing-token \
+  --skip_cert_verify \
+  --deployment WAN \
+  --pairing_s2_node_id ninechars
   --s2_role RM
 ```
 
