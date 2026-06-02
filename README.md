@@ -9,6 +9,42 @@ ci/setup_dev_environment.sh
 # Install as regular python package
 * `pip install .` or from pypi should just work
 
+# Call the client
+The pairing client is exposed as the Python module `s2auth.client.main`.
+
+From a development checkout, run it with:
+
+```bash
+PYTHONPATH=src poetry run python -m s2auth.client.main --help
+```
+
+There is also a helper script in the repository:
+
+```bash
+./run_client.sh
+```
+
+Typical example:
+
+```bash
+PYTHONPATH=src poetry run python -m s2auth.client.main \
+  --server_url http://localhost:8000 \
+  --domain example.com \
+  --pairing_token your-pairing-token \
+  --s2_role RM
+```
+
+Required input:
+- Provide exactly one of `--domain` or `--fingerprint`.
+- Provide a `--pairing_token` to start the pairing flow.
+
+Useful optional arguments:
+- `--server_url` defaults to `http://localhost`.
+- `--client_S2_nodeId` and `--server_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
+- `--pairing_s2_node_id` can be used when the pairing code must include a target S2 node ID.
+- `--skip_cert_verify` disables certificate verification for local or test setups.
+- `-v` or `--verbose` enables debug logging.
+
 # Run the FastAPI server
 ```bash
 poetry run server
