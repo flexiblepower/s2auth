@@ -13,7 +13,7 @@ from s2auth.common.model.s2_connect_pairing import (
     RequestPairingPostResponse,
 )
 from s2auth.common.model.s2_connect_common import AccessToken, NodeId
-from s2auth.common.dependencies import Depends, inject
+from wepositive_di import Depends, inject
 from s2auth.server.context import (
     ClientContext,
     ClientState,

@@ -5,7 +5,7 @@ from base64 import b64encode
 from typing import Any, AsyncGenerator
 from contextlib import asynccontextmanager
 from uuid import UUID
-from s2auth.common.dependencies import setup, Depends, inject, provider_overrides
+from wepositive_di import setup, Depends, inject, provider_overrides
 from s2auth.server.context import (
     ClientState,
     client_node_id,
@@ -810,7 +810,7 @@ async def test_async_fine_grained_locking_same_context_serializes():
         client_node_id,
         context_storage_singleton,
     )
-    from s2auth.common.dependencies import inject, provider_overrides, setup
+    from wepositive_di import inject, provider_overrides, setup
 
     # Wire the DI system
     setup()
@@ -1087,7 +1087,7 @@ async def test_sync_fine_grained_locking_same_context_serializes():
         client_node_id,
         context_storage_singleton,
     )
-    from s2auth.common.dependencies import inject, provider_overrides, setup
+    from wepositive_di import inject, provider_overrides, setup
 
     # Wire the DI system
     setup()
@@ -1107,7 +1107,7 @@ async def test_sync_fine_grained_locking_same_context_serializes():
     def test_storage() -> ContextStorage:
         return storage
 
-    @inject
+    @asynccontextmanager
     async def test_client_context(
         cid: UUID = Depends[client_node_id],
         stor: ContextStorage = Depends[context_storage_singleton],

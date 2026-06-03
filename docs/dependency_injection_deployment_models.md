@@ -41,7 +41,7 @@ The DI system uses Python's `contextvars` for request-scoped data:
 ```python
 # main.py
 from fastapi import FastAPI
-from s2auth.common.dependencies import setup
+from wepositive_di import setup
 
 app = FastAPI()
 
@@ -91,7 +91,7 @@ app.add_middleware(RequestContextMiddleware)
 ### Async Dependency Providers
 
 ```python
-from s2auth.common.dependencies import register_provider
+from wepositive_di import register_provider
 
 @register_provider()
 async def request_id() -> str:
@@ -126,7 +126,7 @@ async def user_service(req_id: str = Depends[request_id]) -> UserService:
 ```python
 # app.py (Flask)
 from flask import Flask, g
-from s2auth.common.dependencies import setup
+from wepositive_di import setup
 import contextvars
 
 app = Flask(__name__)
@@ -241,7 +241,7 @@ To initialize after the fork (but before handling requests):
 
 ```python
 # gunicorn_config.py
-from s2auth.common.dependencies import setup
+from wepositive_di import setup
 
 def post_fork(server, worker):
     """Called after worker process is forked."""
@@ -260,7 +260,7 @@ def post_fork(server, worker):
 
 ```python
 # app.py
-from s2auth.common.dependencies import setup
+from wepositive_di import setup
 
 # Called once when module is imported (per worker process)
 setup()
@@ -338,7 +338,7 @@ gunicorn app:app --worker-class uvicorn.workers.UvicornWorker --workers 4
 ```python
 # app.py
 from fastapi import FastAPI
-from s2auth.common.dependencies import setup
+from wepositive_di import setup
 
 app = FastAPI()
 
@@ -444,7 +444,7 @@ setup()  # At module level in app.py
 from flask import Flask, request, jsonify
 import contextvars
 import asyncio
-from s2auth.common.dependencies import setup, register_provider, Depends
+from wepositive_di import setup, register_provider, Depends
 
 # 1. Define context variable
 request_context = contextvars.ContextVar('request_context', default=None)
@@ -492,7 +492,7 @@ def get_users():
 from fastapi import FastAPI, Request
 import contextvars
 from starlette.middleware.base import BaseHTTPMiddleware
-from s2auth.common.dependencies import setup, register_provider, Depends
+from wepositive_di import setup, register_provider, Depends
 
 # 1. Define context variable
 request_context = contextvars.ContextVar('request_context', default=None)
@@ -575,7 +575,7 @@ Each worker:
 
 ```python
 # gunicorn_config.py
-from s2auth.common.dependencies import setup
+from wepositive_di import setup
 
 def post_fork(server, worker):
     setup()
@@ -592,7 +592,7 @@ Each worker:
 
 ## Context Storage: Unified Implementation
 
-The s2auth server provides context storage for managing client and pairing attempt state across requests. The system uses a **unified `InMemoryContextStorage`** implementation with `aiologic.RLock` that works seamlessly across all deployment types:
+The s2auth server provides context storage for managing client and pairing attempt state across requests. The system uses a **unified `InMemoryContextStorage`** implementation backed by `wepositive-di` that works seamlessly across all deployment types:
 
 - **Async servers** (FastAPI): Non-blocking async synchronization
 - **Threaded servers** (Flask): Thread-safe synchronization
@@ -602,7 +602,7 @@ The s2auth server provides context storage for managing client and pairing attem
 
 ### How It Works
 
-The storage uses `aiologic.RLock` which:
+The storage implementation uses a reentrant lock which:
 - Works from async tasks (like `asyncio.Lock`)
 - Works from threads (like `threading.Lock`)
 - Works across threads with different event loops
@@ -613,7 +613,7 @@ Combined with the DI system's support for async dependencies in sync contexts, t
 ### Default Configuration (Works Everywhere!)
 
 ```python
-from s2auth.common.dependencies import inject, Depends
+from wepositive_di import inject, Depends
 from s2auth.server.context import (
     client_context,
     pairing_attempt_context,

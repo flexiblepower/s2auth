@@ -54,7 +54,7 @@ To override a hook, use the `@register_hook()` decorator with a reference to the
 
 ```python
 from s2auth.server.hooks import pairing_attempt_request, register_hook
-from s2auth.common.dependencies import Depends, inject
+from wepositive_di import Depends, inject
 from s2auth.common.exceptions import S2PairingError
 from s2auth.common.model.s2_over_ip_pairing import ErrorMessage
 from s2auth.server.context import ReadOnlyClientContext, ReadOnlyPairingAttemptContext
@@ -94,7 +94,7 @@ Your custom hook can declare **different dependencies** than the default impleme
 
 ```python
 from s2auth.server.hooks import pairing_attempt_request, register_hook
-from s2auth.common.dependencies import Depends, inject, register_provider
+from wepositive_di import Depends, inject, register_provider
 
 # Your custom service
 @register_provider()

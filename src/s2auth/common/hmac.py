@@ -9,7 +9,7 @@ from typing import Annotated, Any, OrderedDict
 
 from pydantic import StringConstraints
 
-from s2auth.common.dependencies import register_provider
+from wepositive_di import register_provider
 from s2auth.common.exceptions import (IncompatibleHmacHashingAlgorithms,
                                       VerificationError)
 from s2auth.common.model.s2_connect_common import AccessToken

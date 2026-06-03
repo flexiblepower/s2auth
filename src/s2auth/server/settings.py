@@ -3,7 +3,7 @@ from pydantic import AnyUrl, StringConstraints
 from pydantic.types import UUID4
 from pydantic_settings import BaseSettings
 
-from s2auth.common.dependencies import register_provider
+from wepositive_di import register_provider
 
 
 class Settings(BaseSettings):

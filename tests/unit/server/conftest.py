@@ -1,5 +1,5 @@
 import pytest
-from s2auth.common.dependencies import setup
+from wepositive_di import setup
 
 
 @pytest.fixture(autouse=True)

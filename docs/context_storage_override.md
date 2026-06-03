@@ -2,7 +2,7 @@
 
 ## Overview
 
-The s2auth server uses dependency injection to manage context storage for client and pairing attempt state. The system provides a **unified `InMemoryContextStorage`** implementation that uses `aiologic.RLock` for synchronization, making it work seamlessly across:
+The s2auth server uses dependency injection to manage context storage for client and pairing attempt state. The system provides a **unified `InMemoryContextStorage`** implementation backed by `wepositive-di` context storage, making it work seamlessly across:
 
 - **Async servers** (FastAPI with Uvicorn): Non-blocking async synchronization
 - **Threaded servers** (Flask with Gunicorn): Thread-safe synchronization
@@ -17,7 +17,7 @@ The s2auth server uses dependency injection to manage context storage for client
 The system automatically provides the unified storage:
 
 ```python
-from s2auth.common.dependencies import inject, Depends
+from wepositive_di import inject, Depends
 from s2auth.server.context import (
     client_context,
     pairing_attempt_context,
@@ -49,9 +49,9 @@ def my_sync_endpoint(
 
 ## How It Works
 
-### aiologic.RLock: The Secret Sauce
+### Cross-environment locking
 
-The storage uses `aiologic.RLock` (reentrant lock) which:
+The storage implementation provided by `wepositive-di` uses a reentrant lock which:
 
 - ✅ Works from async tasks (like `asyncio.Lock`)
 - ✅ Works from threads (like `threading.Lock`)
@@ -114,7 +114,7 @@ Implement a Redis-based storage backend. There are three ways to override the de
 
 ```python
 import redis
-from s2auth.common.dependencies import override_provider, setup
+from wepositive_di import override_provider, setup
 from s2auth.server.context import (
     ContextStorage,
     ClientContext,
@@ -219,7 +219,7 @@ You can override the storage for testing:
 ```python
 import pytest
 from uuid import UUID
-from s2auth.common.dependencies import provider_overrides, setup
+from wepositive_di import provider_overrides, setup
 from s2auth.server.context import (
     context_storage_singleton,
     InMemoryContextStorage,
@@ -302,4 +302,4 @@ def set_client_context():
 | Flask + Gunicorn (threaded) | InMemoryContextStorage | ❌ No - works by default |
 | Multi-process (any framework) | InMemoryContextStorage | ⚠️ Consider Redis for shared state |
 
-The unified storage with aiologic.RLock eliminates the need for deployment-specific configuration while maintaining thread safety and async compatibility!
+The unified storage eliminates the need for deployment-specific configuration while maintaining thread safety and async compatibility!

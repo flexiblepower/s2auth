@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import AnyUrl
 
-from s2auth.common.dependencies import Depends, inject, provider_overrides
+from wepositive_di import Depends, inject, provider_overrides
 from s2auth.common.exceptions import S2PairingError
 from s2auth.common.model.s2_connect_common import NodeId, Role
 from s2auth.common.model.s2_connect_pairing import (

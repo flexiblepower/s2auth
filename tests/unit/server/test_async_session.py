@@ -1,4 +1,5 @@
 from typing import Any, AsyncGenerator, Callable, Coroutine
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import Column, Integer, String, select
@@ -7,7 +8,7 @@ from sqlalchemy.orm import declarative_base
 
 from s2auth.server.config import Config, config
 from s2auth.server.db import async_session
-from s2auth.common.dependencies import Depends, inject, provider_overrides, setup
+from wepositive_di import Depends, inject, provider_overrides, setup
 
 # Create a simple SQLAlchemy model for testing
 Base = declarative_base()
@@ -22,7 +23,7 @@ class _TestUser(Base):
 # Type alias for the test fixture return type
 DbConfigFixture = tuple[
     Callable[[], Coroutine[Any, Any, Config]],  # test_config_provider
-    Callable[..., AsyncGenerator[AsyncSession, None]],  # test_async_session_provider
+    Callable[..., AbstractAsyncContextManager[AsyncSession]],  # test_async_session_provider
 ]
 
 
@@ -70,6 +71,7 @@ async def test_db_config(test_engine: AsyncEngine) -> DbConfigFixture:
         return test_config
 
     # Override async_session to use the shared test engine
+    @asynccontextmanager
     async def test_async_session_provider(cfg: Config = Depends[config]):
         session = AsyncSession(test_engine, expire_on_commit=False)
         try:
