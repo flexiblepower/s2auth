@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 from pydantic import AnyUrl
 
-from s2auth.common.dependencies import Depends, inject, register_provider
+from wepositive_di import Depends, inject, register_provider
 from s2auth.common.model.s2_connect_common import NodeId, Role
 from s2auth.common.model.s2_connect_pairing import (
     EndpointDescription,
@@ -153,7 +153,7 @@ def register_hook(
     Example:
         ```python
         from s2auth.server import hooks
-        from s2auth.common.dependencies import Depends, inject
+        from wepositive_di import Depends, inject
 
         @register_hook(hooks.pairing_attempt_request)
         @inject

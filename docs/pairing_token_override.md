@@ -58,7 +58,7 @@ For other override methods (setup(), function call, context manager), see the [D
 For predictable tests, use a static token:
 
 ```python
-from s2auth.common.dependencies import override_provider
+from wepositive_di import override_provider
 from s2auth.common.hmac import create_pairing_token, PairingToken
 
 @override_provider(create_pairing_token)
@@ -72,7 +72,7 @@ def create_pairing_token(length: int = 9) -> PairingToken:
 Use longer tokens for increased security:
 
 ```python
-from s2auth.common.dependencies import override_provider
+from wepositive_di import override_provider
 from s2auth.common.hmac import create_pairing_token, PairingToken
 
 @override_provider(create_pairing_token)
@@ -92,7 +92,7 @@ def create_pairing_token(length: int = 32) -> PairingToken:
 Fetch tokens from an external service or database:
 
 ```python
-from s2auth.common.dependencies import override_provider
+from wepositive_di import override_provider
 from s2auth.common.hmac import create_pairing_token, PairingToken
 
 @override_provider(create_pairing_token)
@@ -108,7 +108,7 @@ def create_pairing_token(length: int = 9) -> PairingToken:
 Encode additional metadata in the token:
 
 ```python
-from s2auth.common.dependencies import override_provider
+from wepositive_di import override_provider
 from s2auth.common.hmac import create_pairing_token, PairingToken
 import secrets
 import json

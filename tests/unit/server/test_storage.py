@@ -1,5 +1,6 @@
 from typing import Any, AsyncGenerator, Callable, Coroutine
 import json
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 import pytest
 from base64 import b64decode, b64encode
 from pydantic import AnyUrl, SecretStr
@@ -11,13 +12,13 @@ from s2auth.common.model.s2_connect_common import AccessToken
 from s2auth.common.model.s2_connect_pairing import ConnectionDetails
 from s2auth.server.config import Config, config
 from s2auth.server.db import async_session
-from s2auth.common.dependencies import Depends, provider_overrides, setup
+from wepositive_di import Depends, provider_overrides, setup
 
 
 # Type alias for the test fixture return type
 StorageDbFixture = tuple[
     Callable[[], Coroutine[Any, Any, Config]],  # test_config_provider
-    Callable[..., AsyncGenerator[AsyncSession, None]],  # test_async_session_provider
+    Callable[..., AbstractAsyncContextManager[AsyncSession]],  # test_async_session_provider
     AsyncEngine,  # test_storage_engine
 ]
 
@@ -62,6 +63,7 @@ async def test_storage_db(test_storage_engine: AsyncEngine) -> StorageDbFixture:
 
     # Override async_session to use the shared test engine
     # This ensures all operations use the same database connection
+    @asynccontextmanager
     async def test_async_session_provider(cfg: Config = Depends[config]):
         session = AsyncSession(test_storage_engine, expire_on_commit=False)
         try:

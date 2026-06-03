@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from s2auth.common.dependencies import Depends, inject
+from wepositive_di import Depends, inject
 from s2auth.server.db import async_session
 from s2auth.server.models import StoredObject
 

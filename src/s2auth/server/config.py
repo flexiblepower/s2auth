@@ -1,6 +1,6 @@
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from s2auth.common.dependencies import register_provider
+from wepositive_di import register_provider
 
 
 class Config(BaseSettings):
