@@ -153,8 +153,8 @@ async def initiateConnection(
     endpoint_hook = hooks.get(get_server_endpoint_description)
     node_hook = hooks.get(get_server_node_description)
 
-    server_endpoint_description = endpoint_hook(authentication_ctx.client_node_id)
-    server_node_description = node_hook(authentication_ctx.client_node_id)
+    server_endpoint_description = await endpoint_hook(authentication_ctx.client_node_id)
+    server_node_description = await node_hook(authentication_ctx.client_node_id)
 
     return InitiateConnectionPostResponse(
         selectedCommunicationProtocol=selected_protocol,

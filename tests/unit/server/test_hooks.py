@@ -24,6 +24,7 @@ from s2auth.server.context import (
 )
 from s2auth.server.hooks import (
     HookRegistry,
+    get_server_connection_initiation_endpoint,
     get_server_endpoint_description,
     get_server_node_description,
     pairing_attempt_request,
@@ -69,6 +70,31 @@ async def test_pairing_attempt_request_default():
 
     with provider_overrides({settings: test_settings_provider}):
         assert await hook(client_ctx, pairing_ctx) is True
+
+
+async def test_connection_initiation_endpoint_hook_default():
+    """Test the default connection initiation endpoint hook returns cem_url."""
+    client_ctx = ReadOnlyAuthenticationContext(
+        client_node_id=uuid4(), state=ClientState.PAIRING
+    )
+    test_settings_obj = Settings(
+        server_s2_node_id=uuid4(),
+        cem_s2_node_id=uuid4(),
+        cem_brand="TestBrand",
+        cem_type="TestType",
+        cem_model_name="TestModel",
+        pairing_node_id="pairing123",
+        cem_url=AnyUrl("https://cem.example.com/connection/"),
+    )
+
+    def test_settings_provider() -> Settings:
+        return test_settings_obj
+
+    registry = HookRegistry()
+    hook = registry.get(get_server_connection_initiation_endpoint)
+
+    with provider_overrides({settings: test_settings_provider}):
+        assert await hook(client_ctx) == test_settings_obj.cem_url
 
 
 async def test_server_description_hooks_default():
