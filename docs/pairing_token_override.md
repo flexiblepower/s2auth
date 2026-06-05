@@ -11,7 +11,7 @@ By default, the S2 server generates random pairing tokens using a secure random 
 - **Custom Algorithm**: Implement your own token generation logic
 - **Integration**: Generate tokens from an external system
 
-The `create_pairing_token` function from `s2auth.common.hmac` is registered as a dependency provider and can be overridden using any of the standard dependency injection override methods.
+The `create_pairing_token` function from `s2auth.common.hmac` is registered as a `wepositive-di` dependency provider and can be overridden using the standard provider override mechanisms.
 
 ## Default Behavior
 
@@ -29,7 +29,7 @@ def create_pairing_token(length: int = 9) -> PairingToken:
 
 ## How to Override
 
-The `create_pairing_token` provider can be overridden using any of the four dependency injection methods. See **[Dependency Override Guide](./dependency_overrides.md)** for complete details on all methods.
+The `create_pairing_token` provider can be overridden using `wepositive-di`. See the [`wepositive-di` documentation](https://wepositive-di.readthedocs.io/) for complete details on override methods.
 
 ### Example: Using the Decorator (Recommended)
 
@@ -49,7 +49,7 @@ def create_pairing_token(length: int = 16) -> PairingToken:
 
 ```
 
-For other override methods (setup(), function call, context manager), see the [Dependency Override Guide](./dependency_overrides.md).
+For other override methods, see the [`wepositive-di` documentation](https://wepositive-di.readthedocs.io/).
 
 ## Common Use Cases
 
@@ -163,6 +163,5 @@ When implementing custom token generators:
 
 ## See Also
 
-- **[Dependency Override Guide](./dependency_overrides.md)** - Complete guide to all four override methods
-- **[Context Storage Override](./context_storage_override.md)** - Overriding context storage for multi-process deployments
+- **[`wepositive-di` documentation](https://wepositive-di.readthedocs.io/)** - Dependency injection, provider overrides, and context storage
 - [`src/s2auth/common/hmac.py`](../src/s2auth/common/hmac.py) - Default token generation implementation

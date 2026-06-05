@@ -1,15 +1,15 @@
-from enum import Enum
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from typing import Awaitable, Callable, TypeVar
+from enum import Enum
+from typing import Awaitable, Callable
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from wepositive_di import Depends, register_provider
 from wepositive_di.context import (
-    ContextStorage as BaseContextStorage,
-    InMemoryContextStorage as BaseInMemoryContextStorage,
+    ContextStorage,
+    context_storage_singleton,
 )
 
 
@@ -29,7 +29,6 @@ from s2auth.common.model.s2_connect_common import (
 # Type aliases for the root types
 ClientNodeId = UUID
 PairingAttemptId = UUID
-ContextTypeT = TypeVar("ContextTypeT", bound=BaseModel)
 
 # Context variables
 s2_client_node_id_var: ContextVar[NodeId | None] = ContextVar(
@@ -108,68 +107,6 @@ class ReadOnlyPairingAttemptContext(PairingAttemptContext):
     model_config = ConfigDict(frozen=True)
 
 
-class ContextStorage(BaseContextStorage):
-    """Context storage interface with s2auth-specific convenience methods."""
-
-    def get_context(
-        self, ctx_type: type[ContextTypeT], context_id: UUID
-    ) -> AbstractAsyncContextManager[ContextTypeT]:
-        raise NotImplementedError
-
-    async def store_context(
-        self, ctx_type: type[ContextTypeT], context_id: UUID, context: ContextTypeT
-    ) -> None:
-        raise NotImplementedError
-
-    async def get_context_snapshot(
-        self, ctx_type: type[ContextTypeT], context_id: UUID
-    ) -> ContextTypeT:
-        raise NotImplementedError
-
-    async def get_client_context(
-        self, client_node_id: ClientNodeId
-    ) -> AsyncGenerator[ClientContext, None]:
-        try:
-            async with self.get_context(ClientContext, client_node_id) as ctx:
-                yield ctx
-        except KeyError as exc:
-            raise KeyError(f"No context known for {client_node_id}") from exc
-
-    async def get_pairing_attempt_context(
-        self, pairing_attempt_id: PairingAttemptId
-    ) -> AsyncGenerator[PairingAttemptContext, None]:
-        try:
-            async with self.get_context(PairingAttemptContext, pairing_attempt_id) as ctx:
-                yield ctx
-        except KeyError as exc:
-            raise KeyError(f"No context known for {pairing_attempt_id}") from exc
-
-    async def store_client_context(self, context: ClientContext) -> None:
-        if context.client_node_id is None:
-            raise ValueError("ClientContext must have client_node_id set")
-        await self.store_context(ClientContext, context.client_node_id, context)
-
-    async def store_pairing_attempt_context(self, context: PairingAttemptContext) -> None:
-        await self.store_context(
-            PairingAttemptContext, context.pairing_attempt_id, context
-        )
-
-
-class InMemoryContextStorage(BaseInMemoryContextStorage, ContextStorage):
-    """In-memory storage backed by wepositive-di's typed context storage."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._client_states = self._states.setdefault(ClientContext, {})
-        self._pairing_attempt_states = self._states.setdefault(PairingAttemptContext, {})
-
-
-@register_provider(singleton=True)
-def context_storage_singleton() -> ContextStorage:
-    """Singleton provider for the context storage."""
-    return InMemoryContextStorage()
-
-
 @register_provider()
 def client_node_id() -> ClientNodeId:
     """Returns the s2_client_node_id from contextvars."""
@@ -202,8 +139,11 @@ async def client_context(
 
     Works in both async and threaded environments through wepositive-di storage.
     """
-    async for ctx in storage.get_client_context(client_node_id):
-        yield ctx
+    try:
+        async with storage.get_context(ClientContext, client_node_id) as ctx:
+            yield ctx
+    except KeyError as exc:
+        raise KeyError(f"No context known for {client_node_id}") from exc
 
 
 @register_provider(context_manager=True)
@@ -220,8 +160,11 @@ async def pairing_attempt_context(
 
     Works in both async and threaded environments through wepositive-di storage.
     """
-    async for ctx in storage.get_pairing_attempt_context(pairing_attempt_id):
-        yield ctx
+    try:
+        async with storage.get_context(PairingAttemptContext, pairing_attempt_id) as ctx:
+            yield ctx
+    except KeyError as exc:
+        raise KeyError(f"No context known for {pairing_attempt_id}") from exc
 
 
 @register_provider()
@@ -241,7 +184,12 @@ async def store_client_context(
             ctx = ClientContext(client_node_id=some_uuid)
             await store_ctx(ctx)
     """
-    return storage.store_client_context
+    async def store_context(context: ClientContext) -> None:
+        if context.client_node_id is None:
+            raise ValueError("ClientContext must have client_node_id set")
+        await storage.store_context(ClientContext, context.client_node_id, context)
+
+    return store_context
 
 
 @register_provider()
@@ -261,4 +209,9 @@ async def store_pairing_attempt_context(
             ctx = PairingAttemptContext(pairing_attempt_id=some_uuid, ...)
             await store_ctx(ctx)
     """
-    return storage.store_pairing_attempt_context
+    async def store_context(context: PairingAttemptContext) -> None:
+        await storage.store_context(
+            PairingAttemptContext, context.pairing_attempt_id, context
+        )
+
+    return store_context
