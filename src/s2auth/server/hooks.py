@@ -18,7 +18,7 @@ from s2auth.common.model.s2_connect_pairing import (
     NodeDescription,
 )
 from s2auth.server.context import (
-    ReadOnlyClientContext,
+    ReadOnlyAuthenticationContext,
     ReadOnlyPairingAttemptContext,
 )
 from s2auth.server.settings import Settings, settings
@@ -26,7 +26,7 @@ from s2auth.server.settings import Settings, settings
 
 @inject
 async def get_server_endpoint(
-    client_context: ReadOnlyClientContext,
+    authentication_context: ReadOnlyAuthenticationContext,
     server_settings: Settings = Depends[settings],
 ) -> AnyUrl | None:
     """Default hook implementation to get the server endpoint.
@@ -35,7 +35,7 @@ async def get_server_endpoint(
     so the S2 Client Node can connect to the server side to establish an S2 connection.
 
     Args:
-        client_context: Read-only view of the client's context (contains client_node_id, state, etc.)
+        authentication_context: Read-only view of the authentication context (contains client_node_id, state, etc.)
         server_settings: Server configuration settings
     """
     return server_settings.cem_url
@@ -43,7 +43,7 @@ async def get_server_endpoint(
 
 @inject
 async def pairing_attempt_request(
-    client_context: ReadOnlyClientContext,
+    authentication_context: ReadOnlyAuthenticationContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     server_settings: Settings = Depends[settings],
 ) -> tuple[EndpointDescription, NodeDescription]:
@@ -54,7 +54,7 @@ async def pairing_attempt_request(
     identity or to refuse pairing by raising an S2PairingError.
 
     Args:
-        client_context: Read-only view of the client's context (contains client_node_id, state, etc.)
+        authentication_context: Read-only view of the authentication context (contains client_node_id, state, etc.)
         pairing_context: Read-only view of the pairing attempt context (contains pairing_attempt_id, pairing_token, etc.)
         server_settings: Server configuration settings
 
@@ -158,7 +158,7 @@ def register_hook(
         @register_hook(hooks.pairing_attempt_request)
         @inject
         async def my_pairing_hook(
-            client_context: ClientContext,
+            authentication_context: AuthenticationContext,
             pairing_context: PairingAttemptContext,
             server_settings: Settings = Depends[settings],
         ) -> tuple[EndpointDescription, NodeDescription]:

@@ -52,7 +52,7 @@ class PairingState(str, Enum):
     FAILED = "Failed"
 
 
-class ClientContext(BaseModel):
+class AuthenticationContext(BaseModel):
     """Context data for a client connection.
 
     Note: Modifications to context instances should be done carefully in
@@ -87,8 +87,8 @@ class PairingAttemptContext(BaseModel):
     server_hmac_challenge: HmacChallenge | None = None
 
 
-class ReadOnlyClientContext(ClientContext):
-    """Read-only view of ClientContext for passing to hooks.
+class ReadOnlyAuthenticationContext(AuthenticationContext):
+    """Read-only view of AuthenticationContext for passing to hooks.
 
     This class prevents accidental modification of context state in hooks.
     Any attempt to modify attributes will raise a ValidationError.
@@ -127,10 +127,10 @@ def pairing_attempt_id() -> PairingAttemptId:
 
 @register_provider(context_manager=True)
 @asynccontextmanager
-async def client_context(
+async def authentication_context(
     client_node_id: ClientNodeId = Depends[client_node_id],
     storage: ContextStorage = Depends[context_storage_singleton],
-) -> AsyncGenerator[ClientContext, None]:
+) -> AsyncGenerator[AuthenticationContext, None]:
     """Retrieves the context for the specified client_node_id.
 
     This is an async generator provider that yields the context while holding
@@ -140,7 +140,7 @@ async def client_context(
     Works in both async and threaded environments through wepositive-di storage.
     """
     try:
-        async with storage.get_context(ClientContext, client_node_id) as ctx:
+        async with storage.get_context(AuthenticationContext, client_node_id) as ctx:
             yield ctx
     except KeyError as exc:
         raise KeyError(f"No context known for {client_node_id}") from exc
@@ -168,26 +168,26 @@ async def pairing_attempt_context(
 
 
 @register_provider()
-async def store_client_context(
+async def store_authentication_context(
     storage: ContextStorage = Depends[context_storage_singleton],
-) -> Callable[[ClientContext], Awaitable[None]]:
-    """Provider that returns a function to store client contexts.
+) -> Callable[[AuthenticationContext], Awaitable[None]]:
+    """Provider that returns a function to store authentication contexts.
 
-    Returns a callable that can be used to safely store ClientContext objects
+    Returns a callable that can be used to safely store AuthenticationContext objects
     in the context storage. Thread-safe and async-safe.
 
     Usage:
         @inject
         async def my_function(
-            store_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[store_client_context]
+            store_ctx: Callable[[AuthenticationContext], Awaitable[None]] = Depends[store_authentication_context]
         ):
-            ctx = ClientContext(client_node_id=some_uuid)
+            ctx = AuthenticationContext(client_node_id=some_uuid)
             await store_ctx(ctx)
     """
-    async def store_context(context: ClientContext) -> None:
+    async def store_context(context: AuthenticationContext) -> None:
         if context.client_node_id is None:
-            raise ValueError("ClientContext must have client_node_id set")
-        await storage.store_context(ClientContext, context.client_node_id, context)
+            raise ValueError("AuthenticationContext must have client_node_id set")
+        await storage.store_context(AuthenticationContext, context.client_node_id, context)
 
     return store_context
 

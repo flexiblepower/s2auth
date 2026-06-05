@@ -62,28 +62,28 @@ This project uses the `wepositive-di` package for dependency injection, provider
 
 ### Context Storage
 
-The server uses the `wepositive-di` context storage implementation. s2auth only defines project-specific context models and providers (`ClientContext`, `PairingAttemptContext`, `client_context`, `pairing_attempt_context`, and store helpers).
+The server uses the `wepositive-di` context storage implementation. s2auth only defines project-specific context models and providers (`AuthenticationContext`, `PairingAttemptContext`, `authentication_context`, `pairing_attempt_context`, and store helpers).
 
 **Basic usage:**
 ```python
 from wepositive_di import inject, Depends
 from s2auth.server.context import (
-    client_context,
-    store_client_context,
-    ClientContext,
+    authentication_context,
+    store_authentication_context,
+    AuthenticationContext,
 )
 
 @inject
 async def my_endpoint(
-    ctx: ClientContext = Depends[client_context],
-    store_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[store_client_context],
+    ctx: AuthenticationContext = Depends[authentication_context],
+    store_ctx: Callable[[AuthenticationContext], Awaitable[None]] = Depends[store_authentication_context],
 ):
     # Read/modify existing context
     print(f"Current state: {ctx.state}")
     ctx.state = "authenticated"
 
     # Store new context
-    new_ctx = ClientContext(client_node_id=some_uuid, state="active")
+    new_ctx = AuthenticationContext(client_node_id=some_uuid, state="active")
     await store_ctx(new_ctx)
 ```
 

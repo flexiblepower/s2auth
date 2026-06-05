@@ -24,14 +24,14 @@ Each hook can only be overridden **once** - attempting to register a second over
 ```python
 @inject
 async def pairing_attempt_request(
-    client_context: ReadOnlyClientContext,
+    authentication_context: ReadOnlyAuthenticationContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     # ... custom dependencies via Depends[] ...
 ) -> tuple[S2EndpointDescription, S2NodeDescription]
 ```
 
 **Parameters:**
-- `client_context`: [`ReadOnlyClientContext`](../src/s2auth/server/context.py) - Read-only view of the client's context. Attempting to modify will raise a `ValidationError`.
+- `authentication_context`: [`ReadOnlyAuthenticationContext`](../src/s2auth/server/context.py) - Read-only view of the authentication context. Attempting to modify will raise a `ValidationError`.
 - `pairing_context`: [`ReadOnlyPairingAttemptContext`](../src/s2auth/server/context.py) - Read-only view of the pairing attempt context. Attempting to modify will raise a `ValidationError`.
 - Additional dependencies can be declared using `Depends[]` (e.g., `Settings`, custom validators, etc.)
 
@@ -57,7 +57,7 @@ from s2auth.server.hooks import pairing_attempt_request, register_hook
 from wepositive_di import Depends, inject
 from s2auth.common.exceptions import S2PairingError
 from s2auth.common.model.s2_over_ip_pairing import ErrorMessage
-from s2auth.server.context import ReadOnlyClientContext, ReadOnlyPairingAttemptContext
+from s2auth.server.context import ReadOnlyAuthenticationContext, ReadOnlyPairingAttemptContext
 from s2auth.server.settings import Settings, settings
 
 class ClientNotAllowed(S2PairingError):
@@ -67,13 +67,13 @@ class ClientNotAllowed(S2PairingError):
 @register_hook(pairing_attempt_request)
 @inject
 async def custom_pairing_request(
-    client_context: ReadOnlyClientContext,
+    authentication_context: ReadOnlyAuthenticationContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     server_settings: Settings = Depends[settings],
 ) -> tuple[S2EndpointDescription, S2NodeDescription]:
     """Custom pairing hook with validation and custom descriptions."""
     # Custom validation
-    if client_context.client_node_id in BLOCKED_CLIENTS:
+    if authentication_context.client_node_id in BLOCKED_CLIENTS:
         raise ClientNotAllowed("Client is not allowed")
 
     # Custom descriptions
@@ -104,13 +104,13 @@ async def my_client_validator() -> ClientValidator:
 @register_hook(pairing_attempt_request)
 @inject
 async def custom_pairing_with_validator(
-    client_context: ReadOnlyClientContext,
+    authentication_context: ReadOnlyAuthenticationContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     validator: ClientValidator = Depends[my_client_validator],  # Different dependency!
 ) -> tuple[S2EndpointDescription, S2NodeDescription]:
     """Hook that uses a custom validator service instead of settings."""
     # Use your custom service
-    if not await validator.is_allowed(client_context.client_node_id):
+    if not await validator.is_allowed(authentication_context.client_node_id):
         raise ClientNotAllowed("Client validation failed")
 
     # Return custom descriptions
