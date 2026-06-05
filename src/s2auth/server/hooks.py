@@ -7,7 +7,8 @@ and can be replaced by client code.
 See docs/hooks.md for detailed documentation on each hook and how to override them.
 """
 
-from typing import Any, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from pydantic import AnyUrl
 
@@ -22,6 +23,9 @@ from s2auth.server.context import (
     ReadOnlyPairingAttemptContext,
 )
 from s2auth.server.settings import Settings, settings
+
+
+HookFunction = Callable[..., Awaitable[Any]]
 
 
 @inject
@@ -125,7 +129,7 @@ class HookRegistry:
 
     def __init__(self) -> None:
         # Initialize with default hook implementations
-        self._hooks: dict[Callable[..., Any], Callable[..., Any]] = {
+        self._hooks: dict[HookFunction, HookFunction] = {
             get_server_connection_initiation_endpoint: get_server_connection_initiation_endpoint,
             get_server_endpoint_description: get_server_endpoint_description,
             get_server_node_description: get_server_node_description,
@@ -133,7 +137,7 @@ class HookRegistry:
         }
 
     def register(
-        self, original_hook: Callable[..., Any], custom_hook: Callable[..., Any]
+        self, original_hook: HookFunction, custom_hook: HookFunction
     ) -> None:
         """Register a custom hook implementation.
 
@@ -156,7 +160,7 @@ class HookRegistry:
             )
         self._hooks[original_hook] = custom_hook
 
-    def get(self, hook: Callable[..., Any]) -> Callable[..., Any]:
+    def get(self, hook: HookFunction) -> HookFunction:
         """Get a hook implementation (default or custom).
 
         Args:
@@ -180,8 +184,8 @@ def hook_registry() -> HookRegistry:
 
 
 def register_hook(
-    original_hook: Callable[..., Any],
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    original_hook: HookFunction,
+) -> Callable[[HookFunction], HookFunction]:
     """Decorator to register a custom hook implementation.
 
     This decorator allows client code to override default hook implementations.
@@ -214,7 +218,7 @@ def register_hook(
         ```
     """
 
-    def decorator(custom_hook: Callable[..., Any]) -> Callable[..., Any]:
+    def decorator(custom_hook: HookFunction) -> HookFunction:
         # Get the singleton registry instance by calling the provider
         registry = hook_registry()
         registry.register(original_hook, custom_hook)

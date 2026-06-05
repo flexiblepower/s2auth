@@ -128,8 +128,8 @@ async def request_pairing(
     # Pass read-only copies to enforce immutability in hooks
     pairing_hook = hooks.get(pairing_attempt_request)
     pairing_allowed = await pairing_hook(
-        ReadOnlyPairingAttemptContext.model_validate(pairing_context),
-        ReadOnlyAuthenticationContext.model_validate(auth_ctx),
+        ReadOnlyAuthenticationContext.model_validate(auth_ctx.model_dump()),
+        ReadOnlyPairingAttemptContext.model_validate(pairing_context.model_dump()),
     )
     if not pairing_allowed:
         raise AccessError(
@@ -139,14 +139,14 @@ async def request_pairing(
     endpoint_hook = hooks.get(get_server_endpoint_description)
     node_hook = hooks.get(get_server_node_description)
 
-    server_endpoint_description = endpoint_hook(auth_ctx.client_node_id)
-    server_node_description = node_hook(auth_ctx.client_node_id)
+    server_endpoint_description = await endpoint_hook(auth_ctx.client_node_id)
+    server_node_description = await node_hook(auth_ctx.client_node_id)
 
     return RequestPairingPostResponse(
         selectedHmacHashingAlgorithm=algorithm,
         serverNodeDescription=server_node_description,
         serverEndpointDescription=server_endpoint_description,
-        clientHmacChallengeResponse=HmacChallengeResponse(root=client_response),
+        clientHmacChallengeResponse=HmacChallengeResponse(root=b64encode(client_response)),
         serverHmacChallenge=server_challenge,
         pairingAttemptId=S2PairingAttemptId(
             root=b64encode(str(pairing_context.pairing_attempt_id).encode("utf-8"))
@@ -189,7 +189,7 @@ async def handle_client_response(
 
     endpoint_hook = hooks.get(get_server_connection_initiation_endpoint)
     server_endpoint = await endpoint_hook(
-        ReadOnlyAuthenticationContext.model_validate(auth_ctx),
+        ReadOnlyAuthenticationContext.model_validate(auth_ctx.model_dump()),
     )
     access_token = generate_access_token()
     auth_ctx.current_access_token = access_token
