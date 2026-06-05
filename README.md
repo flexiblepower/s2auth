@@ -176,7 +176,5 @@ Code here is not moved automatically so moving the generated code to a usable lo
 
 Comprehensive documentation is available in the `docs/` directory:
 
-- **[Dependency Override Guide](docs/dependency_overrides.md)** - How to override dependencies in the DI system (4 methods: decorator, setup(), function call, context manager)
-- **[Context Storage Override](docs/context_storage_override.md)** - Specific guide for overriding context storage with Redis or other backends
+- **[Dependency Injection](docs/dependency_injection.md)** - Notes on this project’s use of `wepositive-di`
 - **[Pairing Token Override](docs/pairing_token_override.md)** - How to customize pairing token generation (static tokens for testing, custom lengths, external sources)
-- **[Dependency Injection Deployment Models](docs/dependency_injection_deployment_models.md)** - How the DI system works in different deployment scenarios (async, threaded, hybrid)

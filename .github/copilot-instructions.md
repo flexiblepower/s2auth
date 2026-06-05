@@ -58,149 +58,11 @@ If you create a new file without running these checks, you may introduce type er
 - **`specification/`** - OpenAPI YAML specs for S2 protocol (connection-init, pairing, common)
 
 ### Dependency Injection System
-This project uses the `wepositive-di` package for dependency injection:
-
-**Register providers** with `@register_provider()`:
-```python
-from wepositive_di import register_provider
-
-@register_provider()  # Default: creates new instance each time
-async def my_provider() -> MyType:
-    return MyType()
-
-@register_provider(singleton=True)  # Singleton: caches instance (sync only)
-def my_singleton() -> MyType:
-    return MyType()
-```
-
-**Important**: Context-manager providers must be decorated with `@asynccontextmanager` or `@contextmanager` and registered with `@register_provider(context_manager=True)`.
-
-**Inject dependencies** with `@inject` and `Depends[]`:
-```python
-from wepositive_di import inject, Depends
-from s2auth.server.config import config
-
-@inject
-async def my_function(cfg: Config = Depends[config]):
-    # cfg is automatically injected
-    pass
-```
-
-**Setup**: Call `setup()` from `wepositive_di` to wire all registered modules before using injected functions.
-
-#### Overriding Providers
-
-There are **four methods** to override providers (see `docs/dependency_overrides.md` for full details):
-
-**1. Decorator (Recommended for production):**
-```python
-from wepositive_di import override_provider, setup
-from s2auth.server.context import context_storage_singleton
-
-@override_provider(context_storage_singleton)
-def redis_storage() -> ContextStorage:
-    return RedisContextStorage()
-
-setup()
-```
-
-**2. Pass to setup() (Good for centralized config):**
-```python
-def redis_storage() -> ContextStorage:
-    return RedisContextStorage()
-
-setup(overrides={context_storage_singleton: redis_storage})
-```
-
-**3. Function call (Explicit):**
-```python
-def redis_storage() -> ContextStorage:
-    return RedisContextStorage()
-
-override_provider(context_storage_singleton, redis_storage)
-setup()
-```
-
-**4. Context manager (For tests):**
-```python
-from wepositive_di import provider_overrides
-
-with provider_overrides({config: test_config}):
-    # Temporary override for this block
-    pass
-```
-
-**CRITICAL**: Override functions should **NOT** use `@register_provider` decorator. They are plain functions that replace the original provider.
-
-#### Generator Provider Patterns
-
-The dependency injection system supports generator providers for resource management (setup/teardown pattern). **CRITICAL**: All generator providers MUST use `try-finally` or `try-except` blocks for cleanup.
-
-**Why this matters**: The DI system uses a hybrid cleanup strategy:
-- On success: Calls `next()`/`anext()` to run cleanup code normally
-- On exception: Calls `throw()`/`athrow()` to pass the exception to the generator
-
-When `throw()` is called, the exception is raised **at the yield point**. Without try-finally, cleanup code after the yield will NOT execute.
-
-**Failure behavior**: If a generator provider's cleanup fails (e.g., missing try-finally), the DI system:
-- Logs a warning with the exception details (enabling debugging of resource leaks)
-- Continues cleanup of other providers (robust error handling)
-- Does NOT break the DI system as a whole
-- The cleanup code in that specific provider won't run (potential resource leak)
-
-**✅ CORRECT Pattern 1 - Simple cleanup with try-finally** (REQUIRED):
-```python
-@register_provider()
-async def resource_provider():
-    resource = await create_resource()
-    try:
-        yield resource
-    finally:
-        await resource.cleanup()  # Always runs, even with throw()
-```
-
-**✅ CORRECT Pattern 2 - Exception-aware cleanup** (for transaction management):
-```python
-@register_provider()
-async def async_session(cfg: Config = Depends[config]):
-    engine = create_async_engine(cfg.sqlalchemy_db_uri.get_secret_value())
-    session = AsyncSession(engine)
-    try:
-        yield session
-        await session.commit()  # Success path - only runs with anext()
-    except Exception:
-        await session.rollback()  # Failure path - runs with athrow()
-        raise
-```
-
-**❌ INCORRECT Pattern - Simple without try-finally** (BROKEN):
-```python
-@register_provider()
-async def broken_provider():
-    resource = await create_resource()
-    yield resource
-    await resource.cleanup()  # WON'T run when throw() is called! ❌
-```
-
-**Key Rules**:
-1. **Always use try-finally or try-except** for cleanup in generator providers
-2. Put cleanup code in the `finally` block or `except` block
-3. Never rely on code immediately after `yield` to run without try-finally
-4. The try-finally pattern works for both success and failure cases
+This project uses the `wepositive-di` package for dependency injection, provider overrides, context-manager providers, and typed context storage. Do not duplicate DI behavior locally; follow the upstream documentation at https://wepositive-di.readthedocs.io/.
 
 ### Context Storage
 
-The server uses a **unified `InMemoryContextStorage`** implementation (in `src/s2auth/server/context.py`) that works seamlessly in all deployment scenarios:
-
-- **Async servers** (FastAPI with Uvicorn): Non-blocking async synchronization
-- **Threaded servers** (Flask with Gunicorn): Thread-safe synchronization
-- **Hybrid environments**: Multiple threads each with their own event loop
-
-**Key features:**
-- Uses `wepositive-di` context storage synchronization (works in both async and threading contexts)
-- Fine-grained locking per context ID (different contexts can be accessed concurrently)
-- Supports both client contexts and pairing attempt contexts
-- Generator-based API with automatic lock management
+The server uses the `wepositive-di` context storage implementation. s2auth only defines project-specific context models and providers (`ClientContext`, `PairingAttemptContext`, `client_context`, `pairing_attempt_context`, and store helpers).
 
 **Basic usage:**
 ```python
@@ -225,9 +87,7 @@ async def my_endpoint(
     await store_ctx(new_ctx)
 ```
 
-**For multi-process deployments** (e.g., Gunicorn with multiple workers), override with a distributed storage like Redis. See `docs/context_storage_override.md` for examples.
-
-**Location:** Context storage is in `src/s2auth/server/context.py` (not in the dependencies folder).
+See https://wepositive-di.readthedocs.io/ for context storage behavior and override patterns.
 
 ### Database
 - Uses SQLAlchemy async with PostgreSQL (via asyncpg)
@@ -308,6 +168,5 @@ Uses `pydantic-settings` with environment variables. Config reads from `.env` an
 ## Documentation
 
 For more detailed information, see:
-- **`docs/dependency_overrides.md`** - Complete guide to overriding providers (4 methods: decorator, setup(), function call, context manager)
-- **`docs/context_storage_override.md`** - How to override context storage with Redis or other distributed backends
-- **`docs/dependency_injection_deployment_models.md`** - How the DI system works in different deployment scenarios (async, threaded, hybrid)
+- **`docs/dependency_injection.md`** - How this project uses `wepositive-di`
+- **https://wepositive-di.readthedocs.io/** - Dependency injection, provider overrides, and context storage
