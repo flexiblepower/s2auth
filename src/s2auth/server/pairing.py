@@ -15,18 +15,18 @@ from s2auth.common.model.s2_connect_pairing import (
 from s2auth.common.model.s2_connect_common import AccessToken, NodeId
 from wepositive_di import Depends, inject
 from s2auth.server.context import (
-    ClientContext,
+    AuthenticationContext,
     ClientState,
     PairingAttemptContext,
     PairingAttemptId,
     PairingState,
-    ReadOnlyClientContext,
+    ReadOnlyAuthenticationContext,
     ReadOnlyPairingAttemptContext,
-    client_context,
+    authentication_context,
     pairing_attempt_context,
     pairing_attempt_id_var,
     s2_client_node_id_var,
-    store_client_context,
+    store_authentication_context,
     store_pairing_attempt_context,
 )
 from s2auth.common.hmac import (
@@ -73,8 +73,8 @@ async def initiate_pairing(
 @inject
 async def request_pairing(
     request: RequestPairingPostRequest,
-    store_client_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[
-        store_client_context
+    store_authentication_ctx: Callable[[AuthenticationContext], Awaitable[None]] = Depends[
+        store_authentication_context
     ],
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
     hooks: HookRegistry = Depends[hook_registry],
@@ -83,8 +83,8 @@ async def request_pairing(
     """Initiate a new pairing attempt.
 
     Args:
-        request: The pairing request containing client node description
-        store_client_context: Function to store client context
+        request: The pairing request containing client descriptions
+        store_authentication_context: Function to store authentication context
         pairing_context: The pairing attempt context
         hooks: Hook registry for calling server hooks
 
@@ -94,13 +94,13 @@ async def request_pairing(
 
     # Set the contextvars
     client_node_id = request.clientNodeDescription.id.root
-    client_ctx = ClientContext(
+    auth_ctx = AuthenticationContext(
         client_node_id=client_node_id,
         state=ClientState.PAIRING,
         s2_endpoint_description=request.clientEndpointDescription,
         s2_node_description=request.clientNodeDescription,
     )
-    await store_client_ctx(client_ctx)
+    await store_authentication_ctx(auth_ctx)
     s2_client_node_id_var.set(NodeId(root=client_node_id))
 
     pairing_context.client_node_id = client_node_id
@@ -124,7 +124,7 @@ async def request_pairing(
     # Pass read-only copies to enforce immutability in hooks
     pairing_hook = hooks.get(pairing_attempt_request)
     server_endpoint_description, server_node_description = await pairing_hook(
-        ReadOnlyClientContext.model_validate(client_ctx),
+        ReadOnlyAuthenticationContext.model_validate(auth_ctx),
         ReadOnlyPairingAttemptContext.model_validate(pairing_context),
     )
 
@@ -146,7 +146,7 @@ async def request_pairing(
 async def handle_client_response(
     request: RequestConnectionDetailsPostRequest,
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
-    client_ctx: ClientContext = Depends[client_context],
+    auth_ctx: AuthenticationContext = Depends[authentication_context],
     hooks: HookRegistry = Depends[hook_registry],
     generate_access_token: Callable[[], AccessToken] = Depends[generate_access_token],
     cfg: Config = Depends[config],
@@ -156,7 +156,7 @@ async def handle_client_response(
     Args:
         request: The request from the client for connection details
         pairing_context: The pairing attempt context
-        client_ctx: The client context with its connection and endpoint details
+        auth_ctx: The authentication context with its connection and endpoint details
         hooks: Hook registry for calling server hooks
 
     Returns:
@@ -177,11 +177,11 @@ async def handle_client_response(
 
     endpoint_hook = hooks.get(get_server_endpoint)
     server_endpoint = await endpoint_hook(
-        ReadOnlyClientContext.model_validate(client_ctx),
+        ReadOnlyAuthenticationContext.model_validate(auth_ctx),
     )
     access_token = generate_access_token()
-    client_ctx.access_token = access_token
-    client_ctx.state = ClientState.PAIRED
+    auth_ctx.access_token = access_token
+    auth_ctx.state = ClientState.PAIRED
     pairing_context.state = PairingState.COMPLETED
     return ConnectionDetails(
         initiateConnectionUrl=server_endpoint, accessToken=access_token

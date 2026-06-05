@@ -17,19 +17,19 @@ from s2auth.common.model.s2_connect_pairing import (
     PairingAttemptId as S2PairingAttemptId,
 )
 from s2auth.server.context import (
-    ClientContext,
+    AuthenticationContext,
     ClientNodeId,
     ClientState,
     PairingAttemptContext,
     PairingAttemptId,
     PairingState,
-    client_context,
+    authentication_context,
     client_node_id,
     pairing_attempt_context,
     pairing_attempt_id,
     pairing_attempt_id_var,
     s2_client_node_id_var,
-    store_client_context,
+    store_authentication_context,
     store_pairing_attempt_context,
 )
 
@@ -111,13 +111,13 @@ async def test_pairing_attempt_id_provider_without_contextvar() -> None:
 
 
 @pytest.mark.skip_wire
-async def test_client_context_provider_returns_stored_context() -> None:
+async def test_authentication_context_provider_returns_stored_context() -> None:
     test_uuid = UUID("00000000-0000-0000-0000-000000000001")
     storage = InMemoryContextStorage()
     await storage.store_context(
-        ClientContext,
+        AuthenticationContext,
         test_uuid,
-        ClientContext(client_node_id=test_uuid, state=ClientState.CONNECTED),
+        AuthenticationContext(client_node_id=test_uuid, state=ClientState.CONNECTED),
     )
 
     def test_context_storage() -> ContextStorage:
@@ -127,7 +127,7 @@ async def test_client_context_provider_returns_stored_context() -> None:
         return test_uuid
 
     @inject
-    async def get_context(ctx: ClientContext = Depends[client_context]) -> ClientContext:
+    async def get_context(ctx: AuthenticationContext = Depends[authentication_context]) -> AuthenticationContext:
         return ctx
 
     setup()
@@ -145,7 +145,7 @@ async def test_client_context_provider_returns_stored_context() -> None:
 
 
 @pytest.mark.skip_wire
-async def test_client_context_provider_raises_keyerror_for_unknown_id() -> None:
+async def test_authentication_context_provider_raises_keyerror_for_unknown_id() -> None:
     test_uuid = UUID("00000000-0000-0000-0000-000000000001")
     storage = InMemoryContextStorage()
 
@@ -156,7 +156,7 @@ async def test_client_context_provider_raises_keyerror_for_unknown_id() -> None:
         return test_uuid
 
     @inject
-    async def get_context(ctx: ClientContext = Depends[client_context]) -> ClientContext:
+    async def get_context(ctx: AuthenticationContext = Depends[authentication_context]) -> AuthenticationContext:
         return ctx
 
     setup()
@@ -240,7 +240,7 @@ async def test_pairing_attempt_context_provider_raises_keyerror_for_unknown_id()
 
 
 @pytest.mark.skip_wire
-async def test_store_client_context_provider_stores_by_client_node_id() -> None:
+async def test_store_authentication_context_provider_stores_by_client_node_id() -> None:
     test_uuid = UUID("00000000-0000-0000-0000-000000000001")
     storage = InMemoryContextStorage()
 
@@ -249,12 +249,12 @@ async def test_store_client_context_provider_stores_by_client_node_id() -> None:
 
     @inject
     async def store_context(
-        store_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[
-            store_client_context
+        store_ctx: Callable[[AuthenticationContext], Awaitable[None]] = Depends[
+            store_authentication_context
         ],
     ) -> None:
         await store_ctx(
-            ClientContext(client_node_id=test_uuid, state=ClientState.CONNECTED)
+            AuthenticationContext(client_node_id=test_uuid, state=ClientState.CONNECTED)
         )
 
     setup()
@@ -262,12 +262,12 @@ async def test_store_client_context_provider_stores_by_client_node_id() -> None:
     with provider_overrides({context_storage_singleton: test_context_storage}):
         await store_context()
 
-    stored = await storage.get_context_snapshot(ClientContext, test_uuid)
+    stored = await storage.get_context_snapshot(AuthenticationContext, test_uuid)
     assert stored.state == ClientState.CONNECTED
 
 
 @pytest.mark.skip_wire
-async def test_store_client_context_provider_requires_client_node_id() -> None:
+async def test_store_authentication_context_provider_requires_client_node_id() -> None:
     storage = InMemoryContextStorage()
 
     def test_context_storage() -> ContextStorage:
@@ -275,16 +275,16 @@ async def test_store_client_context_provider_requires_client_node_id() -> None:
 
     @inject
     async def store_context(
-        store_ctx: Callable[[ClientContext], Awaitable[None]] = Depends[
-            store_client_context
+        store_ctx: Callable[[AuthenticationContext], Awaitable[None]] = Depends[
+            store_authentication_context
         ],
     ) -> None:
-        await store_ctx(ClientContext(state=ClientState.CONNECTED))
+        await store_ctx(AuthenticationContext(state=ClientState.CONNECTED))
 
     setup()
 
     with provider_overrides({context_storage_singleton: test_context_storage}):
-        with pytest.raises(ValueError, match="ClientContext must have client_node_id set"):
+        with pytest.raises(ValueError, match="AuthenticationContext must have client_node_id set"):
             await store_context()
 
 

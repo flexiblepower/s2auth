@@ -15,11 +15,11 @@ from s2auth.common.model.s2_connect_pairing import (
     NodeDescription,
 )
 from s2auth.server.context import (
-    ClientContext,
+    AuthenticationContext,
     ClientState,
     PairingAttemptContext,
     PairingState,
-    ReadOnlyClientContext,
+    ReadOnlyAuthenticationContext,
     ReadOnlyPairingAttemptContext,
 )
 from s2auth.server.hooks import HookRegistry, pairing_attempt_request
@@ -36,7 +36,7 @@ async def test_pairing_attempt_request_default():
     """Test the default pairing_attempt_request hook returns correct descriptions."""
     # Create test contexts
     client_id = uuid4()
-    client_ctx = ReadOnlyClientContext(
+    client_ctx = ReadOnlyAuthenticationContext(
         client_node_id=client_id, state=ClientState.PAIRING
     )
     pairing_ctx = ReadOnlyPairingAttemptContext(
@@ -89,7 +89,7 @@ async def test_pairing_attempt_request_default():
 async def test_pairing_attempt_request_override_custom_descriptions():
     """Test overriding the hook to provide custom descriptions."""
     client_id = uuid4()
-    client_ctx = ReadOnlyClientContext(
+    client_ctx = ReadOnlyAuthenticationContext(
         client_node_id=client_id, state=ClientState.PAIRING
     )
     pairing_ctx = ReadOnlyPairingAttemptContext(
@@ -103,7 +103,7 @@ async def test_pairing_attempt_request_override_custom_descriptions():
 
     @inject
     async def custom_hook(
-        client_context: ReadOnlyClientContext,
+        authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
     ) -> tuple[EndpointDescription, NodeDescription]:
         endpoint = EndpointDescription(
@@ -139,7 +139,7 @@ async def test_pairing_attempt_request_override_custom_descriptions():
 async def test_pairing_attempt_request_override_raises_error():
     """Test overriding the hook to refuse pairing by raising an error."""
     blocked_client_id = uuid4()
-    client_ctx = ReadOnlyClientContext(
+    client_ctx = ReadOnlyAuthenticationContext(
         client_node_id=blocked_client_id,
         state=ClientState.PAIRING,
     )
@@ -153,10 +153,10 @@ async def test_pairing_attempt_request_override_raises_error():
     # Define hook that blocks certain clients
     @inject
     async def blocking_hook(
-        client_context: ReadOnlyClientContext,
+        authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
     ) -> tuple[EndpointDescription, NodeDescription]:
-        if client_context.client_node_id == blocked_client_id:
+        if authentication_context.client_node_id == blocked_client_id:
             raise CustomPairingError("Client is blocked")
 
         # Would return normal descriptions if not blocked (won't reach here in test)
@@ -184,7 +184,7 @@ async def test_pairing_attempt_request_context_values():
     client_node_id = uuid4()
     pairing_attempt_id = uuid4()
 
-    client_ctx = ClientContext(client_node_id=client_node_id, state=ClientState.PAIRING)
+    client_ctx = AuthenticationContext(client_node_id=client_node_id, state=ClientState.PAIRING)
     pairing_ctx = PairingAttemptContext(
         pairing_attempt_id=pairing_attempt_id,
         pairing_node_id=NodeIdAlias(root="PAIR123"),
@@ -211,12 +211,12 @@ async def test_pairing_attempt_request_context_values():
 
     @inject
     async def tracking_hook(
-        client_context: ClientContext,
+        authentication_context: AuthenticationContext,
         pairing_context: PairingAttemptContext,
         server_settings: Settings = Depends[settings],
     ) -> tuple[EndpointDescription, NodeDescription]:
         # Store what we received
-        received_contexts["client"] = client_context
+        received_contexts["client"] = authentication_context
         received_contexts["pairing"] = pairing_context
         received_contexts["settings"] = server_settings
 
@@ -240,7 +240,7 @@ async def test_pairing_attempt_request_context_values():
         await hook(client_ctx, pairing_ctx)
 
     # Verify the hook received the correct contexts
-    assert isinstance(received_contexts["client"], ClientContext)
+    assert isinstance(received_contexts["client"], AuthenticationContext)
     assert isinstance(received_contexts["pairing"], PairingAttemptContext)
     assert isinstance(received_contexts["settings"], Settings)
 
@@ -248,7 +248,7 @@ async def test_pairing_attempt_request_context_values():
     pairing_received = received_contexts["pairing"]
     settings_received = received_contexts["settings"]
 
-    assert isinstance(client_received, ClientContext)
+    assert isinstance(client_received, AuthenticationContext)
     assert client_received.client_node_id == client_node_id
     assert client_received.state == ClientState.PAIRING
 
@@ -264,7 +264,7 @@ async def test_readonly_contexts_are_immutable():
     """Test that ReadOnly contexts raise ValidationError when modified."""
     from pydantic import ValidationError
 
-    client_ctx = ReadOnlyClientContext(client_node_id=uuid4(), state=ClientState.PAIRING)
+    client_ctx = ReadOnlyAuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING)
     pairing_ctx = ReadOnlyPairingAttemptContext(
         pairing_attempt_id=uuid4(),
         pairing_node_id=NodeIdAlias(root="PAIR123"),
@@ -272,7 +272,7 @@ async def test_readonly_contexts_are_immutable():
         state=PairingState.INITIATED,
     )
 
-    # Attempt to modify client context should raise ValidationError
+    # Attempt to modify authentication context should raise ValidationError
     with pytest.raises(ValidationError, match="frozen"):
         client_ctx.state = ClientState.PAIRING
 
@@ -303,7 +303,7 @@ async def test_register_hook_twice_raises_runtimeerror():
     # First registration should succeed
     @inject
     async def first_custom_hook(
-        client_context: ReadOnlyClientContext,
+        authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
     ) -> tuple[EndpointDescription, NodeDescription]:
         return EndpointDescription(), NodeDescription(
@@ -319,7 +319,7 @@ async def test_register_hook_twice_raises_runtimeerror():
     # Second registration should raise RuntimeError
     @inject
     async def second_custom_hook(
-        client_context: ReadOnlyClientContext,
+        authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
     ) -> tuple[EndpointDescription, NodeDescription]:
         return EndpointDescription(), NodeDescription(
@@ -377,7 +377,7 @@ async def test_register_hook_decorator():
     # Use the decorator pattern manually (simulating module-level decoration)
     @inject
     async def decorated_hook(
-        client_context: ReadOnlyClientContext,
+        authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
     ) -> tuple[EndpointDescription, NodeDescription]:
         return EndpointDescription(name="Decorated"), NodeDescription(
@@ -396,7 +396,7 @@ async def test_register_hook_decorator():
     assert hook is decorated_hook
 
     # Call it to verify it works
-    client_ctx = ReadOnlyClientContext(client_node_id=uuid4(), state=ClientState.PAIRING)
+    client_ctx = ReadOnlyAuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING)
     pairing_ctx = ReadOnlyPairingAttemptContext(
         pairing_attempt_id=uuid4(),
         pairing_node_id=NodeIdAlias(root="PAIR123"),
@@ -415,7 +415,7 @@ async def test_register_hook_decorator_with_singleton_registry():
 
     @inject
     async def test_hook(
-        client_context: ReadOnlyClientContext,
+        authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
     ) -> tuple[EndpointDescription, NodeDescription]:
         return EndpointDescription(), NodeDescription(
