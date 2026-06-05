@@ -46,12 +46,10 @@ client = ["sqlalchemy[asyncio] (>=2.0.46,<3.0.0)", "sqlalchemy-utils (>=0.42.1,<
 
 [dependency-groups]
 docs = [
-    "sphinx",
-    "sphinx-rtd-theme >= 1.2",
-    "sphinx-tabs",
-    "sphinx_copybutton",
-    "sphinx_fontawesome",
-    "sphinxcontrib.httpdomain",
+    "mkdocs-material (>=9.7.6,<10.0.0)",
+    "mkdocstrings (>=1.0.4,<2.0.0)",
+    "mkdocs-autorefs (>=1.4.4,<2.0.0)",
+    "mkdocstrings-python (>=2.0.3,<3.0.0)"
 ]
 dev = [
     "pytest (<9)", # because we want to support python 3.9

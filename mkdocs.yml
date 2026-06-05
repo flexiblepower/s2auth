@@ -1,0 +1,70 @@
+site_name: s2-python-auth
+site_description: Python helpers for S2 Connect pairing, authentication, and connection initiation.
+repo_url: https://github.com/flexiblepower/s2-python-auth
+docs_dir: docs
+site_dir: docs_html
+use_directory_urls: false
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: green
+      accent: light green
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            members: true
+            members_order: source
+            inherited_members: false
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - admonition
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Server:
+      - Overview: server/index.md
+      - Hooks: server/hooks.md
+      - Dependency Injection: server/dependency_injection.md
+      - Pairing Tokens: server/pairing_token_override.md
+  - Client:
+      - Overview: client/index.md
+  - API Reference:
+      - Common:
+          - HMAC Helpers: api/common/hmac.md
+          - Connection Initiation: api/common/connection_initiation.md
+          - Exceptions: api/common/exceptions.md
+      - Client:
+          - Pairing: api/client/pairing.md
+          - Storage DAO: api/client/dao.md
+      - Server:
+          - Pairing: api/server/pairing.md
+          - Connection Initiation: api/server/connection_initiation.md
+          - Context: api/server/context.md
+          - Hooks: api/server/hooks.md
+          - Settings: api/server/settings.md
+          - Config: api/server/config.md
+          - Database: api/server/db.md
+          - Storage: api/server/storage.md
+          - Models: api/server/models.md
+  - Development: Development.md

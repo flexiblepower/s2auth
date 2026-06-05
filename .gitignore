@@ -20,3 +20,4 @@ src/s2auth/gen_protocol/client/pairing/
 # Client connection details
 connection_details.db
 /*/*/connection_details.db
+docs_html

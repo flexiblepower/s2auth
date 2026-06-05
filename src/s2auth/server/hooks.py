@@ -4,7 +4,7 @@ This module provides hooks that can be overridden to customize the behavior
 of the S2 authentication server. Each hook is registered in a HookRegistry
 and can be replaced by client code.
 
-See docs/hooks.md for detailed documentation on each hook and how to override them.
+See docs/server/hooks.md for detailed documentation on each hook and how to override them.
 """
 
 from collections.abc import Awaitable, Callable
@@ -82,7 +82,7 @@ async def get_server_endpoint_description(
     identity or to refuse pairing by raising an S2ConnectError.
 
     Args:
-        client_node_Id: NodeId of the client,
+        client_node_id: NodeId of the client.
         server_settings: Server configuration settings
 
     Returns:
@@ -107,7 +107,7 @@ async def get_server_node_description(
     Override this hook to customize the server's identity.
 
     Args:
-        client_node_Id: NodeId of the client
+        client_node_id: NodeId of the client.
         server_settings: Server configuration settings
 
     Returns:

@@ -168,5 +168,5 @@ Uses `pydantic-settings` with environment variables. Config reads from `.env` an
 ## Documentation
 
 For more detailed information, see:
-- **`docs/dependency_injection.md`** - How this project uses `wepositive-di`
+- **`docs/server/dependency_injection.md`** - How the server uses `wepositive-di`
 - **https://wepositive-di.readthedocs.io/** - Dependency injection, provider overrides, and context storage

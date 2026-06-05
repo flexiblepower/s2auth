@@ -88,7 +88,7 @@ async def request_pairing(
 
     Args:
         request: The pairing request containing client descriptions
-        store_authentication_context: Function to store authentication context
+        store_authentication_ctx: Function to store authentication context
         pairing_context: The pairing attempt context
         hooks: Hook registry for calling server hooks
 
