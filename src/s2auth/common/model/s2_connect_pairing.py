@@ -9,8 +9,13 @@ from typing import Annotated
 
 from pydantic import AnyUrl, Base64Bytes, BaseModel, Field, RootModel
 
-from .s2_connect_common import (AccessToken, CommunicationProtocol,
-                                EndpointDescription, NodeDescription, NodeId)
+from .s2_connect_common import (
+    AccessToken,
+    CommunicationProtocol,
+    EndpointDescription,
+    NodeDescription,
+    NodeId,
+)
 
 
 class ErrorMessage(str, Enum):
@@ -22,6 +27,7 @@ class ErrorMessage(str, Enum):
     NoNodeIdProvided = "NoNodeIdProvided"
     NoValidPairingTokenOnPairingServer = "NoValidPairingTokenOnPairingServer"
     ParsingError = "ParsingError"
+    InvalidAccessToken = "InvalidAccessToken"
     Other = "Other"
 
 

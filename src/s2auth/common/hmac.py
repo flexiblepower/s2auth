@@ -5,16 +5,17 @@ import secrets
 import string
 from base64 import b64encode
 from collections.abc import Callable
-from typing import Annotated, Any, OrderedDict
+from typing import Annotated, Any, OrderedDict, Protocol
 
 from pydantic import StringConstraints
 
 from wepositive_di import register_provider
-from s2auth.common.exceptions import (IncompatibleHmacHashingAlgorithms,
-                                      VerificationError)
+from s2auth.common.exceptions import (
+    IncompatibleHmacHashingAlgorithms,
+    VerificationError,
+)
 from s2auth.common.model.s2_connect_common import AccessToken
-from s2auth.common.model.s2_connect_pairing import (HmacChallenge,
-                                                    HmacHashingAlgorithm)
+from s2auth.common.model.s2_connect_pairing import HmacChallenge, HmacHashingAlgorithm
 
 CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
@@ -40,6 +41,9 @@ PairingToken = Annotated[
 _ALL_UTF8_CHARS = [chr(i) for i in range(0x110000) if not (0xD800 <= i <= 0xDFFF)]
 
 
+class AccessTokenGenerator(Protocol):
+    def __call__(self, length: int = 32) -> AccessToken: ...
+
 
 @register_provider()
 def generate_access_token(length: int = 32) -> AccessToken:
@@ -52,7 +56,7 @@ def generate_access_token(length: int = 32) -> AccessToken:
     """
     if length < 32:
         raise ValueError("The access token needs to be at least 32 bytes.")
-    token = ''.join(random.choice(CHARS) for _ in range(length))
+    token = "".join(random.choice(CHARS) for _ in range(length))
     print(f"Generated access token: {token}")
     return AccessToken(root=b64encode(token.encode("utf-8")))
 
@@ -64,7 +68,7 @@ def create_pairing_code(s2_node_id: str | None = None, length: int = 9) -> Pairi
     """
     if length < 9:
         raise ValueError("The pairing token needs to be at least 9 bytes.")
-    token_str = ''.join(random.choice(CHARS) for _ in range(length))
+    token_str = "".join(random.choice(CHARS) for _ in range(length))
 
     if s2_node_id:
         return f"{s2_node_id}-{token_str}"
@@ -106,7 +110,7 @@ def create_response(
     pairing_token: PairingToken,
     challenge: HmacChallenge,
     hmac_salt: str,
-    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256
+    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256,
 ) -> bytes:
     try:
         digestmod = _get_hashing_algorithm(algorithm)
@@ -138,7 +142,9 @@ def verify_response(
     except ValueError as e:
         raise VerificationError(str(e)) from e
     msg_bin = (pairing_token + hmac_salt).encode("utf-8")
-    correct_digest = hmac.new(key=challenge.root, msg=msg_bin, digestmod=digestmod).digest()
+    correct_digest = hmac.new(
+        key=challenge.root, msg=msg_bin, digestmod=digestmod
+    ).digest()
 
     print(f"expected response: {correct_digest}")
     print(f"expected response as str: {b64encode(correct_digest)}")

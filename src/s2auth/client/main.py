@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
 from s2auth.client.pairing import connect, pair, strip_pairing_url
-from s2auth.common.exceptions import S2PairingError
+from s2auth.common.exceptions import S2ConnectError
 from s2auth.common.model.s2_connect_common import NodeDescription, NodeId
 from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
 
@@ -44,7 +44,7 @@ async def _run_client():
         logging.basicConfig(level=logging.DEBUG)
 
     if (args.domain is None) == (args.fingerprint is None):
-        raise S2PairingError("Must have either a domain or a fingerprint (and not both)")
+        raise S2ConnectError("Must have either a domain or a fingerprint (and not both)")
     hmac_salt = args.domain if args.domain is not None else args.fingerprint
 
     # generate client id if not given

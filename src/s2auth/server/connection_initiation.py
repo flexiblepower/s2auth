@@ -1,0 +1,227 @@
+"""Server-side helpers for the S2 Connect connection initiation flow.
+
+The communication client starts a new S2 session by calling
+``/initiateConnection`` with its current access token. The communication server
+validates the existing pairing, negotiates the communication protocol and S2
+message version, and returns a newly generated pending access token. The client
+must persist that pending token and then confirm it with ``/confirmAccessToken``
+before the server promotes it to the active access token.
+
+After confirmation, the previous active access token is only retained as a
+one-time connection token for authenticating the actual S2 communication
+channel. Each new S2 session repeats this renewal process.
+"""
+
+from wepositive_di import Depends
+from s2auth.common.hmac import AccessTokenGenerator, generate_access_token
+from s2auth.common.exceptions import (
+    InvalidAccessTokenError,
+    NoCompatibleCommunitcationProtocol,
+    NoCompatibleS2ConnectVersionError,
+    NoCompatibleS2VersionError,
+    PairingNotCompleteError,
+    InvalidServerError,
+)
+from s2auth.common.model.s2_connect_common import (
+    AccessToken,
+    CommunicationProtocol,
+    NodeId,
+)
+from s2auth.common.model.s2_connect_connection_init import (
+    InitiateConnectionPostResponse,
+)
+from s2auth.server.context import (
+    AuthenticationContext,
+    ClientState,
+    authentication_context,
+)
+from s2auth.server.hooks import (
+    HookRegistry,
+    get_server_endpoint_description,
+    get_server_node_description,
+    hook_registry,
+)
+from s2auth.server.settings import Settings, settings
+from s2auth.common.connection_initiation import select_protocol, select_version
+
+
+async def initiateConnection(
+    server_node_id: NodeId,
+    access_token: AccessToken,
+    supported_communication_protocols: list[CommunicationProtocol],
+    supported_s2_versions: list[str],
+    selected_s2_connect_version: str,
+    server_settings: Settings = Depends[settings],
+    authentication_ctx: AuthenticationContext = Depends[authentication_context],
+    generate_access_token: AccessTokenGenerator = Depends[generate_access_token],
+    hooks: HookRegistry = Depends[hook_registry],
+) -> InitiateConnectionPostResponse:
+    """Handle ``POST /initiateConnection`` for a paired communication client.
+
+    This implements the server side of the specification's connection
+    initiation steps 4 through 6:
+
+    1. verify that the selected S2 Connect API version is supported;
+    2. verify that the client is paired with this server node and presented the
+       currently active access token;
+    3. negotiate one common S2 message version and communication protocol;
+    4. generate and store a new pending access token; and
+    5. return the negotiated values, pending access token, and current server
+       endpoint/node descriptions.
+
+    The returned access token is not active yet. The client must persist it and
+    confirm it with ``confirmAccessToken`` before the old token is invalidated.
+
+    Args:
+        server_node_id: Node ID of the communication server the client wants to
+            connect to.
+        access_token: Currently active access token supplied by the
+            communication client.
+        supported_communication_protocols: Communication protocols supported by
+            the client.
+        supported_s2_versions: S2 message versions supported by the client.
+        selected_s2_connect_version: S2 Connect API version selected by the
+            client.
+        server_settings: Server configuration injected by the DI container.
+        authentication_ctx: Authentication state for the paired client.
+        generate_access_token: Token generator used to create the pending access
+            token.
+        hooks: Hook registry used to retrieve server description hooks.
+
+    Returns:
+        Response containing the negotiated communication protocol, negotiated S2
+        message version, pending access token, and server descriptions.
+
+    Raises:
+        NoCompatibleS2ConnectVersionError: If the selected S2 Connect API
+            version is not supported by this server.
+        PairingNotCompleteError: If the client is not paired or has no active
+            access token.
+        InvalidAccessTokenError: If the supplied access token is not the active
+            token for the pairing.
+        InvalidServerError: If the request targets a different server node.
+        NoCompatibleS2VersionError: If there is no overlap between client and
+            server S2 message versions.
+        NoCompatibleCommunitcationProtocol: If there is no overlap between
+            client and server communication protocols.
+    """
+    if selected_s2_connect_version not in server_settings.supported_s2_connect_versions:
+        raise NoCompatibleS2ConnectVersionError(
+            f"S2 Connect version {selected_s2_connect_version} is not compatible with any of {server_settings.supported_s2_connect_versions}",
+            additional_info=f"Supported s2 connect versions: {server_settings.supported_s2_connect_versions}",
+        )
+
+    if (
+        authentication_ctx.state != ClientState.PAIRED
+        or authentication_ctx.current_access_token is None
+    ):
+        raise PairingNotCompleteError(
+            f"The client state was {authentication_ctx.state} while we expected {ClientState.PAIRED}."
+        )
+
+    if authentication_ctx.current_access_token != access_token:
+        raise InvalidAccessTokenError("Invalid access token")
+
+    if server_settings.server_s2_node_id != server_node_id.root:
+        raise InvalidServerError(
+            f"Pairing was attempted with server {server_node_id.root} but we are server node {server_settings.server_s2_node_id}"
+        )
+
+    selected_version = select_version(
+        remote_versions=supported_s2_versions,
+        local_versions=server_settings.supported_s2_versions,
+    )
+
+    if selected_version is None:
+        raise NoCompatibleS2VersionError(
+            f"No compatible versions between {supported_s2_versions} and {server_settings.supported_s2_versions}",
+            additional_info=f"Supported s2 versions: {server_settings.supported_s2_versions}",
+        )
+
+    selected_protocol = select_protocol(
+        remote_protocols=supported_communication_protocols,
+        local_protocols=server_settings.supported_communication_protocols,
+    )
+    if selected_protocol is None:
+        raise NoCompatibleCommunitcationProtocol(
+            f"No compatible communication protocols between {supported_communication_protocols} and {server_settings.supported_communication_protocols}",
+            additional_info=f"Supported communication protocols: {server_settings.supported_communication_protocols}.",
+        )
+    next_access_token = generate_access_token()
+    authentication_ctx.next_access_token = next_access_token
+
+    endpoint_hook = hooks.get(get_server_endpoint_description)
+    node_hook = hooks.get(get_server_node_description)
+
+    server_endpoint_description = endpoint_hook(authentication_ctx.client_node_id)
+    server_node_description = node_hook(authentication_ctx.client_node_id)
+
+    return InitiateConnectionPostResponse(
+        selectedCommunicationProtocol=selected_protocol,
+        selectedS2MessageVersion=selected_version,
+        accessToken=next_access_token,
+        serverNodeDescription=server_node_description,
+        serverEndpointDescription=server_endpoint_description,
+    )
+
+
+async def validate_access_token(
+    next_access_token: AccessToken,
+    authentication_ctx: AuthenticationContext = Depends[authentication_context],
+):
+    """Handle ``POST /confirmAccessToken`` for a pending access token.
+
+    The client calls this after successfully persisting the pending access token
+    returned by ``initiateConnection``. When the token matches the pending token
+    for the pairing, it becomes the new active access token. The previous active
+    access token is moved to ``current_connection_token`` so it can be used once
+    to authenticate the S2 communication channel.
+
+    Args:
+        next_access_token: Pending access token supplied by the client in the
+            confirmation request.
+        authentication_ctx: Authentication state for the paired client.
+
+    Raises:
+        InvalidAccessTokenError: If the supplied token is not the pending access
+            token for the pairing.
+    """
+    if next_access_token != authentication_ctx.next_access_token:
+        raise InvalidAccessTokenError("Next access token is invalid")
+
+    authentication_ctx.current_connection_token = (
+        authentication_ctx.current_access_token
+    )
+    authentication_ctx.current_access_token = authentication_ctx.next_access_token
+    authentication_ctx.next_access_token = None
+    authentication_ctx.state = ClientState.CONNECTION_INITIATED
+
+
+async def validate_s2_connection_token(
+    connection_token: AccessToken,
+    authentication_ctx: AuthenticationContext = Depends[authentication_context],
+) -> bool:
+    """Validate the one-time token used to open an S2 communication channel.
+
+    After ``confirmAccessToken`` activates a newly persisted access token, the
+    previous active token is retained as a one-time connection token. A
+    WebSocket or other selected communication protocol can use this token for
+    bearer-token authentication. Once accepted, the token is cleared so it
+    cannot be reused for another S2 session.
+
+    Args:
+        connection_token: One-time token supplied by the communication client
+            when opening the S2 communication channel.
+        authentication_ctx: Authentication state for the paired client.
+
+    Returns:
+        ``True`` when the connection token is valid and has been invalidated.
+
+    Raises:
+        InvalidAccessTokenError: If the supplied token is not the current
+            one-time connection token.
+    """
+    if connection_token != authentication_ctx.current_connection_token:
+        raise InvalidAccessTokenError("Access token is invalid for an S2 connection.")
+    authentication_ctx.current_connection_token = None  # invalidate token
+    return True
