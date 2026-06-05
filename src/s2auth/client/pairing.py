@@ -12,7 +12,7 @@ from uuid import UUID
 import httpx
 
 from s2auth.client.dao import Dao
-from s2auth.common.exceptions import S2PairingError, VerificationError
+from s2auth.common.exceptions import S2ConnectError, VerificationError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 create_response, verify_response)
 from s2auth.common.model.s2_connect_common import (CommunicationProtocol,
@@ -146,7 +146,7 @@ async def pair(pairing_uri: str,
         pairing_s2_node_id, pairing_token = None, pairing_code
 
     if not pairing_token and s2_role == Role.RM:
-        raise S2PairingError("Access token required for pairing RM")
+        raise S2ConnectError("Access token required for pairing RM")
     elif not pairing_token:
         pairing_token = create_pairing_code()
 
@@ -275,7 +275,7 @@ async def pair(pairing_uri: str,
             return (final_response.status_code == 204)
     except httpx.HTTPError as e:
         # Handle HTTP error
-        raise S2PairingError(f"Pairing connection failed: {e}") from e
+        raise S2ConnectError(f"Pairing connection failed: {e}") from e
 
 
 async def request_connection_details(pairing_uri: str,
@@ -335,7 +335,7 @@ async def post_connection_details(pairing_uri: str,
         )
         response.raise_for_status()
         if not response.status_code == 204:
-            raise S2PairingError("postConnectionDetails failed")
+            raise S2ConnectError("postConnectionDetails failed")
 
 
 async def finalize_pairing(pairing_uri: str,

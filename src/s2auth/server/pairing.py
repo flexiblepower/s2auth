@@ -3,6 +3,7 @@
 from base64 import b64encode
 from typing import Awaitable, Callable
 from uuid import uuid4
+from s2auth.common.exceptions import AccessError
 from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails,
     HmacChallengeResponse,
@@ -12,7 +13,7 @@ from s2auth.common.model.s2_connect_pairing import (
     RequestPairingPostRequest,
     RequestPairingPostResponse,
 )
-from s2auth.common.model.s2_connect_common import AccessToken, NodeId
+from s2auth.common.model.s2_connect_common import NodeId
 from wepositive_di import Depends, inject
 from s2auth.server.context import (
     AuthenticationContext,
@@ -30,6 +31,7 @@ from s2auth.server.context import (
     store_pairing_attempt_context,
 )
 from s2auth.common.hmac import (
+    AccessTokenGenerator,
     PairingToken,
     create_challenge,
     create_response,
@@ -42,7 +44,9 @@ from s2auth.server.settings import Settings, settings
 from s2auth.server.config import Config, config
 from s2auth.server.hooks import (
     HookRegistry,
-    get_server_endpoint,
+    get_server_connection_initiation_endpoint,
+    get_server_endpoint_description,
+    get_server_node_description,
     hook_registry,
     pairing_attempt_request,
 )
@@ -73,9 +77,9 @@ async def initiate_pairing(
 @inject
 async def request_pairing(
     request: RequestPairingPostRequest,
-    store_authentication_ctx: Callable[[AuthenticationContext], Awaitable[None]] = Depends[
-        store_authentication_context
-    ],
+    store_authentication_ctx: Callable[
+        [AuthenticationContext], Awaitable[None]
+    ] = Depends[store_authentication_context],
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
     hooks: HookRegistry = Depends[hook_registry],
     cfg: Config = Depends[config],
@@ -123,10 +127,20 @@ async def request_pairing(
     # Call the hook to get server descriptions (can be overridden)
     # Pass read-only copies to enforce immutability in hooks
     pairing_hook = hooks.get(pairing_attempt_request)
-    server_endpoint_description, server_node_description = await pairing_hook(
-        ReadOnlyAuthenticationContext.model_validate(auth_ctx),
+    pairing_allowed = await pairing_hook(
         ReadOnlyPairingAttemptContext.model_validate(pairing_context),
+        ReadOnlyAuthenticationContext.model_validate(auth_ctx),
     )
+    if not pairing_allowed:
+        raise AccessError(
+            f"Client node {auth_ctx.client_node_id} is not allowed to connect."
+        )
+
+    endpoint_hook = hooks.get(get_server_endpoint_description)
+    node_hook = hooks.get(get_server_node_description)
+
+    server_endpoint_description = endpoint_hook(auth_ctx.client_node_id)
+    server_node_description = node_hook(auth_ctx.client_node_id)
 
     return RequestPairingPostResponse(
         selectedHmacHashingAlgorithm=algorithm,
@@ -135,9 +149,7 @@ async def request_pairing(
         clientHmacChallengeResponse=HmacChallengeResponse(root=client_response),
         serverHmacChallenge=server_challenge,
         pairingAttemptId=S2PairingAttemptId(
-            root=b64encode(
-                str(pairing_context.pairing_attempt_id).encode("utf-8")
-            )
+            root=b64encode(str(pairing_context.pairing_attempt_id).encode("utf-8"))
         ),
     )
 
@@ -148,7 +160,7 @@ async def handle_client_response(
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
     auth_ctx: AuthenticationContext = Depends[authentication_context],
     hooks: HookRegistry = Depends[hook_registry],
-    generate_access_token: Callable[[], AccessToken] = Depends[generate_access_token],
+    generate_access_token: AccessTokenGenerator = Depends[generate_access_token],
     cfg: Config = Depends[config],
 ) -> ConnectionDetails:
     """Handle the client's response and return the server's connection details.
@@ -175,12 +187,13 @@ async def handle_client_response(
         hmac_salt=cfg.hmac_salt,
     )
 
-    endpoint_hook = hooks.get(get_server_endpoint)
+    endpoint_hook = hooks.get(get_server_connection_initiation_endpoint)
     server_endpoint = await endpoint_hook(
         ReadOnlyAuthenticationContext.model_validate(auth_ctx),
     )
     access_token = generate_access_token()
-    auth_ctx.access_token = access_token
+    auth_ctx.current_access_token = access_token
+    auth_ctx.next_access_token = None
     auth_ctx.state = ClientState.PAIRED
     pairing_context.state = PairingState.COMPLETED
     return ConnectionDetails(

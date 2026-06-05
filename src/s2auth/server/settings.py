@@ -5,15 +5,23 @@ from pydantic_settings import BaseSettings
 
 from wepositive_di import register_provider
 
+from s2auth.common.model.s2_connect_common import CommunicationProtocol, Deployment
+
 
 class Settings(BaseSettings):
     pairing_node_id: Annotated[str, StringConstraints(min_length=8, max_length=12)]
     server_s2_node_id: UUID4
+    supported_communication_protocols: list[CommunicationProtocol] = [
+        CommunicationProtocol.WebSocket
+    ]
+    supported_s2_versions: list[str] = ["v0.02-beta"]  # most recent first
+    supported_s2_connect_versions: list[str] = ["v1.0-beta-2"]  # most recent first
     cem_s2_node_id: UUID4
     cem_type: str
     cem_model_name: str
     cem_brand: str
     cem_url: AnyUrl | None = None
+    cem_deployment_type: Deployment = Deployment.WAN
 
 
 @register_provider(singleton=True)

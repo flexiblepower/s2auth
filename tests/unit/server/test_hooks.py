@@ -6,8 +6,8 @@ import pytest
 from pydantic import AnyUrl
 
 from wepositive_di import Depends, inject, provider_overrides
-from s2auth.common.exceptions import S2PairingError
-from s2auth.common.model.s2_connect_common import NodeId, Role
+from s2auth.common.exceptions import S2ConnectError
+from s2auth.common.model.s2_connect_common import Deployment, NodeId, Role
 from s2auth.common.model.s2_connect_pairing import (
     ErrorMessage,
     NodeIdAlias,
@@ -22,18 +22,23 @@ from s2auth.server.context import (
     ReadOnlyAuthenticationContext,
     ReadOnlyPairingAttemptContext,
 )
-from s2auth.server.hooks import HookRegistry, pairing_attempt_request
+from s2auth.server.hooks import (
+    HookRegistry,
+    get_server_endpoint_description,
+    get_server_node_description,
+    pairing_attempt_request,
+)
 from s2auth.server.settings import Settings, settings
 
 
-class CustomPairingError(S2PairingError):
+class CustomPairingError(S2ConnectError):
     """Custom error for testing."""
 
     error_type = ErrorMessage.NodeNotFound
 
 
 async def test_pairing_attempt_request_default():
-    """Test the default pairing_attempt_request hook returns correct descriptions."""
+    """Test the default pairing_attempt_request hook allows pairing."""
     # Create test contexts
     client_id = uuid4()
     client_ctx = ReadOnlyAuthenticationContext(
@@ -46,7 +51,28 @@ async def test_pairing_attempt_request_default():
         state=PairingState.INITIATED,
     )
 
-    # Create test settings
+    # Get the hook from registry and call it
+    registry = HookRegistry()
+    hook = registry.get(pairing_attempt_request)
+
+    test_settings_obj = Settings(
+        server_s2_node_id=uuid4(),
+        cem_s2_node_id=uuid4(),
+        cem_brand="TestBrand",
+        cem_type="TestType",
+        cem_model_name="TestModel",
+        pairing_node_id="pairing123",
+    )
+
+    def test_settings_provider() -> Settings:
+        return test_settings_obj
+
+    with provider_overrides({settings: test_settings_provider}):
+        assert await hook(client_ctx, pairing_ctx) is True
+
+
+async def test_server_description_hooks_default():
+    """Test the default server description hooks return descriptions from settings."""
     server_node_id = uuid4()
     cem_node_id = uuid4()
     test_settings_obj = Settings(
@@ -58,24 +84,22 @@ async def test_pairing_attempt_request_default():
         pairing_node_id="pairing123",
     )
 
-    # Get the hook from registry and call it
     registry = HookRegistry()
-    hook = registry.get(pairing_attempt_request)
+    endpoint_hook = registry.get(get_server_endpoint_description)
+    node_hook = registry.get(get_server_node_description)
 
-    # Hook uses @inject so we need to override settings provider
     def test_settings_provider() -> Settings:
         return test_settings_obj
 
     with provider_overrides({settings: test_settings_provider}):
-        endpoint_desc, node_desc = await hook(client_ctx, pairing_ctx)
+        endpoint_desc = await endpoint_hook(NodeId(root=uuid4()))
+        node_desc = await node_hook(NodeId(root=uuid4()))
 
-    # Verify endpoint description
     assert isinstance(endpoint_desc, EndpointDescription)
     assert endpoint_desc.name is None
     assert endpoint_desc.logoUrl is None
-    assert endpoint_desc.deployment is None
+    assert endpoint_desc.deployment == Deployment.WAN
 
-    # Verify node description
     assert isinstance(node_desc, NodeDescription)
     assert node_desc.id == NodeId(root=cem_node_id)
     assert node_desc.brand == "TestBrand"
@@ -86,31 +110,23 @@ async def test_pairing_attempt_request_default():
     assert node_desc.userDefinedName is None
 
 
-async def test_pairing_attempt_request_override_custom_descriptions():
-    """Test overriding the hook to provide custom descriptions."""
+async def test_description_hooks_override_custom_descriptions():
+    """Test overriding description hooks to provide custom descriptions."""
     client_id = uuid4()
-    client_ctx = ReadOnlyAuthenticationContext(
-        client_node_id=client_id, state=ClientState.PAIRING
-    )
-    pairing_ctx = ReadOnlyPairingAttemptContext(
-        pairing_attempt_id=uuid4(),
-        pairing_node_id=NodeIdAlias(root="PAIR123"),
-        pairing_token="dGVzdF90b2tlbg==",
-        state=PairingState.INITIATED,
-    )
-
     custom_node_id = uuid4()
 
     @inject
-    async def custom_hook(
-        authentication_context: ReadOnlyAuthenticationContext,
-        pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[EndpointDescription, NodeDescription]:
-        endpoint = EndpointDescription(
+    async def custom_endpoint_hook(client_node_id: NodeId) -> EndpointDescription:
+        assert client_node_id == NodeId(root=client_id)
+        return EndpointDescription(
             name="Custom Endpoint",
             logoUrl=AnyUrl("https://example.com/logo.png"),
         )
-        node = NodeDescription(
+
+    @inject
+    async def custom_node_hook(client_node_id: NodeId) -> NodeDescription:
+        assert client_node_id == NodeId(root=client_id)
+        return NodeDescription(
             id=NodeId(root=custom_node_id),
             brand="CustomBrand",
             role=Role.CEM,
@@ -118,13 +134,15 @@ async def test_pairing_attempt_request_override_custom_descriptions():
             modelName="CustomModel",
             userDefinedName="My Custom Node",
         )
-        return endpoint, node
 
     registry = HookRegistry()
-    registry.register(pairing_attempt_request, custom_hook)
-    hook = registry.get(pairing_attempt_request)
+    registry.register(get_server_endpoint_description, custom_endpoint_hook)
+    registry.register(get_server_node_description, custom_node_hook)
+    endpoint_hook = registry.get(get_server_endpoint_description)
+    node_hook = registry.get(get_server_node_description)
 
-    endpoint_desc, node_desc = await hook(client_ctx, pairing_ctx)
+    endpoint_desc = await endpoint_hook(NodeId(root=client_id))
+    node_desc = await node_hook(NodeId(root=client_id))
 
     assert endpoint_desc.name == "Custom Endpoint"
     assert str(endpoint_desc.logoUrl) == "https://example.com/logo.png"
@@ -155,20 +173,11 @@ async def test_pairing_attempt_request_override_raises_error():
     async def blocking_hook(
         authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[EndpointDescription, NodeDescription]:
+    ) -> bool:
         if authentication_context.client_node_id == blocked_client_id:
             raise CustomPairingError("Client is blocked")
 
-        # Would return normal descriptions if not blocked (won't reach here in test)
-        endpoint = EndpointDescription()
-        node = NodeDescription(
-            id=NodeId(root=uuid4()),
-            brand="TestBrand",
-            role=Role.CEM,
-            type="TestType",
-            modelName="TestModel",
-        )
-        return endpoint, node
+        return True
 
     # Register custom hook and verify it raises the error
     registry = HookRegistry()
@@ -214,22 +223,13 @@ async def test_pairing_attempt_request_context_values():
         authentication_context: AuthenticationContext,
         pairing_context: PairingAttemptContext,
         server_settings: Settings = Depends[settings],
-    ) -> tuple[EndpointDescription, NodeDescription]:
+    ) -> bool:
         # Store what we received
         received_contexts["client"] = authentication_context
         received_contexts["pairing"] = pairing_context
         received_contexts["settings"] = server_settings
 
-        # Return default descriptions
-        endpoint = EndpointDescription()
-        node = NodeDescription(
-            id=NodeId(root=server_settings.cem_s2_node_id),
-            brand=server_settings.cem_brand,
-            role=Role.CEM,
-            type=server_settings.cem_type,
-            modelName=server_settings.cem_model_name,
-        )
-        return endpoint, node
+        return True
 
     # Register custom hook and call it with overridden settings
     registry = HookRegistry()
@@ -305,14 +305,8 @@ async def test_register_hook_twice_raises_runtimeerror():
     async def first_custom_hook(
         authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[EndpointDescription, NodeDescription]:
-        return EndpointDescription(), NodeDescription(
-            id=NodeId(root=uuid4()),
-            brand="First",
-            role=Role.CEM,
-            type="Test",
-            modelName="Test",
-        )
+    ) -> bool:
+        return True
 
     registry.register(pairing_attempt_request, first_custom_hook)
 
@@ -321,14 +315,8 @@ async def test_register_hook_twice_raises_runtimeerror():
     async def second_custom_hook(
         authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[EndpointDescription, NodeDescription]:
-        return EndpointDescription(), NodeDescription(
-            id=NodeId(root=uuid4()),
-            brand="Second",
-            role=Role.CEM,
-            type="Test",
-            modelName="Test",
-        )
+    ) -> bool:
+        return True
 
     with pytest.raises(RuntimeError, match="already has a custom implementation"):
         registry.register(pairing_attempt_request, second_custom_hook)
@@ -379,14 +367,8 @@ async def test_register_hook_decorator():
     async def decorated_hook(
         authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[EndpointDescription, NodeDescription]:
-        return EndpointDescription(name="Decorated"), NodeDescription(
-            id=NodeId(root=custom_node_id),
-            brand="Decorated",
-            role=Role.CEM,
-            type="DecoratedType",
-            modelName="DecoratedModel",
-        )
+    ) -> bool:
+        return authentication_context.client_node_id == custom_node_id
 
     # Register using the test registry's register method
     test_registry.register(pairing_attempt_request, decorated_hook)
@@ -396,7 +378,7 @@ async def test_register_hook_decorator():
     assert hook is decorated_hook
 
     # Call it to verify it works
-    client_ctx = ReadOnlyAuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING)
+    client_ctx = ReadOnlyAuthenticationContext(client_node_id=custom_node_id, state=ClientState.PAIRING)
     pairing_ctx = ReadOnlyPairingAttemptContext(
         pairing_attempt_id=uuid4(),
         pairing_node_id=NodeIdAlias(root="PAIR123"),
@@ -404,9 +386,7 @@ async def test_register_hook_decorator():
         state=PairingState.INITIATED,
     )
 
-    endpoint, node = await hook(client_ctx, pairing_ctx)
-    assert endpoint.name == "Decorated"
-    assert node.brand == "Decorated"
+    assert await hook(client_ctx, pairing_ctx) is True
 
 
 async def test_register_hook_decorator_with_singleton_registry():
@@ -417,14 +397,8 @@ async def test_register_hook_decorator_with_singleton_registry():
     async def test_hook(
         authentication_context: ReadOnlyAuthenticationContext,
         pairing_context: ReadOnlyPairingAttemptContext,
-    ) -> tuple[EndpointDescription, NodeDescription]:
-        return EndpointDescription(), NodeDescription(
-            id=NodeId(root=uuid4()),
-            brand="Test",
-            role=Role.CEM,
-            type="Test",
-            modelName="Test",
-        )
+    ) -> bool:
+        return True
 
     # The decorator should be callable and return a decorator function
     decorator = register_hook(pairing_attempt_request)

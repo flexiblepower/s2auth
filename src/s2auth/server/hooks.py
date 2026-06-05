@@ -25,11 +25,11 @@ from s2auth.server.settings import Settings, settings
 
 
 @inject
-async def get_server_endpoint(
+async def get_server_connection_initiation_endpoint(
     authentication_context: ReadOnlyAuthenticationContext,
     server_settings: Settings = Depends[settings],
 ) -> AnyUrl | None:
-    """Default hook implementation to get the server endpoint.
+    """Default hook implementation to get the server connection initiation endpoint.
 
     This hook is called during the pairing phase to retrieve the server's endpoint
     so the S2 Client Node can connect to the server side to establish an S2 connection.
@@ -46,12 +46,11 @@ async def pairing_attempt_request(
     authentication_context: ReadOnlyAuthenticationContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     server_settings: Settings = Depends[settings],
-) -> tuple[EndpointDescription, NodeDescription]:
-    """Default hook implementation for pairing request.
+) -> bool:
+    """Default hok implementation during pairing attempt requests.
 
-    This hook is called during the pairing request phase to generate the server's
-    S2 endpoint and node descriptions. Override this hook to customize the server's
-    identity or to refuse pairing by raising an S2PairingError.
+    This hook is called during pairing attempt requests to allow custom code to accept/refuse the pairing attempt.
+    If it returns True, the pairing attempt request is allowed. On errors or False it is refused.
 
     Args:
         authentication_context: Read-only view of the authentication context (contains client_node_id, state, etc.)
@@ -59,13 +58,58 @@ async def pairing_attempt_request(
         server_settings: Server configuration settings
 
     Returns:
-        A tuple of (EndpointDescription, NodeDescription) for the server
+        Boolean whether the pairing is allowed
 
     Raises:
-        S2PairingError: To refuse the pairing attempt with a specific error message
+        S2ConnectError: To refuse the pairing attempt with a specific error message
+    """
+    return True
+
+
+@inject
+async def get_server_endpoint_description(
+    client_node_id: NodeId,
+    server_settings: Settings = Depends[settings],
+) -> EndpointDescription:
+    """Default hook implementation for getting the server endpoint description.
+
+    This hook is called during the pairing request phase and connection initialization phase to generate the server's
+    S2 endpoint descriptions. Override this hook to customize the server's
+    identity or to refuse pairing by raising an S2ConnectError.
+
+    Args:
+        client_node_Id: NodeId of the client,
+        server_settings: Server configuration settings
+
+    Returns:
+        EndpointDescription for the server
     """
     # Default implementation: return basic server descriptions from settings
-    endpoint_description = EndpointDescription()
+    endpoint_description = EndpointDescription(
+        deployment=server_settings.cem_deployment_type
+    )
+    return endpoint_description
+
+
+@inject
+async def get_server_node_description(
+    client_node_id: NodeId,
+    server_settings: Settings = Depends[settings],
+) -> NodeDescription:
+    """Default hook implementation for pairing request.
+
+    This hook is called to get the server node description the pairing and connection initiation phase
+    to generate the server's S2 endpoint and node descriptions.
+    Override this hook to customize the server's identity.
+
+    Args:
+        client_node_Id: NodeId of the client
+        server_settings: Server configuration settings
+
+    Returns:
+        NodeDescription for the server
+    """
+    # Default implementation: return basic server descriptions from settings
     node_description = NodeDescription(
         id=NodeId(root=server_settings.cem_s2_node_id),
         brand=server_settings.cem_brand,
@@ -73,7 +117,7 @@ async def pairing_attempt_request(
         type=server_settings.cem_type,
         modelName=server_settings.cem_model_name,
     )
-    return endpoint_description, node_description
+    return node_description
 
 
 class HookRegistry:
@@ -82,6 +126,9 @@ class HookRegistry:
     def __init__(self) -> None:
         # Initialize with default hook implementations
         self._hooks: dict[Callable[..., Any], Callable[..., Any]] = {
+            get_server_connection_initiation_endpoint: get_server_connection_initiation_endpoint,
+            get_server_endpoint_description: get_server_endpoint_description,
+            get_server_node_description: get_server_node_description,
             pairing_attempt_request: pairing_attempt_request,
         }
 

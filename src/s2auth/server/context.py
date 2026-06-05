@@ -26,6 +26,7 @@ from s2auth.common.model.s2_connect_common import (
     NodeDescription,
     NodeId,
 )
+
 # Type aliases for the root types
 ClientNodeId = UUID
 PairingAttemptId = UUID
@@ -42,6 +43,7 @@ pairing_attempt_id_var: ContextVar[S2PairingAttemptId | None] = ContextVar(
 class ClientState(str, Enum):
     PAIRING = "Pairing"
     PAIRED = "Paired"
+    CONNECTION_INITIATED = "Connection Initiated"
     CONNECTED = "Connected"
     DISCONNECTED = "Disconnected"
 
@@ -53,7 +55,7 @@ class PairingState(str, Enum):
 
 
 class AuthenticationContext(BaseModel):
-    """Context data for a client connection.
+    """Authentication context data for a client connection.
 
     Note: Modifications to context instances should be done carefully in
     multi-threaded/async environments. Consider using the storage's locking
@@ -67,7 +69,9 @@ class AuthenticationContext(BaseModel):
     client_node_id: ClientNodeId | None = None
     s2_node_description: NodeDescription | None = None
     s2_endpoint_description: EndpointDescription | None = None
-    access_token: AccessToken | None = None
+    current_connection_token: AccessToken | None = None
+    current_access_token: AccessToken | None = None
+    next_access_token: AccessToken | None = None
 
 
 class PairingAttemptContext(BaseModel):
@@ -161,7 +165,9 @@ async def pairing_attempt_context(
     Works in both async and threaded environments through wepositive-di storage.
     """
     try:
-        async with storage.get_context(PairingAttemptContext, pairing_attempt_id) as ctx:
+        async with storage.get_context(
+            PairingAttemptContext, pairing_attempt_id
+        ) as ctx:
             yield ctx
     except KeyError as exc:
         raise KeyError(f"No context known for {pairing_attempt_id}") from exc
@@ -184,10 +190,13 @@ async def store_authentication_context(
             ctx = AuthenticationContext(client_node_id=some_uuid)
             await store_ctx(ctx)
     """
+
     async def store_context(context: AuthenticationContext) -> None:
         if context.client_node_id is None:
             raise ValueError("AuthenticationContext must have client_node_id set")
-        await storage.store_context(AuthenticationContext, context.client_node_id, context)
+        await storage.store_context(
+            AuthenticationContext, context.client_node_id, context
+        )
 
     return store_context
 
@@ -209,6 +218,7 @@ async def store_pairing_attempt_context(
             ctx = PairingAttemptContext(pairing_attempt_id=some_uuid, ...)
             await store_ctx(ctx)
     """
+
     async def store_context(context: PairingAttemptContext) -> None:
         await storage.store_context(
             PairingAttemptContext, context.pairing_attempt_id, context

@@ -10,7 +10,7 @@ Hooks are functions that:
 - Can be overridden using the `@register_hook()` decorator
 - Can use `@inject` to declare their own dependencies via `Depends[]`
 - Receive context and configuration as parameters
-- Can raise `S2PairingError` exceptions to refuse operations
+- Can raise `S2ConnectError` exceptions to refuse operations
 
 Each hook can only be overridden **once** - attempting to register a second override will raise a `RuntimeError`.
 
@@ -18,7 +18,7 @@ Each hook can only be overridden **once** - attempting to register a second over
 
 ### `pairing_attempt_request`
 
-**Purpose:** Called when a pairing request is received from a client. Generates the server's S2 endpoint and node descriptions.
+**Purpose:** Called when a pairing request is received from a client. It decides whether the pairing attempt is allowed. Server endpoint and node descriptions are produced by separate hooks.
 
 **Signature:**
 ```python
@@ -27,7 +27,7 @@ async def pairing_attempt_request(
     authentication_context: ReadOnlyAuthenticationContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     # ... custom dependencies via Depends[] ...
-) -> tuple[S2EndpointDescription, S2NodeDescription]
+) -> bool
 ```
 
 **Parameters:**
@@ -36,17 +36,84 @@ async def pairing_attempt_request(
 - Additional dependencies can be declared using `Depends[]` (e.g., `Settings`, custom validators, etc.)
 
 **Returns:**
-A tuple containing:
-1. `S2EndpointDescription`: Description of the server endpoint
-2. `S2NodeDescription`: Description of the server S2 node
+`True` to allow the pairing attempt. Returning `False` refuses the attempt.
 
 **Raises:**
-- `S2PairingError` (or subclasses): To refuse the pairing attempt. The error information will be returned to the client.
+- `S2ConnectError` (or subclasses): To refuse the pairing attempt. The error information will be returned to the client.
 
 **Default Implementation:**
-The default hook uses `Settings = Depends[settings]` and returns basic server descriptions from configuration.
+The default hook returns `True`.
 
 **Important:** Context objects are read-only (frozen) to prevent accidental modification. You can read their fields but any attempt to modify them will raise a `ValidationError`.
+
+### `get_server_endpoint_description`
+
+**Purpose:** Called when the server needs its S2 endpoint description during pairing and connection initiation.
+
+**Signature:**
+```python
+@inject
+async def get_server_endpoint_description(
+    client_node_id: NodeId,
+    # ... custom dependencies via Depends[] ...
+) -> EndpointDescription
+```
+
+**Parameters:**
+- `client_node_id`: Node ID of the client for which the server endpoint description is requested.
+- Additional dependencies can be declared using `Depends[]`.
+
+**Returns:**
+`EndpointDescription` for the server.
+
+**Default Implementation:**
+The default hook uses `Settings = Depends[settings]` and returns an endpoint description from server configuration.
+
+### `get_server_node_description`
+
+**Purpose:** Called when the server needs its S2 node description during pairing and connection initiation.
+
+**Signature:**
+```python
+@inject
+async def get_server_node_description(
+    client_node_id: NodeId,
+    # ... custom dependencies via Depends[] ...
+) -> NodeDescription
+```
+
+**Parameters:**
+- `client_node_id`: Node ID of the client for which the server node description is requested.
+- Additional dependencies can be declared using `Depends[]`.
+
+**Returns:**
+`NodeDescription` for the server.
+
+**Default Implementation:**
+The default hook uses `Settings = Depends[settings]` and returns the server node description from configuration.
+
+### `get_server_connection_initiation_endpoint`
+
+**Purpose:** Called after the pairing challenge response has been verified, when returning connection details to the client.
+
+**Signature:**
+```python
+@inject
+async def get_server_connection_initiation_endpoint(
+    authentication_context: ReadOnlyAuthenticationContext,
+    # ... custom dependencies via Depends[] ...
+) -> AnyUrl | None
+```
+
+**Parameters:**
+- `authentication_context`: Read-only view of the authentication context.
+- Additional dependencies can be declared using `Depends[]`.
+
+**Returns:**
+The URL the client should use to initiate the S2 connection, or `None`.
+
+**Default Implementation:**
+The default hook uses `Settings = Depends[settings]` and returns `server_settings.cem_url`.
 
 ## How to Override Hooks
 
@@ -55,14 +122,14 @@ To override a hook, use the `@register_hook()` decorator with a reference to the
 ```python
 from s2auth.server.hooks import pairing_attempt_request, register_hook
 from wepositive_di import Depends, inject
-from s2auth.common.exceptions import S2PairingError
-from s2auth.common.model.s2_over_ip_pairing import ErrorMessage
+from s2auth.common.exceptions import S2ConnectError
+from s2auth.common.model.s2_connect_pairing import ErrorMessage
 from s2auth.server.context import ReadOnlyAuthenticationContext, ReadOnlyPairingAttemptContext
 from s2auth.server.settings import Settings, settings
 
-class ClientNotAllowed(S2PairingError):
+class ClientNotAllowed(S2ConnectError):
     """Custom error for blocked clients."""
-    error_type = ErrorMessage.S2NodeNotFound
+    error_type = ErrorMessage.NodeNotFound
 
 @register_hook(pairing_attempt_request)
 @inject
@@ -70,22 +137,13 @@ async def custom_pairing_request(
     authentication_context: ReadOnlyAuthenticationContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     server_settings: Settings = Depends[settings],
-) -> tuple[S2EndpointDescription, S2NodeDescription]:
-    """Custom pairing hook with validation and custom descriptions."""
+) -> bool:
+    """Custom pairing hook with validation."""
     # Custom validation
     if authentication_context.client_node_id in BLOCKED_CLIENTS:
         raise ClientNotAllowed("Client is not allowed")
 
-    # Custom descriptions
-    endpoint = S2EndpointDescription(name="My System")
-    node = S2NodeDescription(
-        id=S2NodeId(root=server_settings.cem_s2_node_id),
-        brand="MyBrand",
-        role=S2Role.CEM,
-        type="MyType",
-        modelName="MyModel",
-    )
-    return endpoint, node
+    return True
 ```
 
 ### Using Different Dependencies
@@ -107,14 +165,48 @@ async def custom_pairing_with_validator(
     authentication_context: ReadOnlyAuthenticationContext,
     pairing_context: ReadOnlyPairingAttemptContext,
     validator: ClientValidator = Depends[my_client_validator],  # Different dependency!
-) -> tuple[S2EndpointDescription, S2NodeDescription]:
+) -> bool:
     """Hook that uses a custom validator service instead of settings."""
     # Use your custom service
     if not await validator.is_allowed(authentication_context.client_node_id):
         raise ClientNotAllowed("Client validation failed")
 
-    # Return custom descriptions
-    ...
+    return True
+```
+
+### Customizing Server Descriptions
+
+Endpoint and node descriptions are customized with their own hooks:
+
+```python
+from s2auth.common.model.s2_connect_common import NodeId, Role
+from s2auth.common.model.s2_connect_pairing import EndpointDescription, NodeDescription
+from s2auth.server.hooks import (
+    get_server_endpoint_description,
+    get_server_node_description,
+    register_hook,
+)
+from wepositive_di import inject
+
+@register_hook(get_server_endpoint_description)
+@inject
+async def custom_endpoint_description(
+    client_node_id: NodeId,
+) -> EndpointDescription:
+    return EndpointDescription(deployment="MyDeployment")
+
+@register_hook(get_server_node_description)
+@inject
+async def custom_node_description(
+    client_node_id: NodeId,
+) -> NodeDescription:
+    return NodeDescription(
+        id=NodeId(root="my-node-id"),
+        brand="MyBrand",
+        role=Role.CEM,
+        type="MyType",
+        modelName="MyModel",
+    )
 ```
 
 ## Best Practices
@@ -125,7 +217,7 @@ async def custom_pairing_with_validator(
 
 3. **Single override only**: Each hook can only be overridden once. Attempting to register a second time raises `RuntimeError`.
 
-4. **Use appropriate error types**: When refusing pairing, use or create appropriate `S2PairingError` subclasses with correct `error_type` values.
+4. **Use appropriate error types**: When refusing pairing, use or create appropriate `S2ConnectError` subclasses with correct `error_type` values.
 
 5. **Keep hooks focused**: Each hook should have a single responsibility.
 
@@ -146,5 +238,5 @@ The hook system uses a singleton `HookRegistry`:
 # In server code (e.g., pairing.py)
 hooks = Depends[hook_registry]  # Get the singleton registry
 pairing_hook = hooks.get(pairing_attempt_request)  # Get current implementation
-result = await pairing_hook(client_ctx, pairing_ctx)  # Call with args
+allowed = await pairing_hook(auth_ctx, pairing_ctx)  # Call with args
 ```
