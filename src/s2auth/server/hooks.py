@@ -136,9 +136,7 @@ class HookRegistry:
             pairing_attempt_request: pairing_attempt_request,
         }
 
-    def register(
-        self, original_hook: HookFunction, custom_hook: HookFunction
-    ) -> None:
+    def register(self, original_hook: HookFunction, custom_hook: HookFunction) -> None:
         """Register a custom hook implementation.
 
         Args:
@@ -183,8 +181,9 @@ def hook_registry() -> HookRegistry:
     return HookRegistry()
 
 
+@inject
 def register_hook(
-    original_hook: HookFunction,
+    original_hook: HookFunction, hook_registry: HookRegistry = Depends[hook_registry]
 ) -> Callable[[HookFunction], HookFunction]:
     """Decorator to register a custom hook implementation.
 
@@ -220,8 +219,7 @@ def register_hook(
 
     def decorator(custom_hook: HookFunction) -> HookFunction:
         # Get the singleton registry instance by calling the provider
-        registry = hook_registry()
-        registry.register(original_hook, custom_hook)
+        hook_registry.register(original_hook, custom_hook)
         return custom_hook
 
     return decorator

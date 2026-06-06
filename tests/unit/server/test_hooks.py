@@ -27,7 +27,9 @@ from s2auth.server.hooks import (
     get_server_connection_initiation_endpoint,
     get_server_endpoint_description,
     get_server_node_description,
+    hook_registry,
     pairing_attempt_request,
+    register_hook,
 )
 from s2auth.server.settings import Settings, settings
 
@@ -432,3 +434,27 @@ async def test_register_hook_decorator_with_singleton_registry():
 
     # The decorator should return the function unchanged
     assert result is test_hook
+
+
+async def test_register_hook_decorator_registers_hook_in_resolved_registry() -> None:
+    test_registry = HookRegistry()
+
+    def test_hook_registry() -> HookRegistry:
+        return test_registry
+
+    with provider_overrides({hook_registry: test_hook_registry}):
+
+        @register_hook(get_server_connection_initiation_endpoint)
+        async def custom_connection_endpoint(
+            authentication_context: ReadOnlyAuthenticationContext,
+        ) -> AnyUrl:
+            _ = authentication_context
+            return AnyUrl("https://example.com/connection/")
+
+        @inject
+        def get_registered_hook(
+            registry: HookRegistry = Depends[hook_registry],
+        ):
+            return registry.get(get_server_connection_initiation_endpoint)
+
+        assert get_registered_hook() is custom_connection_endpoint

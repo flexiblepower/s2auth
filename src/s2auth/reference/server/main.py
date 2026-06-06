@@ -1,6 +1,10 @@
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 import s2auth
+<<<<<<< HEAD
 from s2auth.common.model.s2_connect_common import NodeId
 from s2auth.common.model.s2_connect_session_init import (
     CommunicationDetailsErrorMessage, ConfirmAccessTokenPostResponse,
@@ -12,6 +16,20 @@ from s2auth.common.model.s2_connect_pairing import (
     RequestConnectionDetailsPostRequest, RequestPairingPostRequest,
     RequestPairingPostResponse, WaitForPairingPostRequest,
     WaitForPairingPostResponse)
+=======
+from s2auth.reference.server.connection import router as connection_router
+from s2auth.reference.server.pairing import router as pairing_router
+import wepositive_di
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    """Initialize reference server hooks and dependency injection."""
+    _ = app
+    wepositive_di.setup()
+    yield
+
+>>>>>>> bfbc5c3 (Add more endpoints and add and fix tests)
 
 app = FastAPI(
     version=s2auth.__version__,
@@ -22,8 +40,10 @@ app = FastAPI(
         "url": "https://raw.githubusercontent.com/flexiblepower/s2-ws-json/refs/heads/main/LICENSE",
     },
     servers=[{"url": "/v1"}],
+    lifespan=lifespan,
 )
 
+<<<<<<< HEAD
 
 @app.post(
     "/confirmAccessToken",
@@ -142,3 +162,7 @@ def wait_for_pairing(
     Long polling operation to indicate to the server that the client is available for pairing.
     """
     pass
+=======
+app.include_router(pairing_router, prefix="/pairing")
+app.include_router(connection_router, prefix="/connection")
+>>>>>>> bfbc5c3 (Add more endpoints and add and fix tests)

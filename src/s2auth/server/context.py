@@ -2,13 +2,14 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from enum import Enum
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, TypeVar, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
-from wepositive_di import Depends, register_provider
+from wepositive_di import Depends, override_provider, register_provider
 from wepositive_di.context import (
     ContextStorage,
+    InMemoryContextStorage,
     context_storage_singleton,
 )
 
@@ -30,6 +31,7 @@ from s2auth.common.model.s2_connect_common import (
 # Type aliases for the root types
 ClientNodeId = UUID
 PairingAttemptId = UUID
+ContextTypeT = TypeVar("ContextTypeT", bound=BaseModel)
 
 # Context variables
 s2_client_node_id_var: ContextVar[NodeId | None] = ContextVar(
@@ -37,6 +39,9 @@ s2_client_node_id_var: ContextVar[NodeId | None] = ContextVar(
 )
 pairing_attempt_id_var: ContextVar[S2PairingAttemptId | None] = ContextVar(
     "pairing_attempt_id", default=None
+)
+pairing_token_var: ContextVar[PairingToken | None] = ContextVar(
+    "pairing_token", default=None
 )
 
 
@@ -52,6 +57,37 @@ class PairingState(str, Enum):
     INITIATED = "Initiated"
     COMPLETED = "Completed"
     FAILED = "Failed"
+
+
+class S2InMemoryContextStorage(InMemoryContextStorage):
+    """In-memory context storage with typed context listing support."""
+
+    async def list_contexts(self, ctx_type: type[ContextTypeT]) -> list[ContextTypeT]:
+        """Return snapshots of all stored contexts for the requested type."""
+        type_store = self._states.get(ctx_type, {})  # pyright: ignore[reportPrivateUsage]
+        return [
+            cast(ContextTypeT, context.model_copy(deep=True))
+            for context in type_store.values()
+        ]
+
+    async def delete_context(
+        self, ctx_type: type[ContextTypeT], context_id: UUID
+    ) -> None:
+        """Delete a stored context for the requested type and ID."""
+        lock = await self._get_lock(  # pyright: ignore[reportPrivateUsage]
+            ctx_type, context_id
+        )
+        async with lock:
+            type_store = self._states.get(ctx_type, {})  # pyright: ignore[reportPrivateUsage]
+            if context_id not in type_store:
+                raise KeyError(f"No {ctx_type.__name__} context known for {context_id}")
+            del type_store[context_id]
+
+
+@override_provider(context_storage_singleton)
+def s2_context_storage_singleton() -> ContextStorage:
+    """Use s2auth context storage for server context providers."""
+    return S2InMemoryContextStorage()
 
 
 class AuthenticationContext(BaseModel):
@@ -129,6 +165,15 @@ def pairing_attempt_id() -> PairingAttemptId:
     return UUID(p_id.root.decode("utf-8"))
 
 
+@register_provider()
+def pairing_token() -> PairingToken:
+    """Returns the pairing token from contextvars."""
+    token = pairing_token_var.get()
+    if token is None:
+        raise ValueError("pairing_token not set in context")
+    return token
+
+
 @register_provider(context_manager=True)
 @asynccontextmanager
 async def authentication_context(
@@ -171,6 +216,29 @@ async def pairing_attempt_context(
             yield ctx
     except KeyError as exc:
         raise KeyError(f"No context known for {pairing_attempt_id}") from exc
+
+
+@register_provider(context_manager=True)
+@asynccontextmanager
+async def pairing_attempt_context_by_client_node_id(
+    client_node_id: ClientNodeId = Depends[client_node_id],
+    storage: ContextStorage = Depends[context_storage_singleton],
+) -> AsyncGenerator[PairingAttemptContext, None]:
+    """Retrieve a pairing attempt context by its client_node_id."""
+    if not isinstance(storage, S2InMemoryContextStorage):
+        raise TypeError(
+            "pairing_attempt_context_by_client_context_id requires S2InMemoryContextStorage."
+        )
+
+    for ctx in await storage.list_contexts(PairingAttemptContext):
+        if ctx.client_node_id == client_node_id:
+            async with storage.get_context(
+                PairingAttemptContext, ctx.pairing_attempt_id
+            ) as stored_ctx:
+                yield stored_ctx
+                return
+
+    raise KeyError("No context known for pairing token")
 
 
 @register_provider()
