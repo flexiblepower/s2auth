@@ -3,9 +3,10 @@
 from base64 import b64encode
 from typing import Awaitable, Callable
 from uuid import uuid4
-from s2auth.common.exceptions import AccessError
+from s2auth.common.exceptions import AccessError, PairingNotCompleteError
 from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails,
+    FinalizePairingPostRequest,
     HmacChallengeResponse,
     PairingAttemptId as S2PairingAttemptId,
     NodeIdAlias,
@@ -15,16 +16,20 @@ from s2auth.common.model.s2_connect_pairing import (
 )
 from s2auth.common.model.s2_connect_common import NodeId
 from wepositive_di import Depends, inject
+from wepositive_di.context import ContextStorage, context_storage_singleton
 from s2auth.server.context import (
     AuthenticationContext,
+    ClientNodeId,
     ClientState,
     PairingAttemptContext,
     PairingAttemptId,
     PairingState,
     ReadOnlyAuthenticationContext,
     ReadOnlyPairingAttemptContext,
+    S2InMemoryContextStorage,
     authentication_context,
     pairing_attempt_context,
+    pairing_attempt_context_by_client_node_id,
     pairing_attempt_id_var,
     s2_client_node_id_var,
     store_authentication_context,
@@ -40,7 +45,6 @@ from s2auth.common.hmac import (
     select_algorithm,
     verify_response,
 )
-from s2auth.server.settings import Settings, settings
 from s2auth.server.config import Config, config
 from s2auth.server.hooks import (
     HookRegistry,
@@ -50,10 +54,12 @@ from s2auth.server.hooks import (
     hook_registry,
     pairing_attempt_request,
 )
+from s2auth.server.settings import Settings, settings
 
 
 @inject
 async def initiate_pairing(
+    client_node_id: ClientNodeId,
     store_pairing_ctx: Callable[[PairingAttemptContext], Awaitable[None]] = Depends[
         store_pairing_attempt_context
     ],
@@ -69,9 +75,30 @@ async def initiate_pairing(
         pairing_attempt_id=pairing_attempt_id,
         pairing_token=pairing_token,
         pairing_node_id=NodeIdAlias(root=pairing_node_id),
+        client_node_id=client_node_id,
     )
     await store_pairing_ctx(ctx)
     return ctx
+
+
+@inject
+async def unpair(
+    auth_ctx: AuthenticationContext = Depends[authentication_context],
+    pairing_context: PairingAttemptContext = Depends[
+        pairing_attempt_context_by_client_node_id
+    ],
+    storage: ContextStorage = Depends[context_storage_singleton],
+) -> None:
+    """Remove the authentication and pairing contexts for a paired client."""
+    if auth_ctx.client_node_id is None:
+        raise ValueError("AuthenticationContext must have client_node_id set")
+    if not isinstance(storage, S2InMemoryContextStorage):
+        raise TypeError("unpair requires S2InMemoryContextStorage.")
+
+    await storage.delete_context(AuthenticationContext, auth_ctx.client_node_id)
+    await storage.delete_context(
+        PairingAttemptContext, pairing_context.pairing_attempt_id
+    )
 
 
 @inject
@@ -80,7 +107,9 @@ async def request_pairing(
     store_authentication_ctx: Callable[
         [AuthenticationContext], Awaitable[None]
     ] = Depends[store_authentication_context],
-    pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
+    pairing_context: PairingAttemptContext = Depends[
+        pairing_attempt_context_by_client_node_id
+    ],
     hooks: HookRegistry = Depends[hook_registry],
     cfg: Config = Depends[config],
 ) -> RequestPairingPostResponse:
@@ -146,7 +175,9 @@ async def request_pairing(
         selectedHmacHashingAlgorithm=algorithm,
         serverNodeDescription=server_node_description,
         serverEndpointDescription=server_endpoint_description,
-        clientHmacChallengeResponse=HmacChallengeResponse(root=b64encode(client_response)),
+        clientHmacChallengeResponse=HmacChallengeResponse(
+            root=b64encode(client_response)
+        ),
         serverHmacChallenge=server_challenge,
         pairingAttemptId=S2PairingAttemptId(
             root=b64encode(str(pairing_context.pairing_attempt_id).encode("utf-8"))
@@ -194,8 +225,40 @@ async def handle_client_response(
     access_token = generate_access_token()
     auth_ctx.current_access_token = access_token
     auth_ctx.next_access_token = None
-    auth_ctx.state = ClientState.PAIRED
     pairing_context.state = PairingState.COMPLETED
     return ConnectionDetails(
         initiateConnectionUrl=server_endpoint, accessToken=access_token
     )
+
+
+@inject
+async def finalize_pairing(
+    request: FinalizePairingPostRequest,
+    pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
+    auth_ctx: AuthenticationContext = Depends[authentication_context],
+) -> None:
+    """Finalize a completed pairing attempt.
+
+    The client calls ``finalizePairing`` after it has successfully stored the
+    connection details returned by ``requestConnectionDetails``. Only then is the
+    authentication context marked as paired.
+
+    Args:
+        request: Finalization request with the client-reported success flag.
+        pairing_context: Pairing attempt context loaded from context storage.
+        auth_ctx: Authentication context loaded from context storage.
+
+    Raises:
+        PairingNotCompleteError: If the pairing attempt has not reached the
+            completed state.
+    """
+    if not request.success:
+        pairing_context.state = PairingState.FAILED
+        return
+
+    if pairing_context.state != PairingState.COMPLETED:
+        raise PairingNotCompleteError(
+            f"The pairing state was {pairing_context.state} while we expected {PairingState.COMPLETED}."
+        )
+
+    auth_ctx.state = ClientState.PAIRED

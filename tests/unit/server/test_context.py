@@ -24,10 +24,14 @@ from s2auth.server.context import (
     PairingAttemptId,
     PairingState,
     authentication_context,
-    client_node_id,
+    client_node_id as client_node_id_provider,
     pairing_attempt_context,
+    pairing_attempt_context_by_client_node_id,
     pairing_attempt_id,
     pairing_attempt_id_var,
+    pairing_token,
+    pairing_token_var,
+    S2InMemoryContextStorage,
     s2_client_node_id_var,
     store_authentication_context,
     store_pairing_attempt_context,
@@ -40,7 +44,7 @@ async def test_client_node_id_provider_with_contextvar_set() -> None:
 
     @inject
     def get_client_node_id(
-        node_id: ClientNodeId = Depends[client_node_id],
+        node_id: ClientNodeId = Depends[client_node_id_provider],
     ) -> ClientNodeId:
         return node_id
 
@@ -57,7 +61,7 @@ async def test_client_node_id_provider_with_contextvar_set() -> None:
 async def test_client_node_id_provider_without_contextvar() -> None:
     @inject
     def get_client_node_id(
-        node_id: ClientNodeId = Depends[client_node_id],
+        node_id: ClientNodeId = Depends[client_node_id_provider],
     ) -> ClientNodeId:
         return node_id
 
@@ -135,7 +139,7 @@ async def test_authentication_context_provider_returns_stored_context() -> None:
     with provider_overrides(
         {
             context_storage_singleton: test_context_storage,
-            client_node_id: test_client_node_id,
+            client_node_id_provider: test_client_node_id,
         }
     ):
         result = await get_context()
@@ -164,7 +168,7 @@ async def test_authentication_context_provider_raises_keyerror_for_unknown_id() 
     with provider_overrides(
         {
             context_storage_singleton: test_context_storage,
-            client_node_id: test_client_node_id,
+            client_node_id_provider: test_client_node_id,
         }
     ):
         with pytest.raises(KeyError, match=f"No context known for {test_uuid}"):
@@ -318,3 +322,162 @@ async def test_store_pairing_attempt_context_provider_stores_by_pairing_id() -> 
 
     stored = await storage.get_context_snapshot(PairingAttemptContext, test_pairing_id)
     assert stored.state == PairingState.INITIATED
+
+
+async def test_s2_in_memory_context_storage_lists_contexts_by_type() -> None:
+    storage = S2InMemoryContextStorage()
+    first_pairing_id = uuid4()
+    second_pairing_id = uuid4()
+
+    await storage.store_context(
+        PairingAttemptContext,
+        first_pairing_id,
+        PairingAttemptContext(
+            pairing_attempt_id=first_pairing_id,
+            pairing_node_id=NodeIdAlias(root="first"),
+            pairing_token=create_pairing_code(),
+        ),
+    )
+    await storage.store_context(
+        PairingAttemptContext,
+        second_pairing_id,
+        PairingAttemptContext(
+            pairing_attempt_id=second_pairing_id,
+            pairing_node_id=NodeIdAlias(root="second"),
+            pairing_token=create_pairing_code(),
+        ),
+    )
+
+    contexts = await storage.list_contexts(PairingAttemptContext)
+
+    assert {ctx.pairing_attempt_id for ctx in contexts} == {
+        first_pairing_id,
+        second_pairing_id,
+    }
+
+
+@pytest.mark.skip_wire
+async def test_pairing_token_provider_with_contextvar_set() -> None:
+    token_value = "pairingToken123"
+
+    @inject
+    def get_pairing_token(
+        token: str = Depends[pairing_token],
+    ) -> str:
+        return token
+
+    setup()
+
+    token = pairing_token_var.set(token_value)
+    try:
+        assert get_pairing_token() == token_value
+    finally:
+        pairing_token_var.reset(token)
+
+
+@pytest.mark.skip_wire
+async def test_pairing_token_provider_without_contextvar() -> None:
+    @inject
+    def get_pairing_token(
+        token: str = Depends[pairing_token],
+    ) -> str:
+        return token
+
+    setup()
+
+    token = pairing_token_var.set(None)
+    try:
+        with pytest.raises(ValueError, match="pairing_token not set in context"):
+            get_pairing_token()
+    finally:
+        pairing_token_var.reset(token)
+
+
+@pytest.mark.skip_wire
+async def test_pairing_attempt_context_by_client_node_id_returns_matching_context() -> None:
+    storage = S2InMemoryContextStorage()
+    pairing_id = uuid4()
+    matching_client_node_id = uuid4()
+    await storage.store_context(
+        PairingAttemptContext,
+        pairing_id,
+        PairingAttemptContext(
+            pairing_attempt_id=pairing_id,
+            client_node_id=matching_client_node_id,
+            pairing_node_id=NodeIdAlias(root="matching"),
+            pairing_token="matchingToken123",
+            state=PairingState.INITIATED,
+        ),
+    )
+    other_pairing_id = uuid4()
+    await storage.store_context(
+        PairingAttemptContext,
+        other_pairing_id,
+        PairingAttemptContext(
+            pairing_attempt_id=other_pairing_id,
+            client_node_id=uuid4(),
+            pairing_node_id=NodeIdAlias(root="other"),
+            pairing_token="otherToken123",
+            state=PairingState.FAILED,
+        ),
+    )
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    def test_client_node_id() -> ClientNodeId:
+        return matching_client_node_id
+
+    @inject
+    async def get_context(
+        ctx: PairingAttemptContext = Depends[
+            pairing_attempt_context_by_client_node_id
+        ],
+    ) -> PairingAttemptContext:
+        return ctx
+
+    setup()
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            client_node_id_provider: test_client_node_id,
+        }
+    ):
+        ctx = await get_context()
+
+    assert ctx.pairing_attempt_id == pairing_id
+    assert ctx.client_node_id == matching_client_node_id
+
+
+@pytest.mark.skip_wire
+async def test_pairing_attempt_context_by_client_node_id_raises_for_missing_context() -> None:
+    storage = S2InMemoryContextStorage()
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    def test_client_node_id() -> ClientNodeId:
+        return uuid4()
+
+    @inject
+    async def get_context(
+        ctx: PairingAttemptContext = Depends[
+            pairing_attempt_context_by_client_node_id
+        ],
+    ) -> PairingAttemptContext:
+        return ctx
+
+    setup()
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            client_node_id_provider: test_client_node_id,
+        }
+    ):
+        with pytest.raises(
+            KeyError,
+            match="No context known for pairing token",
+        ):
+            await get_context()

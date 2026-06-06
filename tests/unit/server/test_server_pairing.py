@@ -6,8 +6,10 @@ from uuid import UUID, uuid4
 
 import pytest
 from pydantic import AnyUrl, SecretStr
+from wepositive_di import provider_overrides
+from wepositive_di.context import ContextStorage, context_storage_singleton
 
-from s2auth.common.exceptions import AccessError, VerificationError
+from s2auth.common.exceptions import AccessError, PairingNotCompleteError, VerificationError
 from s2auth.common.hmac import (
     AccessTokenGenerator,
     create_challenge,
@@ -26,6 +28,7 @@ from s2auth.common.model.s2_connect_pairing import (
     HmacChallengeResponse,
     HmacHashingAlgorithm,
     NodeIdAlias,
+    FinalizePairingPostRequest,
     RequestConnectionDetailsPostRequest,
     RequestPairingPostRequest,
 )
@@ -36,6 +39,8 @@ from s2auth.server.context import (
     PairingAttemptContext,
     PairingState,
     ReadOnlyAuthenticationContext,
+    S2InMemoryContextStorage,
+    client_node_id as client_node_id_provider,
 )
 from s2auth.server.hooks import (
     HookRegistry,
@@ -45,9 +50,11 @@ from s2auth.server.hooks import (
     pairing_attempt_request,
 )
 from s2auth.server.pairing import (
+    finalize_pairing,
     handle_client_response,
     initiate_pairing,
     request_pairing,
+    unpair,
 )
 from s2auth.server.settings import Settings
 
@@ -157,9 +164,11 @@ async def store_authentication_context(
 
 async def test_initiate_pairing_stores_context_and_sets_pairing_id() -> None:
     stored_contexts: list[PairingAttemptContext] = []
+    test_client_node_id = uuid4()
 
     ctx = await initiate_pairing(
         store_pairing_ctx=await store_pairing_context(stored_contexts),
+        client_node_id=test_client_node_id,
         server_settings=server_settings(),
         pairing_token=PAIRING_TOKEN,
     )
@@ -167,35 +176,56 @@ async def test_initiate_pairing_stores_context_and_sets_pairing_id() -> None:
     assert stored_contexts == [ctx]
     assert ctx.pairing_node_id == NodeIdAlias(root="PAIR1234")
     assert ctx.pairing_token == PAIRING_TOKEN
+    assert ctx.client_node_id == test_client_node_id
     assert ctx.state is None
 
 
 async def test_request_pairing_stores_authentication_context_and_returns_challenge_response() -> None:
-    client_node_id = uuid4()
-    request = pairing_request(client_node_id)
+    test_client_node_id = uuid4()
+    request = pairing_request(test_client_node_id)
     stored_auth_contexts: list[AuthenticationContext] = []
+    storage = S2InMemoryContextStorage()
+    pairing_attempt_id = uuid4()
     pairing_ctx = PairingAttemptContext(
-        pairing_attempt_id=uuid4(),
+        pairing_attempt_id=pairing_attempt_id,
+        client_node_id=test_client_node_id,
         pairing_node_id=NodeIdAlias(root="PAIR1234"),
         pairing_token=PAIRING_TOKEN,
     )
+    await storage.store_context(PairingAttemptContext, pairing_attempt_id, pairing_ctx)
 
-    response = await request_pairing(
-        request=request,
-        store_authentication_ctx=await store_authentication_context(stored_auth_contexts),
-        pairing_context=pairing_ctx,
-        hooks=hook_registry(),
-        cfg=config(),
-    )
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    def override_client_node_id() -> UUID:
+        return test_client_node_id
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            client_node_id_provider: override_client_node_id,
+        }
+    ):
+        response = await request_pairing(
+            request=request,
+            store_authentication_ctx=await store_authentication_context(
+                stored_auth_contexts
+            ),
+            hooks=hook_registry(),
+            cfg=config(),
+        )
 
     assert len(stored_auth_contexts) == 1
+    stored_pairing_ctx = await storage.get_context_snapshot(
+        PairingAttemptContext, pairing_attempt_id
+    )
     auth_ctx = stored_auth_contexts[0]
-    assert auth_ctx.client_node_id == client_node_id
+    assert auth_ctx.client_node_id == test_client_node_id
     assert auth_ctx.state == ClientState.PAIRING
-    assert pairing_ctx.client_node_id == client_node_id
-    assert pairing_ctx.state == PairingState.INITIATED
-    assert pairing_ctx.algorithm == HmacHashingAlgorithm.SHA256
-    assert pairing_ctx.server_hmac_challenge == response.serverHmacChallenge
+    assert stored_pairing_ctx.client_node_id == test_client_node_id
+    assert stored_pairing_ctx.state == PairingState.INITIATED
+    assert stored_pairing_ctx.algorithm == HmacHashingAlgorithm.SHA256
+    assert stored_pairing_ctx.server_hmac_challenge == response.serverHmacChallenge
     assert response.serverNodeDescription.brand == "TestBrand"
     assert response.serverEndpointDescription.deployment == Deployment.WAN
 
@@ -213,19 +243,83 @@ async def test_request_pairing_refuses_when_pairing_hook_returns_false() -> None
 
     hooks = HookRegistry()
     hooks.register(pairing_attempt_request, deny_pairing)
+    storage = S2InMemoryContextStorage()
+    pairing_attempt_id = uuid4()
+    request = pairing_request(uuid4())
+    await storage.store_context(
+        PairingAttemptContext,
+        pairing_attempt_id,
+        PairingAttemptContext(
+            pairing_attempt_id=pairing_attempt_id,
+            client_node_id=request.clientNodeDescription.id.root,
+            pairing_node_id=NodeIdAlias(root="PAIR1234"),
+            pairing_token=PAIRING_TOKEN,
+        ),
+    )
 
-    with pytest.raises(AccessError):
-        await request_pairing(
-            request=pairing_request(uuid4()),
-            store_authentication_ctx=await store_authentication_context([]),
-            pairing_context=PairingAttemptContext(
-                pairing_attempt_id=uuid4(),
-                pairing_node_id=NodeIdAlias(root="PAIR1234"),
-                pairing_token=PAIRING_TOKEN,
-            ),
-            hooks=hooks,
-            cfg=config(),
-        )
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    def override_client_node_id() -> UUID:
+        return request.clientNodeDescription.id.root
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            client_node_id_provider: override_client_node_id,
+        }
+    ):
+        with pytest.raises(AccessError):
+            await request_pairing(
+                request=request,
+                store_authentication_ctx=await store_authentication_context([]),
+                hooks=hooks,
+                cfg=config(),
+            )
+
+
+async def test_unpair_removes_authentication_and_pairing_contexts() -> None:
+    storage = S2InMemoryContextStorage()
+    test_client_node_id = uuid4()
+    pairing_attempt_id = uuid4()
+    await storage.store_context(
+        AuthenticationContext,
+        test_client_node_id,
+        AuthenticationContext(
+            client_node_id=test_client_node_id,
+            state=ClientState.PAIRED,
+        ),
+    )
+    await storage.store_context(
+        PairingAttemptContext,
+        pairing_attempt_id,
+        PairingAttemptContext(
+            pairing_attempt_id=pairing_attempt_id,
+            client_node_id=test_client_node_id,
+            pairing_node_id=NodeIdAlias(root="PAIR1234"),
+            pairing_token=PAIRING_TOKEN,
+            state=PairingState.COMPLETED,
+        ),
+    )
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    def override_client_node_id() -> UUID:
+        return test_client_node_id
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            client_node_id_provider: override_client_node_id,
+        }
+    ):
+        await unpair()
+
+    with pytest.raises(KeyError):
+        await storage.get_context_snapshot(AuthenticationContext, test_client_node_id)
+    with pytest.raises(KeyError):
+        await storage.get_context_snapshot(PairingAttemptContext, pairing_attempt_id)
 
 
 async def test_handle_client_response_verifies_hmac_and_returns_connection_details() -> None:
@@ -261,8 +355,62 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
     assert str(connection_details.initiateConnectionUrl) == "https://cem.example.com/connection/"
     assert auth_ctx.current_access_token == access_token_value
     assert auth_ctx.next_access_token is None
+    assert auth_ctx.state == ClientState.PAIRING
+    assert pairing_ctx.state == PairingState.COMPLETED
+
+
+async def test_finalize_pairing_success_marks_auth_context_paired() -> None:
+    pairing_ctx = PairingAttemptContext(
+        pairing_attempt_id=uuid4(),
+        pairing_node_id=NodeIdAlias(root="PAIR1234"),
+        pairing_token=PAIRING_TOKEN,
+        state=PairingState.COMPLETED,
+    )
+    auth_ctx = AuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING)
+
+    await finalize_pairing(
+        request=FinalizePairingPostRequest(success=True),
+        pairing_context=pairing_ctx,
+        auth_ctx=auth_ctx,
+    )
+
     assert auth_ctx.state == ClientState.PAIRED
     assert pairing_ctx.state == PairingState.COMPLETED
+
+
+async def test_finalize_pairing_requires_completed_pairing_context() -> None:
+    pairing_ctx = PairingAttemptContext(
+        pairing_attempt_id=uuid4(),
+        pairing_node_id=NodeIdAlias(root="PAIR1234"),
+        pairing_token=PAIRING_TOKEN,
+        state=PairingState.INITIATED,
+    )
+
+    with pytest.raises(PairingNotCompleteError):
+        await finalize_pairing(
+            request=FinalizePairingPostRequest(success=True),
+            pairing_context=pairing_ctx,
+            auth_ctx=AuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING),
+        )
+
+
+async def test_finalize_pairing_failure_marks_pairing_failed() -> None:
+    pairing_ctx = PairingAttemptContext(
+        pairing_attempt_id=uuid4(),
+        pairing_node_id=NodeIdAlias(root="PAIR1234"),
+        pairing_token=PAIRING_TOKEN,
+        state=PairingState.INITIATED,
+    )
+    auth_ctx = AuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING)
+
+    await finalize_pairing(
+        request=FinalizePairingPostRequest(success=False),
+        pairing_context=pairing_ctx,
+        auth_ctx=auth_ctx,
+    )
+
+    assert auth_ctx.state == ClientState.PAIRING
+    assert pairing_ctx.state == PairingState.FAILED
 
 
 async def test_handle_client_response_rejects_invalid_hmac_response() -> None:
