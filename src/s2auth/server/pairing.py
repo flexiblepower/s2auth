@@ -14,7 +14,7 @@ from s2auth.common.model.s2_connect_pairing import (
     RequestPairingPostRequest,
     RequestPairingPostResponse,
 )
-from s2auth.common.model.s2_connect_common import NodeId
+from s2auth.common.model.s2_connect_common import AccessToken, NodeId
 from wepositive_di import Depends, inject
 from wepositive_di.context import ContextStorage, context_storage_singleton
 from s2auth.server.context import (
@@ -28,6 +28,7 @@ from s2auth.server.context import (
     ReadOnlyPairingAttemptContext,
     S2InMemoryContextStorage,
     authentication_context,
+    authentication_context_by_pairing_attempt_context,
     pairing_attempt_context,
     pairing_attempt_context_by_client_node_id,
     pairing_attempt_id_var,
@@ -36,7 +37,6 @@ from s2auth.server.context import (
     store_pairing_attempt_context,
 )
 from s2auth.common.hmac import (
-    AccessTokenGenerator,
     PairingToken,
     create_challenge,
     create_response,
@@ -55,6 +55,9 @@ from s2auth.server.hooks import (
     pairing_attempt_request,
 )
 from s2auth.server.settings import Settings, settings
+import logging
+
+log = logging.getLogger(__name__)
 
 
 @inject
@@ -66,6 +69,7 @@ async def initiate_pairing(
     server_settings: Settings = Depends[settings],
     pairing_token: PairingToken = Depends[create_pairing_code],
 ):
+    log.info("Initiating pairing for client %s", client_node_id)
     pairing_attempt_id: PairingAttemptId = uuid4()
     # Encode UUID string as base64 bytes for S2PairingAttemptId (Base64Bytes)
     pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode("utf-8"))
@@ -189,9 +193,11 @@ async def request_pairing(
 async def handle_client_response(
     request: RequestConnectionDetailsPostRequest,
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
-    auth_ctx: AuthenticationContext = Depends[authentication_context],
+    auth_ctx: AuthenticationContext = Depends[
+        authentication_context_by_pairing_attempt_context
+    ],
     hooks: HookRegistry = Depends[hook_registry],
-    generate_access_token: AccessTokenGenerator = Depends[generate_access_token],
+    new_access_token: AccessToken = Depends[generate_access_token],
     cfg: Config = Depends[config],
 ) -> ConnectionDetails:
     """Handle the client's response and return the server's connection details.
@@ -222,7 +228,7 @@ async def handle_client_response(
     server_endpoint = await endpoint_hook(
         ReadOnlyAuthenticationContext.model_validate(auth_ctx.model_dump()),
     )
-    access_token = generate_access_token()
+    access_token = new_access_token
     auth_ctx.current_access_token = access_token
     auth_ctx.next_access_token = None
     pairing_context.state = PairingState.COMPLETED
@@ -235,7 +241,9 @@ async def handle_client_response(
 async def finalize_pairing(
     request: FinalizePairingPostRequest,
     pairing_context: PairingAttemptContext = Depends[pairing_attempt_context],
-    auth_ctx: AuthenticationContext = Depends[authentication_context],
+    auth_ctx: AuthenticationContext = Depends[
+        authentication_context_by_pairing_attempt_context
+    ],
 ) -> None:
     """Finalize a completed pairing attempt.
 

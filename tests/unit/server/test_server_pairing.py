@@ -14,6 +14,7 @@ from s2auth.common.hmac import (
     AccessTokenGenerator,
     create_challenge,
     create_response,
+    generate_access_token,
 )
 from s2auth.common.model.s2_connect_common import (
     AccessToken,
@@ -340,16 +341,19 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
         hmac_salt=HMAC_SALT,
     )
 
-    connection_details = await handle_client_response(
-        request=RequestConnectionDetailsPostRequest(
-            serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(response))
-        ),
-        pairing_context=pairing_ctx,
-        auth_ctx=auth_ctx,
-        hooks=hook_registry(),
-        generate_access_token=token_generator(access_token_value),
-        cfg=config(),
-    )
+    def new_access_token() -> AccessToken:
+        return access_token_value
+
+    with provider_overrides({generate_access_token: new_access_token}):
+        connection_details = await handle_client_response(
+            request=RequestConnectionDetailsPostRequest(
+                serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(response))
+            ),
+            pairing_context=pairing_ctx,
+            auth_ctx=auth_ctx,
+            hooks=hook_registry(),
+            cfg=config(),
+        )
 
     assert connection_details.accessToken == access_token_value
     assert str(connection_details.initiateConnectionUrl) == "https://cem.example.com/connection/"
@@ -431,6 +435,6 @@ async def test_handle_client_response_rejects_invalid_hmac_response() -> None:
             pairing_context=pairing_ctx,
             auth_ctx=AuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING),
             hooks=HookRegistry(),
-            generate_access_token=token_generator(access_token(b"unused-token-unused-token-1234")),
+            new_access_token=access_token(b"unused-token-unused-token-1234"),
             cfg=config(),
         )

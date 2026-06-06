@@ -22,7 +22,7 @@ dependencies = [
     "typing-extensions",
     "fastapi",
     "pydantic-settings (>=2.5,<3.0)",
-    "wepositive-di (>=0.1.5,<0.2.0)",
+    "wepositive-di (>=0.1.6,<1.0.0)",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -63,6 +63,8 @@ dev = [
     "aiosqlite (>=0.22.1,<0.23.0)",
     "pytest-mock (>=3.15.1,<4.0.0)",
     "datamodel-code-generator (>=0.53.0,<0.54.0)",
+    "pytest-bdd (>=8.1.0,<9.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
 ]
 
 [tool.poetry.requires-plugins]
@@ -71,16 +73,12 @@ poetry-plugin-shell = "*"
 
 [tool.pytest.ini_options]
 testpaths = "tests"
-markers = [
-    "skip_wire: skip wiring dependencies for this test. Useful if you want to make dependencies in the test."
-]
 addopts = [
 	"--cov=s2auth",
 	"--cov-report=term-missing",
 	"--cov-report=html:./unit_test_coverage/html/",
     	"--cov-report=xml:./unit_test_coverage/coverage.xml",
     	"-v",
-	"tests/unit/",
 ]
 asyncio_mode = "auto"
 asyncio_default_test_loop_scope = "session"

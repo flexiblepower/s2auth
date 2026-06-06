@@ -27,6 +27,9 @@ from s2auth.common.model.s2_connect_common import (
     NodeDescription,
     NodeId,
 )
+import logging
+
+log = logging.getLogger(__name__)
 
 # Type aliases for the root types
 ClientNodeId = UUID
@@ -87,6 +90,7 @@ class S2InMemoryContextStorage(InMemoryContextStorage):
 @override_provider(context_storage_singleton)
 def s2_context_storage_singleton() -> ContextStorage:
     """Use s2auth context storage for server context providers."""
+    log.debug("Instantiating storage")
     return S2InMemoryContextStorage()
 
 
@@ -229,7 +233,6 @@ async def pairing_attempt_context_by_client_node_id(
         raise TypeError(
             "pairing_attempt_context_by_client_context_id requires S2InMemoryContextStorage."
         )
-
     for ctx in await storage.list_contexts(PairingAttemptContext):
         if ctx.client_node_id == client_node_id:
             async with storage.get_context(
@@ -238,7 +241,32 @@ async def pairing_attempt_context_by_client_node_id(
                 yield stored_ctx
                 return
 
-    raise KeyError("No context known for pairing token")
+    raise KeyError(f"No context known for client_node_id {client_node_id}")
+
+
+@register_provider(context_manager=True)
+@asynccontextmanager
+async def authentication_context_by_pairing_attempt_context(
+    pairing_attempt_id: PairingAttemptId = Depends[pairing_attempt_id],
+    storage: ContextStorage = Depends[context_storage_singleton],
+) -> AsyncGenerator[AuthenticationContext, None]:
+    """Retrieve authentication context through the current pairing attempt."""
+    try:
+        async with storage.get_context(
+            PairingAttemptContext, pairing_attempt_id
+        ) as pairing_context:
+            client_node_id = pairing_context.client_node_id
+    except KeyError as exc:
+        raise KeyError(f"No context known for {pairing_attempt_id}") from exc
+
+    if client_node_id is None:
+        raise ValueError("PairingAttemptContext must have client_node_id set")
+
+    try:
+        async with storage.get_context(AuthenticationContext, client_node_id) as ctx:
+            yield ctx
+    except KeyError as exc:
+        raise KeyError(f"No context known for {client_node_id}") from exc
 
 
 @register_provider()
