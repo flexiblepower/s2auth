@@ -14,7 +14,7 @@ from s2auth.common.exceptions import (
     NoCompatibleS2VersionError,
     PairingNotCompleteError,
 )
-from s2auth.common.hmac import AccessTokenGenerator
+from s2auth.common.hmac import generate_access_token
 from s2auth.common.model.s2_connect_common import (
     AccessToken,
     CommunicationProtocol,
@@ -55,14 +55,9 @@ def authentication_context(current_access_token: AccessToken) -> AuthenticationC
     )
 
 
-def token_generator(token: AccessToken) -> AccessTokenGenerator:
-    def generate(length: int = 32) -> AccessToken:
-        return token
-
-    return generate
-
-
-async def test_initiate_connection_generates_pending_token_and_returns_negotiated_details() -> None:
+async def test_initiate_connection_generates_pending_token_and_returns_negotiated_details() -> (
+    None
+):
     current_token = access_token(b"current-token-current-token-1234")
     next_token = access_token(b"next-token-next-token-next-token12")
     server_settings = make_settings()
@@ -71,7 +66,12 @@ async def test_initiate_connection_generates_pending_token_and_returns_negotiate
     def test_settings_provider() -> Settings:
         return server_settings
 
-    with provider_overrides({settings: test_settings_provider}):
+    def new_access_token() -> AccessToken:
+        return next_token
+
+    with provider_overrides(
+        {settings: test_settings_provider, generate_access_token: new_access_token}
+    ):
         response = await initiateConnection(
             server_node_id=NodeId(root=server_settings.server_s2_node_id),
             access_token=current_token,
@@ -80,7 +80,6 @@ async def test_initiate_connection_generates_pending_token_and_returns_negotiate
             selected_s2_connect_version="v1.0-beta-2",
             server_settings=server_settings,
             authentication_ctx=auth_ctx,
-            generate_access_token=token_generator(next_token),
             hooks=HookRegistry(),
         )
 
@@ -91,7 +90,9 @@ async def test_initiate_connection_generates_pending_token_and_returns_negotiate
     assert response.serverEndpointDescription is not None
     assert response.serverEndpointDescription.deployment == Deployment.WAN
     assert response.serverNodeDescription is not None
-    assert response.serverNodeDescription.id == NodeId(root=server_settings.cem_s2_node_id)
+    assert response.serverNodeDescription.id == NodeId(
+        root=server_settings.cem_s2_node_id
+    )
     assert response.serverNodeDescription.brand == "TestBrand"
     assert response.serverNodeDescription.role == Role.CEM
 
@@ -109,9 +110,7 @@ async def test_initiate_connection_rejects_unsupported_s2_connect_version() -> N
             selected_s2_connect_version="v2.0",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
-            generate_access_token=token_generator(
-                access_token(b"next-token-next-token-next-token12")
-            ),
+            new_access_token=access_token(b"next-token-next-token-next-token12"),
             hooks=HookRegistry(),
         )
 
@@ -134,9 +133,7 @@ async def test_initiate_connection_requires_completed_pairing() -> None:
             selected_s2_connect_version="v1.0-beta-2",
             server_settings=server_settings,
             authentication_ctx=auth_ctx,
-            generate_access_token=token_generator(
-                access_token(b"next-token-next-token-next-token12")
-            ),
+            new_access_token=access_token(b"next-token-next-token-next-token12"),
             hooks=HookRegistry(),
         )
 
@@ -154,9 +151,7 @@ async def test_initiate_connection_rejects_invalid_access_token() -> None:
             selected_s2_connect_version="v1.0-beta-2",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
-            generate_access_token=token_generator(
-                access_token(b"next-token-next-token-next-token12")
-            ),
+            new_access_token=access_token(b"next-token-next-token-next-token12"),
             hooks=HookRegistry(),
         )
 
@@ -174,9 +169,7 @@ async def test_initiate_connection_rejects_wrong_server_node_id() -> None:
             selected_s2_connect_version="v1.0-beta-2",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
-            generate_access_token=token_generator(
-                access_token(b"next-token-next-token-next-token12")
-            ),
+            new_access_token=access_token(b"next-token-next-token-next-token12"),
             hooks=HookRegistry(),
         )
 
@@ -194,9 +187,7 @@ async def test_initiate_connection_rejects_incompatible_s2_versions() -> None:
             selected_s2_connect_version="v1.0-beta-2",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
-            generate_access_token=token_generator(
-                access_token(b"next-token-next-token-next-token12")
-            ),
+            new_access_token=access_token(b"next-token-next-token-next-token12"),
             hooks=HookRegistry(),
         )
 
@@ -215,9 +206,7 @@ async def test_initiate_connection_rejects_incompatible_protocols() -> None:
             selected_s2_connect_version="v1.0-beta-2",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
-            generate_access_token=token_generator(
-                access_token(b"next-token-next-token-next-token12")
-            ),
+            new_access_token=access_token(b"next-token-next-token-next-token12"),
             hooks=HookRegistry(),
         )
 
@@ -252,7 +241,9 @@ async def test_validate_s2_connection_token_invalidates_one_time_token() -> None
     auth_ctx = authentication_context(access_token(b"current-token-current-token-1234"))
     auth_ctx.current_connection_token = connection_token
 
-    assert await validate_s2_connection_token(connection_token, authentication_ctx=auth_ctx)
+    assert await validate_s2_connection_token(
+        connection_token, authentication_ctx=auth_ctx
+    )
     assert auth_ctx.current_connection_token is None
 
 
@@ -261,6 +252,10 @@ async def test_validate_s2_connection_token_rejects_reuse() -> None:
     auth_ctx = authentication_context(access_token(b"current-token-current-token-1234"))
     auth_ctx.current_connection_token = connection_token
 
-    assert await validate_s2_connection_token(connection_token, authentication_ctx=auth_ctx)
+    assert await validate_s2_connection_token(
+        connection_token, authentication_ctx=auth_ctx
+    )
     with pytest.raises(InvalidAccessTokenError):
-        await validate_s2_connection_token(connection_token, authentication_ctx=auth_ctx)
+        await validate_s2_connection_token(
+            connection_token, authentication_ctx=auth_ctx
+        )

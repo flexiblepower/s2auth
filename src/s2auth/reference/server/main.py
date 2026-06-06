@@ -19,14 +19,16 @@ from s2auth.common.model.s2_connect_pairing import (
 =======
 from s2auth.reference.server.connection import router as connection_router
 from s2auth.reference.server.pairing import router as pairing_router
-import wepositive_di
+from s2auth.reference.server.logging import setupLogging, LogLevel
+from s2auth.server import setup as setup_s2auth_server
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Initialize reference server hooks and dependency injection."""
     _ = app
-    wepositive_di.setup()
+    setupLogging(default_log_level=LogLevel.DEBUG, logger_config={})
+    setup_s2auth_server(additional_hook_modules=["s2auth.reference.server.hooks"])
     yield
 
 >>>>>>> bfbc5c3 (Add more endpoints and add and fix tests)

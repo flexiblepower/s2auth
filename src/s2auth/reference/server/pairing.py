@@ -25,6 +25,7 @@ from s2auth.reference.server.context import (
     set_client_node_id_from_body_variable,
     set_client_node_id_from_first_body_item,
     set_pairing_attempt_id_from_headers,
+    set_request,
 )
 from s2auth.reference.server.versions import (
     check_s2_connect_version,
@@ -174,7 +175,7 @@ def prepare_pairing(
     "/{s2_connect_version}/requestConnectionDetails",
     response_model=ConnectionDetails,
     tags=["Pairing process"],
-    dependencies=[Depends(set_pairing_attempt_id_from_headers)],
+    dependencies=[Depends(set_pairing_attempt_id_from_headers), Depends(set_request)],
 )
 async def request_connection_details(
     s2_connect_version: str = Depends(check_s2_connect_version),
@@ -192,7 +193,10 @@ async def request_connection_details(
     response_model=RequestPairingPostResponse,
     responses={"400": {"model": PairingResponseErrorMessage}},
     tags=["Pairing process"],
-    dependencies=[Depends(set_client_node_id_from_body_node_description)],
+    dependencies=[
+        Depends(set_request),
+        Depends(set_client_node_id_from_body_node_description),
+    ],
 )
 async def request_pairing(
     s2_connect_version: str = Depends(check_s2_connect_version),

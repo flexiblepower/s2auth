@@ -24,7 +24,12 @@ from s2auth.server.connection_initiation import (
 router = APIRouter()
 
 
-router.get("/", response_model=list[str], tags=["Connection initiation"])(
+router.get(
+    "/",
+    response_model=list[str],
+    tags=["Connection initiation"],
+    name="connection_root",
+)(
     get_supported_s2_connect_versions
 )
 
