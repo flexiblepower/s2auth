@@ -68,7 +68,10 @@ Use `s2auth.server.pairing` for the server side of the pairing flow:
 
 1. `initiate_pairing()` creates and stores a `PairingAttemptContext`.
 2. `request_pairing()` handles the client's pairing request, stores an `AuthenticationContext`, selects the HMAC algorithm, computes the response to the client's challenge, and returns server descriptions.
-3. `handle_client_response()` validates the client's response to the server challenge, generates the active access token, marks the client as paired, and returns connection details.
+3. `handle_client_response()` validates the client's response to the server challenge, stores the active access token, marks the pairing attempt as completed, and returns connection details.
+4. `finalize_pairing()` marks the authentication context as paired after the client confirms it stored the returned connection details.
+
+`requestConnectionDetails` and `finalizePairing` only need the `pairingAttemptId` header. The server resolves the matching `AuthenticationContext` through the `PairingAttemptContext.client_node_id`.
 
 ## Connection initiation flow
 
@@ -77,6 +80,21 @@ Use `s2auth.server.connection_initiation` after pairing:
 1. `initiateConnection()` verifies the current access token, negotiates S2 message version and communication protocol, and generates a pending access token.
 2. `validate_access_token()` confirms the pending token and promotes it to the current active access token.
 3. `validate_s2_connection_token()` validates the one-time token used to authenticate the actual communication channel.
+
+`initiateConnection()` receives a newly generated access token from DI as `new_access_token`; the injected value is an `AccessToken`, not a generator function.
+
+## Reference server
+
+The reference server initializes server hooks and dependency injection in FastAPI lifespan with:
+
+```python
+from s2auth.server import setup
+
+
+setup(additional_hook_modules=["s2auth.reference.server.hooks"])
+```
+
+Its connection initiation endpoint hook uses the active FastAPI request to return `request.url_for("connection_root")`, so the connection URL always points at the mounted connection router.
 
 ## Customization
 

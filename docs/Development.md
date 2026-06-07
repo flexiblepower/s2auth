@@ -122,6 +122,24 @@ ci/test_unit.sh
 ci/typecheck.sh
 ```
 
+## Run end-to-end tests
+
+The reference-server e2e test starts the FastAPI application with Uvicorn and drives the flow over HTTP with `httpx`.
+
+```bash
+poetry run pytest tests/e2e/test_reference_server_pairing_and_connection_initiation.py
+```
+
+The scenario covers:
+
+1. `userBeginPairing`
+2. `requestPairing`
+3. `requestConnectionDetails`
+4. `finalizePairing`
+5. `/connection/{version}/initiateConnection`
+
+The test uses `pytest-bdd`; the feature file is `tests/e2e/features/reference_server_pairing_and_connection_initiation.feature`.
+
 # Run python
 * `poetry run python`
 

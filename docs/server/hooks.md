@@ -69,6 +69,29 @@ async def get_server_connection_initiation_endpoint(
 
 The default implementation returns `settings.cem_url`. Return `None` if the server should not provide a connection initiation URL.
 
+The reference server overrides this hook to return the root URL of its connection router. Because FastAPI does not inject dependencies into arbitrary hook calls, the reference server bridges the current `Request` through a context variable:
+
+```python
+from fastapi import Request
+from pydantic import AnyUrl
+from wepositive_di import Depends, inject
+
+from s2auth.reference.server.context import current_request
+from s2auth.server.context import ReadOnlyAuthenticationContext
+from s2auth.server.hooks import get_server_connection_initiation_endpoint, register_hook
+
+
+@register_hook(get_server_connection_initiation_endpoint)
+@inject
+async def reference_server_connection_initiation_endpoint(
+    authentication_context: ReadOnlyAuthenticationContext,
+    request: Request = Depends[current_request],
+) -> AnyUrl:
+    return AnyUrl(str(request.url_for("connection_root")))
+```
+
+The FastAPI endpoint that calls the hook must include the `set_request` dependency so `current_request` can resolve the request.
+
 ## Overriding hooks
 
 Use `@register_hook()` with the hook you want to replace. Hooks must be async functions because server flows run in an async context and async dependencies require async call sites.
@@ -147,7 +170,8 @@ async def custom_node_description(client_node_id: NodeId) -> NodeDescription:
 3. Keep hook functions async.
 4. Use specific `S2ConnectError` subclasses when refusing protocol operations.
 5. Treat hook contexts as read-only snapshots.
-6. Keep each hook focused on one decision or piece of server metadata.
+6. If a hook needs FastAPI request data, bridge it explicitly through an async FastAPI dependency and a `wepositive-di` provider.
+7. Keep each hook focused on one decision or piece of server metadata.
 
 ## How hooks work
 
@@ -160,3 +184,5 @@ allowed = await pairing_hook(auth_ctx, pairing_ctx)
 ```
 
 `register_hook(original_hook)` updates the singleton registry by replacing the default implementation for `original_hook` with your custom implementation.
+
+Use `s2auth.server.setup(additional_hook_modules=[...])` during application startup to import custom hook modules before `wepositive-di` is initialized.
