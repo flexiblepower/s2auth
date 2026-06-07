@@ -5,6 +5,7 @@ import threading
 import time
 from base64 import b64encode
 from collections.abc import Iterator
+from typing import Any, cast
 from uuid import UUID
 
 import httpx
@@ -18,13 +19,14 @@ from s2auth.common.model.s2_connect_common import CommunicationProtocol
 from s2auth.common.model.s2_connect_pairing import HmacChallenge
 from s2auth.server.settings import Settings
 
-scenarios("features/reference_server_pairing.feature")
+scenarios("features/reference_server_pairing_and_connection_initiation.feature")
 
 
 class PairingWorld:
     base_url: str = ""
     request_pairing_response: dict[str, object] | None = None
     connection_details_response: dict[str, object] | None = None
+    connection_initiation_response: dict[str, object] | None = None
 
 
 @pytest.fixture
@@ -209,3 +211,64 @@ def connection_initiation_endpoint_is_reference_router(world: PairingWorld) -> N
         world.connection_details_response["initiateConnectionUrl"]
         == f"{world.base_url}/connection/"
     )
+
+
+@when("the client finalizes pairing successfully")
+def client_finalizes_pairing(
+    world: PairingWorld,
+    reference_settings: Settings,
+) -> None:
+    assert world.request_pairing_response is not None
+    response = httpx.post(
+        f"{world.base_url}/pairing/{reference_settings.supported_s2_connect_versions[0]}/finalizePairing",
+        headers={
+            "pairingAttemptId": str(
+                world.request_pairing_response["pairingAttemptId"]
+            )
+        },
+        json={"success": True},
+        timeout=5,
+    )
+    assert response.status_code == 200
+
+
+@when("the client initiates a connection")
+def client_initiates_connection(
+    world: PairingWorld,
+    reference_settings: Settings,
+    client_node_id: UUID,
+) -> None:
+    assert world.connection_details_response is not None
+    response = httpx.post(
+        f"{world.base_url}/connection/{reference_settings.supported_s2_connect_versions[0]}/initiateConnection",
+        headers={
+            "accessToken": str(world.connection_details_response["accessToken"]),
+        },
+        json={
+            "clientNodeId": str(client_node_id),
+            "serverNodeId": str(reference_settings.server_s2_node_id),
+            "supportedS2MessageVersions": reference_settings.supported_s2_versions,
+            "supportedCommunicationProtocols": ["WebSocket"],
+        },
+        timeout=5,
+    )
+    assert response.status_code == 200
+    world.connection_initiation_response = response.json()
+
+
+@then("the connection initiation response contains the negotiated connection details")
+def connection_initiation_response_contains_negotiated_details(
+    world: PairingWorld,
+    reference_settings: Settings,
+) -> None:
+    assert world.connection_initiation_response is not None
+    response = world.connection_initiation_response
+    endpoint_description = cast(dict[str, Any], response["serverEndpointDescription"])
+    node_description = cast(dict[str, Any], response["serverNodeDescription"])
+    assert response["selectedCommunicationProtocol"] == "WebSocket"
+    assert response["selectedS2MessageVersion"] == reference_settings.supported_s2_versions[0]
+    assert response["accessToken"]
+    assert endpoint_description["deployment"] == "WAN"
+    assert node_description["id"] == str(reference_settings.cem_s2_node_id)
+    assert node_description["brand"] == reference_settings.cem_brand
+    assert node_description["role"] == "CEM"
