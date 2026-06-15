@@ -27,7 +27,6 @@ app = FastAPI(
         "name": "Apache-2.0",
         "url": "https://raw.githubusercontent.com/flexiblepower/s2-ws-json/refs/heads/main/LICENSE",
     },
-    servers=[{"url": "/v1"}],
     lifespan=lifespan,
 )
 
