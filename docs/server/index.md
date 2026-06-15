@@ -37,15 +37,19 @@ Server configuration is split into two Pydantic settings classes.
 
 `s2auth.server.settings.Settings` contains identity and endpoint metadata used by default hooks:
 
-| Environment variable | Purpose |
-| --- | --- |
-| `PAIRING_NODE_ID` | Short pairing node ID alias, 8-12 characters |
-| `SERVER_S2_NODE_ID` | UUID for the communication server node |
-| `CEM_S2_NODE_ID` | UUID returned in the default CEM node description |
-| `CEM_TYPE` | Node type returned in default server node description |
-| `CEM_MODEL_NAME` | Model name returned in default server node description |
-| `CEM_BRAND` | Brand returned in default server node description |
-| `CEM_URL` | Connection initiation URL returned after pairing |
+| Environment variable | Purpose | Default |
+| --- | --- | --- |
+| `PAIRING_NODE_ID` | Short pairing node ID alias, 8-12 characters | Required |
+| `SERVER_S2_NODE_ID` | UUID for the communication server node | Required |
+| `SUPPORTED_COMMUNICATION_PROTOCOLS` | Communication protocols supported by the server | `["WebSocket"]` |
+| `SUPPORTED_S2_VERSIONS` | Supported S2 message versions, most recent first | `["v0.02-beta"]` |
+| `SUPPORTED_S2_CONNECT_VERSIONS` | Supported S2 Connect versions, most recent first | `["v1.0-beta-2"]` |
+| `CEM_S2_NODE_ID` | UUID returned in the default CEM node description | Required |
+| `CEM_TYPE` | Node type returned in default server node description | Required |
+| `CEM_MODEL_NAME` | Model name returned in default server node description | Required |
+| `CEM_BRAND` | Brand returned in default server node description | Required |
+| `CEM_URL` | Connection initiation URL returned after pairing | `None` |
+| `CEM_DEPLOYMENT_TYPE` | Deployment type returned for the CEM | `WAN` |
 
 Example:
 
@@ -55,11 +59,15 @@ HMAC_SALT=s2.example.com
 
 PAIRING_NODE_ID=pairnode1
 SERVER_S2_NODE_ID=00000000-0000-0000-0000-000000000001
+SUPPORTED_COMMUNICATION_PROTOCOLS='["WebSocket"]'
+SUPPORTED_S2_VERSIONS='["v0.02-beta"]'
+SUPPORTED_S2_CONNECT_VERSIONS='["v1.0-beta-2"]'
 CEM_S2_NODE_ID=00000000-0000-0000-0000-000000000002
 CEM_TYPE=server
 CEM_MODEL_NAME=default
 CEM_BRAND=s2auth
 CEM_URL=https://example.com/connection
+CEM_DEPLOYMENT_TYPE=WAN
 ```
 
 ## Pairing flow
