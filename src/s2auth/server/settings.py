@@ -1,7 +1,7 @@
 from typing import Annotated
 from pydantic import AnyUrl, StringConstraints
 from pydantic.types import UUID4
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from wepositive_di import register_provider
 
@@ -9,6 +9,10 @@ from s2auth.common.model.s2_connect_common import CommunicationProtocol, Deploym
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", ".env.docker"], extra="ignore", env_nested_delimiter="__"
+    )
+
     pairing_node_id: Annotated[str, StringConstraints(min_length=8, max_length=12)]
     server_s2_node_id: UUID4
     supported_communication_protocols: list[CommunicationProtocol] = [

@@ -70,6 +70,29 @@ CEM_URL=https://example.com/connection
 CEM_DEPLOYMENT_TYPE=WAN
 ```
 
+## Getting started with the reference server
+
+Install the server dependencies, copy the example environment file, and start the reference server:
+
+```bash
+poetry install --all-extras
+cp .env.example .env
+poetry run server
+```
+
+The reference server starts on port `8000`. The first communication is with the user, not another S2 node: use the existing `/pairing/userBeginPairing` endpoint to communicate the pairing token between the user and the S2 Connect server. This step is technically outside the S2 Connect protocol, but the server needs it so a later S2 Connect pairing request can prove knowledge of the same pairing token.
+
+The reference server accepts HTTP Basic credentials `alice:alice` and `bob:bob`:
+
+```bash
+curl -X POST http://localhost:8000/pairing/userBeginPairing \
+  -u alice:alice \
+  -H 'Content-Type: application/json' \
+  -d '"pairingToken123"'
+```
+
+After this request succeeds, the server has stored the pairing token for the authenticated user's client node. The S2 Connect pairing client can then call `/pairing/{s2_connect_version}/requestPairing` with the matching `nodeIdAlias` and complete the challenge-response flow.
+
 ## Pairing flow
 
 Use `s2auth.server.pairing` for the server side of the pairing flow:
