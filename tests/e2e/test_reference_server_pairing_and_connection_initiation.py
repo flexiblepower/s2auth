@@ -14,7 +14,7 @@ import uvicorn
 from pydantic import AnyUrl
 from pytest_bdd import given, scenarios, then, when
 
-from s2auth.common.hmac import create_challenge, create_response
+from s2auth.common.hmac import create_response
 from s2auth.common.model.s2_connect_common import CommunicationProtocol
 from s2auth.common.model.s2_connect_pairing import HmacChallenge
 from s2auth.server.settings import Settings
@@ -158,9 +158,7 @@ def client_requests_pairing(
             "supportedCommunicationProtocols": ["WebSocket"],
             "supportedS2MessageVersions": [reference_settings.supported_s2_versions[0]],
             "supportedHmacHashingAlgorithms": ["SHA256"],
-            "clientHmacChallenge": b64encode(create_challenge().root).decode(
-                "utf-8"
-            ),
+            "clientHmacChallenge": "R0a+6F8zSQwT9RJcxaa6T6/gKKq6tCyeRmcl9BNlc0jboFj8FsN4dlrhvVoH/P6Upc5gWCe9c8qvg5wxPOzZXLS6DSWL1lrzv7VnnRqbkeLxpizG6ZTShkw2rwyKEUMccOpKIqG3bH+ahhMjyP10fCOFi8K/E/VjfUcpCRHdZU4=",
         },
         timeout=5,
     )
