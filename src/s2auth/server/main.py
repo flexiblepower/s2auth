@@ -2,9 +2,9 @@ from fastapi import FastAPI
 
 import s2auth
 from s2auth.common.model.s2_connect_common import NodeId
-from s2auth.common.model.s2_connect_connection_init import (
+from s2auth.common.model.s2_connect_session_init import (
     CommunicationDetailsErrorMessage, ConfirmAccessTokenPostResponse,
-    InitiateConnectionPostRequest, InitiateConnectionPostResponse,
+    InitiateSessionPostRequest, InitiateSessionPostResponse,
     UnpairPostRequest)
 from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails, FinalizePairingPostRequest, PairingResponseErrorMessage,
@@ -38,14 +38,14 @@ def post_confirm_access_token() -> ConfirmAccessTokenPostResponse:  # pyright: i
 
 
 @app.post(
-    "/initiateConnection",
-    response_model=InitiateConnectionPostResponse,
+    "/initiateSession",
+    response_model=InitiateSessionPostResponse,
     responses={"400": {"model": CommunicationDetailsErrorMessage}},
     tags=["Connection initiation"],
 )
 def initiate_connection(
-    body: InitiateConnectionPostRequest = None,  # pyright: ignore[reportArgumentType]
-) -> InitiateConnectionPostResponse | CommunicationDetailsErrorMessage:  # pyright: ignore[reportReturnType]
+    body: InitiateSessionPostRequest = None,  # pyright: ignore[reportArgumentType]
+) -> InitiateSessionPostResponse | CommunicationDetailsErrorMessage:  # pyright: ignore[reportReturnType]
     """
     Initiate an S2 communication session
     """
