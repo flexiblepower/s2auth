@@ -2,7 +2,6 @@ import hashlib
 import hmac
 import string
 from base64 import b64encode
-from unittest.mock import MagicMock
 
 import pytest
 from pydantic import TypeAdapter
@@ -20,17 +19,24 @@ HMAC_SALT = 's2.example.com'
 CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
 
+class UnsupportedAlgorithm:
+    """Test helper for simulating unsupported HMAC algorithms."""
+
+    def __init__(self, value: str):
+        self.value = value
+
+    def __str__(self) -> str:
+        return self.value
+
+
 def test_invalid_algorithm():
     """Test that specifying an unsupported hashing algorithm raises a VerificationError."""
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
     signature = b"random signature"
 
-    # Create a mock algorithm object that isn't in the supported list
-    # Don't use spec to allow setting __str__
-    invalid_algorithm = MagicMock()
-    invalid_algorithm.__str__.return_value = "invalid algorithm"  # pyright: ignore[reportAttributeAccessIssue]
-    invalid_algorithm.value = "invalid algorithm"
+    # Create an algorithm object that isn't in the supported list
+    invalid_algorithm = UnsupportedAlgorithm("invalid algorithm")
 
     with pytest.raises(
         VerificationError,
@@ -157,15 +163,18 @@ def test_create_response_invalid_algorithm():
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
 
-    # Create a mock algorithm that's not supported (no spec to allow __str__)
-    invalid_algorithm = MagicMock()
-    invalid_algorithm.__str__.return_value = "MD5"  # pyright: ignore[reportAttributeAccessIssue]
-    invalid_algorithm.value = "MD5"
+    # Create an algorithm object that isn't supported
+    invalid_algorithm = UnsupportedAlgorithm("MD5")
 
     with pytest.raises(
         VerificationError, match="Hashing algorithm .* is not supported"
     ):
-        create_response(pairing_token, challenge, algorithm=invalid_algorithm, hmac_salt=HMAC_SALT)  # pyright: ignore[reportArgumentType]
+        create_response(
+            pairing_token,
+            challenge,
+            algorithm=invalid_algorithm,  # pyright: ignore[reportArgumentType]
+            hmac_salt=HMAC_SALT,
+        )
 
 
 def test_create_response_with_different_challenge_lengths():
@@ -259,12 +268,13 @@ def test_select_algorithm_with_matching_algorithm():
 
 def test_select_algorithm_no_match():
     """Test select_algorithm raises IncompatibleHmacHashingAlgorithms when no algorithms match."""
-    # Create a mock algorithm that's not supported (no spec to allow __str__)
-    unsupported_alg = MagicMock()
-    unsupported_alg.__str__.return_value = "UNSUPPORTED"  # pyright: ignore[reportAttributeAccessIssue]
-    unsupported_alg.value = "UNSUPPORTED"
+    # Create an algorithm object that isn't supported
+    unsupported_alg = UnsupportedAlgorithm("UNSUPPORTED")
 
-    with pytest.raises(IncompatibleHmacHashingAlgorithms, match="Node does not support any of our algorithms"):
+    with pytest.raises(
+        IncompatibleHmacHashingAlgorithms,
+        match="Node does not support any of our algorithms",
+    ):
         select_algorithm([unsupported_alg])  # pyright: ignore[reportArgumentType]
 
 

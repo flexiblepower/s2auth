@@ -46,22 +46,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 if [ "$GEN_MODELS" = true ]; then
-    # files other than the spec yml cause the generator to fall over so we temporarily move them out of the way
-    timestamp="$(date +%Y%m%d_%H%M%S)"
-    tmpdir_path="_moved_${timestamp}_$$"
-    mkdir -p -- "$tmpdir_path"
-    mv specification/s2-connect/.[!.]* "$tmpdir_path/."
-    mv specification/s2-connect/* "$tmpdir_path/."
-    mv "$tmpdir_path"/*.yml specification/s2-connect/.
-
-    # generate
-	poetry run datamodel-codegen --type-mappings "string+byte=pydantic.Base64Bytes" --additional-imports "pydantic.Base64Bytes" --input specification/s2-connect/ --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output src/s2auth/common/model/ --formatters=ruff-format --use-annotated --use-exact-imports  --openapi-scopes schemas parameters paths --use-subclass-enum
-
-    # restore files
-    mv "$tmpdir_path"/.[!.]* specification/s2-connect/.
-    mv "$tmpdir_path"/* specification/s2-connect/.
-    rm -rf "$tmpdir_path"
-
+	poetry run datamodel-codegen --type-mappings "string+byte=pydantic.Base64Bytes" --additional-imports "pydantic.Base64Bytes" --input specification/s2-connect/openapi/ --input-file-type openapi --output-model-type pydantic_v2.BaseModel --output src/s2auth/common/model/ --formatters=ruff-format --use-annotated --use-exact-imports  --openapi-scopes schemas parameters paths --use-subclass-enum
     # Replace Base64Str -> Base64Bytes and ensure import exists
     grep -Rl --include='*.py' '\bBase64Str\b' src/s2auth/common/model | xargs sed -i 's/\bBase64Str\b/Base64Bytes/g'
 fi
@@ -72,8 +57,10 @@ fi
 
 if [ "$GEN_CLIENT" = true ]; then
 	mkdir -p src/s2auth/gen_protocol/client/{connection_init,pairing}
-	docker run --rm --user "$UID" -v "$PWD/src/s2auth/gen_protocol/client/:/local/client/" -v "$PWD/specification/s2-connect/:/local/specification/s2-connect" openapitools/openapi-generator-cli generate -i /local/specification/s2-connect/s2-over-ip-connection-init.yml -g python -o /local/client/connection_init --additional-properties="library=httpx"
-	docker run --rm --user "$UID" -v "$PWD/src/s2auth/gen_protocol/client/:/local/client/" -v "$PWD/specification/s2-connect/:/local/specification/s2-connect" openapitools/openapi-generator-cli generate -i /local/specification/s2-connect/s2-over-ip-pairing.yml -g python -o /local/client/pairing --additional-properties="library=httpx"
+	docker run --rm --user "$UID" -v "$PWD/src/s2auth/gen_protocol/client/:/local/client/" -v "$PWD/specification/s2-connect/openapi/:/local/specification/s2-connect" openapitools/openapi-generator-cli generate -i /local/specification/s2-connect/s2-connect-common.yml -g python -o /local/client/connection_init --additional-properties="library=httpx"
+	docker run --rm --user "$UID" -v "$PWD/src/s2auth/gen_protocol/client/:/local/client/" -v "$PWD/specification/s2-connect/openapi/:/local/specification/s2-connect" openapitools/openapi-generator-cli generate -i /local/specification/s2-connect/s2-connect-session-init.yml -g python -o /local/client/connection_init --additional-properties="library=httpx"
+	docker run --rm --user "$UID" -v "$PWD/src/s2auth/gen_protocol/client/:/local/client/" -v "$PWD/specification/s2-connect/openapi/:/local/specification/s2-connect" openapitools/openapi-generator-cli generate -i /local/specification/s2-connect/s2-connect-pairing.yml -g python -o /local/client/pairing --additional-properties="library=httpx"
+	docker run --rm --user "$UID" -v "$PWD/src/s2auth/gen_protocol/client/:/local/client/" -v "$PWD/specification/s2-connect/openapi/:/local/specification/s2-connect" openapitools/openapi-generator-cli generate -i /local/specification/s2-connect/s2-connect-wan-endpoint-registry.yml -g python -o /local/client/pairing --additional-properties="library=httpx"
 
     # Replace Base64Str -> Base64Bytes and ensure import exists
     grep -Rl --include='*.py' '\bBase64Str\b' src/s2auth/common/model | xargs sed -i 's/\bBase64Str\b/Base64Bytes/g'

@@ -19,8 +19,8 @@ from s2auth.common.model.s2_connect_common import (AccessToken,
                                                    EndpointDescription,
                                                    NodeDescription, NodeId,
                                                    Role)
-from s2auth.common.model.s2_connect_connection_init import \
-    InitiateConnectionPostRequest
+from s2auth.common.model.s2_connect_session_init import \
+    InitiateSessionPostRequest
 from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails, FinalizePairingPostRequest, HmacChallenge,
     HmacChallengeResponse, HmacHashingAlgorithm, NodeIdAlias,
@@ -143,10 +143,10 @@ async def pair(pairing_uri: str,
                 storage.store_connection_details(s2_node_id, connection_details_dict.get("accessToken", ""))
             else:  # s2_role.CEM
                 # Post connection details logic for CEM role
-                initiateConnectionUrl: AnyUrl = TypeAdapter(AnyUrl).validate_python(f"{pairing_uri}/initiateConnection")
+                initiateSessionUrl: AnyUrl = TypeAdapter(AnyUrl).validate_python(f"{pairing_uri}/initiateSession")
                 b64str_token = b64encode(pairing_token.encode("utf-8")).decode("ascii")
                 access_token: AccessToken = AccessToken(b64str_token.encode("ascii"))
-                connection_details: ConnectionDetails = ConnectionDetails(initiateConnectionUrl=initiateConnectionUrl, accessToken=access_token)
+                connection_details: ConnectionDetails = ConnectionDetails(initiateSessionUrl=initiateSessionUrl, accessToken=access_token)
                 response = await post_connection_details(pairing_uri,
                                                          pairing_response.pairingAttemptId.model_dump(exclude_none=True),
                                                          connection_details,
@@ -265,7 +265,7 @@ async def connect(pairing_uri: str,
     client_s2_node_id: str = str(clientS2NodeId) if clientS2NodeId else str(serverS2NodeId)
 
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
-        init_payload: InitiateConnectionPostRequest = InitiateConnectionPostRequest(
+        init_payload: InitiateSessionPostRequest = InitiateSessionPostRequest(
             serverNodeId=NodeId(UUID(serverS2NodeId)),
             clientNodeId=NodeId(UUID(client_s2_node_id)),
             supportedS2MessageVersions=supported_s2_message_versions,
@@ -275,7 +275,7 @@ async def connect(pairing_uri: str,
         body = init_payload.model_dump_json(exclude_none=True)
         headers = add_header(access_token=storage.load_token(client_s2_node_id))
         response = await client.post(
-            f'{pairing_uri}/initiateConnection',
+            f'{pairing_uri}/initiateSession',
             headers=headers,
             content=body
         )
@@ -351,7 +351,7 @@ def strip_pairing_url(url_str: str) -> str:
 
     endpoint_suffixes = (
         "/requestPairing",
-        "/initiateConnection",
+        "/initiateSession",
         "/requestConnectionDetails",
         "/postConnectionDetails",
         "/finalizePairing",
