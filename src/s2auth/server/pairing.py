@@ -69,6 +69,12 @@ async def initiate_pairing(
     server_settings: Settings = Depends[settings],
     pairing_token: PairingToken = Depends[create_pairing_code],
 ):
+    """Create and store a pairing attempt for a client node.
+
+    This function is the supported Python API for starting pairing state.
+    In-process callers should invoke ``initiate_pairing`` directly and either
+    provide a pairing token explicitly or rely on the configured token provider.
+    """
     log.info("Initiating pairing for client %s", client_node_id)
     pairing_attempt_id: PairingAttemptId = uuid4()
     # Encode UUID string as base64 bytes for S2PairingAttemptId (Base64Bytes)

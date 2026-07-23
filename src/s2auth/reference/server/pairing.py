@@ -1,11 +1,6 @@
-import secrets
-from uuid import UUID
-
-from fastapi import APIRouter, Body, Depends, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import APIRouter, Depends, HTTPException
 
 from s2auth.common.exceptions import PairingNotCompleteError
-from s2auth.common.hmac import PairingToken
 from s2auth.common.model.s2_connect_common import NodeId
 from s2auth.common.model.s2_connect_connection_init import UnpairPostRequest
 from s2auth.common.model.s2_connect_pairing import (
@@ -34,52 +29,15 @@ from s2auth.reference.server.versions import (
 from s2auth.server.pairing import (
     finalize_pairing as handle_finalize_pairing,
     handle_client_response,
-    initiate_pairing,
     request_pairing as handle_request_pairing,
 )
 
 router = APIRouter()
-security = HTTPBasic()
-
-USER_CLIENT_NODE_IDS: dict[str, UUID] = {
-    "alice": UUID("00000000-0000-0000-0000-000000000001"),
-    "bob": UUID("00000000-0000-0000-0000-000000000002"),
-}
-
-
-def authenticated_client_node_id(
-    credentials: HTTPBasicCredentials = Depends(security),
-) -> UUID:
-    username = credentials.username
-    if username not in USER_CLIENT_NODE_IDS or not secrets.compare_digest(
-        credentials.password, username
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-    return USER_CLIENT_NODE_IDS[username]
 
 
 router.get("/", response_model=list[str], tags=["Pairing process"])(
     get_supported_s2_connect_versions
 )
-
-
-@router.post(
-    "/userBeginPairing",
-    tags=["Pairing process"],
-)
-async def user_being_pairing(
-    pairing_token: PairingToken = Body(...),
-    client_node_id: UUID = Depends(authenticated_client_node_id),
-) -> None:
-    await initiate_pairing(
-        client_node_id=client_node_id,
-        pairing_token=pairing_token,
-    )
 
 
 @router.post(
