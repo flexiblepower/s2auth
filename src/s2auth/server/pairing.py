@@ -111,9 +111,7 @@ async def request_pairing(
     store_authentication_ctx: Callable[
         [AuthenticationContext], Awaitable[None]
     ] = Depends[store_authentication_context],
-    pairing_context: PairingAttemptContext = Depends[
-        pairing_attempt_context_by_client_node_id
-    ],
+    storage: ContextStorage = Depends[context_storage_singleton],
     hooks: HookRegistry = Depends[hook_registry],
     cfg: Config = Depends[config],
 ) -> RequestPairingPostResponse:
@@ -129,64 +127,84 @@ async def request_pairing(
         The pairing response with server descriptions and challenge
     """
 
-    # Set the contextvars
     client_node_id = request.clientNodeDescription.id.root
-    auth_ctx = AuthenticationContext(
-        client_node_id=client_node_id,
-        state=ClientState.PAIRING,
-        s2_endpoint_description=request.clientEndpointDescription,
-        s2_node_description=request.clientNodeDescription,
-    )
-    await store_authentication_ctx(auth_ctx)
-    s2_client_node_id_var.set(NodeId(root=client_node_id))
 
-    pairing_context.client_node_id = client_node_id
-
-    algorithm = select_algorithm(request.supportedHmacHashingAlgorithms)
-    pairing_context.algorithm = algorithm
-
-    client_response = create_response(
-        pairing_token=pairing_context.pairing_token,
-        challenge=request.clientHmacChallenge,
-        algorithm=algorithm,
-        hmac_salt=cfg.hmac_salt,
-    )
-    # Set the state to "initiated" and store both IDs
-    pairing_context.state = PairingState.INITIATED
-    server_challenge = create_challenge()
-
-    pairing_context.server_hmac_challenge = server_challenge
-
-    # Call the hook to get server descriptions (can be overridden)
-    # Pass read-only copies to enforce immutability in hooks
-    pairing_hook = hooks.get(pairing_attempt_request)
-    pairing_allowed = await pairing_hook(
-        ReadOnlyAuthenticationContext.model_validate(auth_ctx.model_dump()),
-        ReadOnlyPairingAttemptContext.model_validate(pairing_context.model_dump()),
-    )
-    if not pairing_allowed:
-        raise AccessError(
-            f"Client node {auth_ctx.client_node_id} is not allowed to connect."
+    if not isinstance(storage, S2InMemoryContextStorage):
+        raise TypeError(
+            "request_pairing requires S2InMemoryContextStorage to retrieve pairing contexts by client_node_id."
         )
 
-    endpoint_hook = hooks.get(get_server_endpoint_description)
-    node_hook = hooks.get(get_server_node_description)
+    pairing_attempt_id: PairingAttemptId | None = None
+    for ctx in await storage.list_contexts(PairingAttemptContext):
+        if ctx.client_node_id == client_node_id:
+            pairing_attempt_id = ctx.pairing_attempt_id
+            break
 
-    server_endpoint_description = await endpoint_hook(auth_ctx.client_node_id)
-    server_node_description = await node_hook(auth_ctx.client_node_id)
+    if pairing_attempt_id is None:
+        log.info(
+            "No pairing context known for client %s. Initializing one from requestPairing.",
+            client_node_id,
+        )
+        initiated_ctx = await initiate_pairing(client_node_id=client_node_id)
+        pairing_attempt_id = initiated_ctx.pairing_attempt_id
 
-    return RequestPairingPostResponse(
-        selectedHmacHashingAlgorithm=algorithm,
-        serverNodeDescription=server_node_description,
-        serverEndpointDescription=server_endpoint_description,
-        clientHmacChallengeResponse=HmacChallengeResponse(
-            root=b64encode(client_response)
-        ),
-        serverHmacChallenge=server_challenge,
-        pairingAttemptId=S2PairingAttemptId(
-            root=b64encode(str(pairing_context.pairing_attempt_id).encode("utf-8"))
-        ),
-    )
+    if pairing_attempt_id is None:
+        raise RuntimeError("Failed to initialize pairing attempt context")
+
+    async with storage.get_context(
+        PairingAttemptContext, pairing_attempt_id
+    ) as pairing_context:
+        auth_ctx = AuthenticationContext(
+            client_node_id=client_node_id,
+            state=ClientState.PAIRING,
+            s2_endpoint_description=request.clientEndpointDescription,
+            s2_node_description=request.clientNodeDescription,
+        )
+        await store_authentication_ctx(auth_ctx)
+        s2_client_node_id_var.set(NodeId(root=client_node_id))
+
+        pairing_context.client_node_id = client_node_id
+
+        algorithm = select_algorithm(request.supportedHmacHashingAlgorithms)
+        pairing_context.algorithm = algorithm
+
+        client_response = create_response(
+            pairing_token=pairing_context.pairing_token,
+            challenge=request.clientHmacChallenge,
+            algorithm=algorithm,
+            hmac_salt=cfg.hmac_salt,
+        )
+        pairing_context.state = PairingState.INITIATED
+        server_challenge = create_challenge()
+        pairing_context.server_hmac_challenge = server_challenge
+
+        pairing_hook = hooks.get(pairing_attempt_request)
+        pairing_allowed = await pairing_hook(
+            ReadOnlyAuthenticationContext.model_validate(auth_ctx.model_dump()),
+            ReadOnlyPairingAttemptContext.model_validate(pairing_context.model_dump()),
+        )
+        if not pairing_allowed:
+            raise AccessError(
+                f"Client node {auth_ctx.client_node_id} is not allowed to connect."
+            )
+
+        endpoint_hook = hooks.get(get_server_endpoint_description)
+        node_hook = hooks.get(get_server_node_description)
+        server_endpoint_description = await endpoint_hook(auth_ctx.client_node_id)
+        server_node_description = await node_hook(auth_ctx.client_node_id)
+
+        return RequestPairingPostResponse(
+            selectedHmacHashingAlgorithm=algorithm,
+            serverNodeDescription=server_node_description,
+            serverEndpointDescription=server_endpoint_description,
+            clientHmacChallengeResponse=HmacChallengeResponse(
+                root=b64encode(client_response)
+            ),
+            serverHmacChallenge=server_challenge,
+            pairingAttemptId=S2PairingAttemptId(
+                root=b64encode(str(pairing_context.pairing_attempt_id).encode("utf-8"))
+            ),
+        )
 
 
 @inject
