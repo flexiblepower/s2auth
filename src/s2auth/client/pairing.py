@@ -54,7 +54,8 @@ async def pair(pairing_uri: str,
                supported_communication_protocols: List[str],
                supportedHmacHashingAlgorithms: List[str],
                s2_client_description: NodeDescription,
-               hmac_salt:str,
+               domain_name: str,
+               fingerprint: bytes,
                pairingS2NodeId: Optional[str] = None,
                verify: bool = True) -> bool:
     """
@@ -71,6 +72,8 @@ async def pair(pairing_uri: str,
         s2_client_description: Information about this client that will be send to the server,
         such as brand, model, logo URL etc. Also contains a globally unique identifier
         of the S2 node this client wants to pair to a node on the server
+        domain_name the domain name to use in a wan deployment
+        fingerprint: certificate to use in a lan deployment
         verify: should ssl certificates be verified
     """
     # Create client HMAC challenge that the server needs to solve
@@ -122,14 +125,16 @@ async def pair(pairing_uri: str,
 
     try:
         async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
-            response = await client.post(f'{pairing_uri}/requestPairing', content=body, headers={"Content-Type": "application/json"})
+            response = await client.post(f'{pairing_uri}/requestPairing', content=body, headers={"Content-Type": "application/json", "Authorization": f"Bearer {pairing_token}"})
             response.raise_for_status()
 
             pairing_response: RequestPairingPostResponse = RequestPairingPostResponse.model_validate(response.json())
             if not verify_response(pairing_token=pairing_token,
                                    challenge=client_hmac_challenge,
                                    response=pairing_response.clientHmacChallengeResponse.root,
-                                   hmac_salt=hmac_salt,
+                                   deployment = s2_deployment,
+                                   domain_name = domain_name,
+                                   fingerprint = fingerprint,
                                    algorithm=pairing_response.selectedHmacHashingAlgorithm):
                 raise VerificationError("HMAC chellange does not match")
             assert s2_role in (Role.RM, Role.CEM)
