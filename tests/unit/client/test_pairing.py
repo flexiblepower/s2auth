@@ -33,7 +33,7 @@ from s2auth.common.model.s2_connect_pairing import (
 
 PAIRING_TOKEN: str = 'nua9nov3QNUd'
 PAIRING_CODE: str = '550e8400-nua9nov3QNUd'
-HMAC_SALT = 's2.example.com'
+DOMAIN_NAME = 's2.example.com'
 PENDING_TOKEN = create_pairing_code()
 WS_TOKEN = create_pairing_code()
 
@@ -74,7 +74,8 @@ def s2_client_description() -> NodeDescription:
 
 
 def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> RequestPairingPostResponse:
-    response = create_response(PAIRING_TOKEN, pairing_request.clientHmacChallenge, pairing_request.clientEndpointDescription.deployment, HMAC_SALT, "")
+    deployment = pairing_request.clientEndpointDescription.deployment or Deployment.WAN
+    response = create_response(PAIRING_TOKEN, pairing_request.clientHmacChallenge, deployment, DOMAIN_NAME, "")
     challenge_response: HmacChallengeResponse = HmacChallengeResponse(b64encode(response))
 
     s2_server_description = NodeDescription(id=NodeId(UUID("12345678-1234-1234-1234-123456789abc")),
@@ -83,7 +84,7 @@ def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> Reque
                                               modelName="Cem P50",
                                               role=Role("CEM"))
 
-    endpoint_description = EndpointDescription(name='Cem p50 endpoint', deployment=Deployment("WAN"))
+    endpoint_description = EndpointDescription(name='Cem p50 endpoint', deployment=Deployment(Deployment.WAN))
 
     pid = PairingAttemptId("550e8400-e29b-41d4-a716-446655440000")
     return RequestPairingPostResponse(
@@ -102,12 +103,12 @@ async def test_paiting_wrong_url(dao: Dao, s2_client_description: NodeDescriptio
                           pairing_code=PAIRING_CODE,
                           storage=dao,
                           role="RM",
-                          deployment="WAN",
+                          deployment=Deployment.WAN,
                           supported_s2_message_versions=["v0.0.2-beta"],
                           supported_communication_protocols=["WebSocket"],
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description,
-                          domain_name=HMAC_SALT,
+                          domain_name=DOMAIN_NAME,
                           fingerprint=b'')
     assert 'No address associated with hostname' in str(excinfo.value)
 
@@ -153,12 +154,12 @@ async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, Magi
                           pairing_code=PAIRING_TOKEN,
                           storage=dao,
                           role="RM",
-                          deployment="WAN",
+                          deployment=Deployment.WAN,
                           supported_s2_message_versions=["v0.0.2-beta"],
                           supported_communication_protocols=["WebSocket"],
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description,
-                          domain_name=HMAC_SALT,
+                          domain_name=DOMAIN_NAME,
                           fingerprint=b'')
     assert "Client error '404 Not Found'" in str(excinfo.value)
 
@@ -304,12 +305,12 @@ async def test_paiting_rm(dao: Dao,
                       pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="RM",
-                      deployment="WAN",
+                      deployment=Deployment.WAN,
                       supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
-                      domain_name=HMAC_SALT,
+                      domain_name=DOMAIN_NAME,
                       fingerprint=b'')
     request_connection_details_spy.assert_awaited_once()
     finalize_pairing_spy.assert_awaited_once()
@@ -340,12 +341,12 @@ async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tu
                       pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="CEM",
-                      deployment="WAN",
+                      deployment=Deployment.WAN,
                       supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
-                      domain_name=HMAC_SALT,
+                      domain_name=DOMAIN_NAME,
                       fingerprint=b'')
     request_connection_details_spy.assert_not_awaited()
     finalize_pairing_spy.assert_awaited_once()
@@ -360,12 +361,12 @@ async def test_get_pairing_token_str(dao: Dao,
                       pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="RM",
-                      deployment="WAN",
+                      deployment=Deployment.WAN,
                       supported_s2_message_versions=["v0.0.2-beta"],
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
-                      domain_name=HMAC_SALT,
+                      domain_name=DOMAIN_NAME,
                       fingerprint=b'')
 
     client_s2_node_id = str(s2_client_description.id.model_dump(exclude_none=True))
