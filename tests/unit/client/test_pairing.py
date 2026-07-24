@@ -74,7 +74,7 @@ def s2_client_description() -> NodeDescription:
 
 
 def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> RequestPairingPostResponse:
-    response = create_response(PAIRING_TOKEN, pairing_request.clientHmacChallenge, hmac_salt=HMAC_SALT)
+    response = create_response(PAIRING_TOKEN, pairing_request.clientHmacChallenge, pairing_request.clientEndpointDescription.deployment, HMAC_SALT, "")
     challenge_response: HmacChallengeResponse = HmacChallengeResponse(b64encode(response))
 
     s2_server_description = NodeDescription(id=NodeId(UUID("12345678-1234-1234-1234-123456789abc")),
@@ -107,7 +107,8 @@ async def test_paiting_wrong_url(dao: Dao, s2_client_description: NodeDescriptio
                           supported_communication_protocols=["WebSocket"],
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description,
-                          hmac_salt=HMAC_SALT)
+                          domain_name=HMAC_SALT,
+                          fingerprint=b'')
     assert 'No address associated with hostname' in str(excinfo.value)
 
 
@@ -157,7 +158,8 @@ async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, Magi
                           supported_communication_protocols=["WebSocket"],
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description,
-                          hmac_salt=HMAC_SALT)
+                          domain_name=HMAC_SALT,
+                          fingerprint=b'')
     assert "Client error '404 Not Found'" in str(excinfo.value)
 
 
@@ -307,7 +309,8 @@ async def test_paiting_rm(dao: Dao,
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
-                      hmac_salt=HMAC_SALT)
+                      domain_name=HMAC_SALT,
+                      fingerprint=b'')
     request_connection_details_spy.assert_awaited_once()
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_not_awaited()
@@ -342,7 +345,8 @@ async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tu
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
-                      hmac_salt=HMAC_SALT)
+                      domain_name=HMAC_SALT,
+                      fingerprint=b'')
     request_connection_details_spy.assert_not_awaited()
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_awaited_once()
@@ -361,7 +365,8 @@ async def test_get_pairing_token_str(dao: Dao,
                       supported_communication_protocols=["WebSocket"],
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
-                      hmac_salt=HMAC_SALT)
+                      domain_name=HMAC_SALT,
+                      fingerprint=b'')
 
     client_s2_node_id = str(s2_client_description.id.model_dump(exclude_none=True))
     token = dao.load_token(client_s2_node_id)
