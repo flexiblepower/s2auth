@@ -15,7 +15,8 @@ from s2auth.common.hmac import (PairingToken, create_challenge,
 from s2auth.common.model.s2_connect_pairing import (HmacChallenge,
                                                     HmacHashingAlgorithm)
 
-HMAC_SALT = 's2.example.com'
+DOMAIN_NAME = 's2connect.example.com'
+FINGERPRINT = b'MIIGCDCCBPCgAwIBAgIQD7m7vN7vN7vN7vN7vN7vN7ANBgkqhkiG9w0BAQsFADBy'
 CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
 
@@ -30,7 +31,7 @@ class UnsupportedAlgorithm:
 
 
 def test_invalid_algorithm():
-    """Test that specifying an unsupported hashing algorithm raises a VerificationError."""
+    """Test that specifying an unsupported hashing algorithm raises a ValueError."""
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
     signature = b"random signature"
@@ -39,14 +40,16 @@ def test_invalid_algorithm():
     invalid_algorithm = UnsupportedAlgorithm("invalid algorithm")
 
     with pytest.raises(
-        VerificationError,
-        match="Hashing algorithm .* is not supported",
+        ValueError,
+        match="Hashing algorithm 'invalid algorithm' is not supported",
     ):
         verify_response(
             pairing_token=pairing_token,
             challenge=challenge,
+            deployment="WAN",
             response=signature,
-            hmac_salt=HMAC_SALT,
+            domain_name=DOMAIN_NAME,
+            fingerprint=None,
             algorithm=invalid_algorithm,  # pyright: ignore[reportArgumentType]
         )
 
@@ -139,7 +142,7 @@ def test_create_response_default_algorithm():
     pairing_token = create_pairing_code()
     challenge = create_challenge()
 
-    response = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
+    response = create_response(pairing_token, challenge, "WAN", DOMAIN_NAME, None)
 
     # Response should be base64 encoded
     assert isinstance(response, bytes)
@@ -148,7 +151,7 @@ def test_create_response_default_algorithm():
     assert len(response) == 32
 
     # Manually compute expected HMAC and verify it matches
-    msg_bin = (pairing_token + HMAC_SALT).encode("utf-8")
+    msg_bin = (pairing_token + DOMAIN_NAME).encode("utf-8")
     expected_hmac = hmac.new(
         key=challenge.root,
         msg=msg_bin,
@@ -159,7 +162,7 @@ def test_create_response_default_algorithm():
 
 
 def test_create_response_invalid_algorithm():
-    """Test that create_response raises VerificationError for unsupported algorithm."""
+    """Test that create_response raises ValueError for unsupported algorithm."""
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
 
@@ -167,13 +170,15 @@ def test_create_response_invalid_algorithm():
     invalid_algorithm = UnsupportedAlgorithm("MD5")
 
     with pytest.raises(
-        VerificationError, match="Hashing algorithm .* is not supported"
+        ValueError, match="Hashing algorithm .* is not supported"
     ):
         create_response(
             pairing_token,
             challenge,
+            deployment="WAN",
+            domain_name=DOMAIN_NAME,
+            fingerprint=None,
             algorithm=invalid_algorithm,  # pyright: ignore[reportArgumentType]
-            hmac_salt=HMAC_SALT,
         )
 
 
@@ -183,17 +188,17 @@ def test_create_response_with_different_challenge_lengths():
 
     # Test with 32-byte challenge
     challenge32 = create_challenge(length=32)
-    response32 = create_response(pairing_token, challenge32, hmac_salt=HMAC_SALT)
+    response32 = create_response(pairing_token, challenge32, "WAN", DOMAIN_NAME, None)
     assert len(response32) == 32
 
     # Test with 128-byte challenge (default)
     challenge128 = create_challenge(length=128)
-    response128 = create_response(pairing_token, challenge128, hmac_salt=HMAC_SALT)
+    response128 = create_response(pairing_token, challenge128, "WAN", DOMAIN_NAME, None)
     assert len(response128) == 32
 
     # Test with 256-byte challenge
     challenge256 = create_challenge(length=256)
-    response256 = create_response(pairing_token, challenge256, hmac_salt=HMAC_SALT)
+    response256 = create_response(pairing_token, challenge256, "WAN", DOMAIN_NAME, None)
     assert len(response256) == 32
 
     # Different challenges should produce different responses
@@ -207,10 +212,10 @@ def test_create_and_verify_response_integration():
     challenge = create_challenge()
 
     # Create response
-    response = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
+    response = create_response(pairing_token, challenge, "WAN", DOMAIN_NAME, None)
 
     # Verify response with same token should succeed
-    assert verify_response(pairing_token, challenge, response, hmac_salt=HMAC_SALT)
+    assert verify_response(pairing_token, challenge, response, "WAN", DOMAIN_NAME, None)
 
 
 def test_create_and_verify_response_wrong_token():
@@ -220,11 +225,11 @@ def test_create_and_verify_response_wrong_token():
     challenge = create_challenge()
 
     # Create response with first token
-    response = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
+    response = create_response(pairing_token, challenge, "WAN", DOMAIN_NAME, None)
 
     # Verify with different token should fail
     with pytest.raises(VerificationError):
-        verify_response(wrong_token, challenge, response, hmac_salt=HMAC_SALT)
+        verify_response(wrong_token, challenge, response, "WAN", DOMAIN_NAME, None)
 
 
 def test_create_and_verify_response_wrong_challenge():
@@ -234,11 +239,11 @@ def test_create_and_verify_response_wrong_challenge():
     challenge2 = create_challenge()
 
     # Create response for first challenge
-    response = create_response(pairing_token, challenge1, hmac_salt=HMAC_SALT)
+    response = create_response(pairing_token, challenge1, "WAN", DOMAIN_NAME, None)
 
     # Verify with different challenge should fail
     with pytest.raises(VerificationError):
-        verify_response(pairing_token, challenge2, response, hmac_salt=HMAC_SALT)
+        verify_response(pairing_token, challenge2, response, "WAN", DOMAIN_NAME, None)
 
 
 def test_create_response_deterministic():
@@ -251,12 +256,16 @@ def test_create_response_deterministic():
     )
 
     # Create response multiple times
-    response1 = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
-    response2 = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
-    response3 = create_response(pairing_token, challenge, hmac_salt=HMAC_SALT)
+    response1 = create_response(pairing_token, challenge, "WAN", DOMAIN_NAME, None)
+    response2 = create_response(pairing_token, challenge, "WAN", DOMAIN_NAME, FINGERPRINT)
 
-    # All responses should be identical
-    assert response1 == response2 == response3
+    response3 = create_response(pairing_token, challenge, "LAN", DOMAIN_NAME, FINGERPRINT)
+    response4 = create_response(pairing_token, challenge, "LAN", None, FINGERPRINT)
+
+    # All responses should be identical for the same deployment
+    assert response1 == response2
+    assert response3 == response4
+    assert response1 != response3
 
 
 def test_select_algorithm_with_matching_algorithm():

@@ -1,3 +1,4 @@
+import logging
 import hashlib
 import hmac
 import random
@@ -14,6 +15,8 @@ from s2auth.common.exceptions import (IncompatibleHmacHashingAlgorithms,
                                       VerificationError)
 from s2auth.common.model.s2_connect_pairing import (HmacChallenge,
                                                     HmacHashingAlgorithm)
+from s2auth.common.model.s2_connect_common import Deployment
+
 
 CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
@@ -21,6 +24,9 @@ CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
 _ALGORITHM_MAP: OrderedDict[HmacHashingAlgorithm, Callable[..., Any]] = OrderedDict(
     [(HmacHashingAlgorithm.SHA256, hashlib.sha256)]
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _get_hashing_algorithm(algorithm: HmacHashingAlgorithm) -> Callable[..., Any]:
@@ -84,46 +90,72 @@ def select_algorithm(
     return [alg for alg in supported_algorithms if alg in common][-1]
 
 
-def create_response(
-    pairing_token: PairingToken,
-    challenge: HmacChallenge,
-    hmac_salt: str,
-    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256
-) -> bytes:
-    try:
-        digestmod = _get_hashing_algorithm(algorithm)
-    except ValueError as e:
-        raise VerificationError(str(e)) from e
-    msg_bin = (pairing_token + hmac_salt).encode("utf-8")
-    return hmac.new(key=challenge.root, msg=msg_bin, digestmod=digestmod).digest()
+#def create_response(
+#    pairing_token: PairingToken,
+#    challenge: HmacChallenge,
+#    hmac_salt: str,
+#    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256
+#) -> bytes:
+#    try:
+#        digestmod = _get_hashing_algorithm(algorithm)
+#    except ValueError as e:
+#        raise VerificationError(str(e)) from e
+#    msg_bin = (pairing_token + hmac_salt).encode("utf-8")
+#    return hmac.new(key=challenge.root, msg=msg_bin, digestmod=digestmod).digest()
+
+
+def create_response(pairing_token: str,
+                    challenge: HmacChallenge,
+                    deployment: Deployment,
+                    domain_name: str,
+                    fingerprint: str,
+                    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256):
+    digestmod = _get_hashing_algorithm(algorithm)
+    if deployment == Deployment.LAN:
+        return hmac_response_lan(pairing_token.encode('utf-8'), challenge.root, fingerprint, digestmod)
+    else:
+        return hmac_response_wan(pairing_token.encode('utf-8'), challenge.root, domain_name, digestmod)
+
+
+def hmac_response_lan(pairing_token: bytes,
+                      challenge: bytes,
+                      fingerprint: bytes,
+                      digestmod: Callable[..., Any]) -> bytes:
+    assert fingerprint is not None, "fingerprint name missing"
+    # Lan: R = HMAC(C, pairing_token || fingerprint)
+    msg = pairing_token + fingerprint
+    return hmac.new(key=challenge, msg=msg, digestmod=digestmod).digest()
+
+def hmac_response_wan(pairing_token: bytes,
+                      challenge: bytes,
+                      domain_name: str,
+                      digestmod: Callable[..., Any]) -> bytes:
+    assert domain_name is not None, "Domain name missing"
+    # Wan: R = HMAC(C, pairing_token || domain)
+    msg = pairing_token + domain_name.encode("utf-8")
+    return hmac.new(key=challenge, msg=msg, digestmod=digestmod).digest()
 
 
 def verify_response(
     pairing_token: str,
     challenge: HmacChallenge,
     response: bytes,
-    hmac_salt: str,
+    deployment: Deployment,
+    domain_name: str,
+    fingerprint:str,
     algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256,
 ) -> bool:
     """
     Verify that a received challenge response signature for correctness based on pairing token and algorithm.
     """
-    print(f"pairing_token: {pairing_token}")
-    print(f"challenge: {challenge.root}")
-    print(f"challenge (as str): {b64encode(challenge.root)}")
-    print(f"response: {response}")
-    print(f"response (as str): {b64encode(response)}")
-    print(f"algorithm: {algorithm}")
-    print(f"hmac_salt: {hmac_salt}")
-    try:
-        digestmod = _get_hashing_algorithm(algorithm)
-    except ValueError as e:
-        raise VerificationError(str(e)) from e
-    msg_bin = (pairing_token + hmac_salt).encode("utf-8")
-    correct_digest = hmac.new(key=challenge.root, msg=msg_bin, digestmod=digestmod).digest()
+    LOGGER.debug(f"pairing_token: {pairing_token}")
+    LOGGER.debug(f"challenge: {challenge.root}")
+    LOGGER.debug(f"challenge (as str): {b64encode(challenge.root)}")
+    LOGGER.debug(f"response: {response}")
+    LOGGER.debug(f"algorithm: {algorithm}")
 
-    print(f"expected response: {correct_digest}")
-    print(f"expected response as str: {b64encode(correct_digest)}")
+    correct_digest = create_response(pairing_token, challenge, deployment, domain_name, fingerprint, algorithm)
+    LOGGER.debug(f"expected response: {correct_digest}")
     if not hmac.compare_digest(correct_digest, response):
         raise VerificationError("Signature is invalid.")
     return True

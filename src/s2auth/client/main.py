@@ -45,7 +45,6 @@ async def _run_client():
 
     if (args.domain is None) == (args.fingerprint is None):
         raise S2PairingError("Must have either a domain or a fingerprint (and not both)")
-    hmac_salt = args.domain if args.domain is not None else args.fingerprint
 
     # generate client id if not given
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
@@ -71,7 +70,8 @@ async def _run_client():
                       supported_communication_protocols=args.communication_protocols,
                       supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
                       s2_client_description=s2_client_description,
-                      hmac_salt=hmac_salt,
+                      domain_name = args.domain,
+                      fingerprint = args.fingerprint,
                       pairingS2NodeId=args.pairing_S2_nodeId,
                       verify=not args.skip_cert_verify)
 
