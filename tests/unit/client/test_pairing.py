@@ -109,7 +109,7 @@ async def test_paiting_wrong_url(dao: Dao, s2_client_description: NodeDescriptio
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description,
                           domain_name=DOMAIN_NAME,
-                          fingerprint=b'')
+                          fingerprint='')
     assert 'No address associated with hostname' in str(excinfo.value)
 
 
@@ -160,7 +160,7 @@ async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, Magi
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description,
                           domain_name=DOMAIN_NAME,
-                          fingerprint=b'')
+                          fingerprint='')
     assert "Client error '404 Not Found'" in str(excinfo.value)
 
 
@@ -308,23 +308,20 @@ async def test_paiting_rm(dao: Dao,
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
                       domain_name=DOMAIN_NAME,
-                      fingerprint=b'')
+                      fingerprint='')
     request_connection_details_spy.assert_awaited_once()
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_not_awaited()
 
     server_s2_node_id: str = str(s2_client_description.id.model_dump(exclude_none=True))
-    #assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["v0.0.2-beta"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
-    #pending_token = dao.load_connection_details(server_s2_node_id)['accessToken']
-    #assert pending_token is not None
-    #assert pending_token == PENDING_TOKEN
+    assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["v0.0.2-beta"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
+    connection_details = dao.load_connection_details(server_s2_node_id)
+    assert connection_details is not None
+    assert connection_details['accessToken'] == PENDING_TOKEN
 
-    #ws_token, url = dao.load_connection_details(server_s2_node_id)
-
-    #assert ws_token != pending_token
-    #assert ws_token is not None
-    #assert ws_token == WS_TOKEN
-    #assert url == 'wss://example.com/v1/s2exampleWS'
+    assert connection_details['websocketToken'] != connection_details['accessToken']
+    assert connection_details['websocketToken'] == WS_TOKEN
+    assert connection_details['websocketUrl'] == 'wss://example.com/v1/s2exampleWS'
 
 
 async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tuple[MagicMock, MagicMock], s2_client_description: NodeDescription) -> None:
@@ -344,7 +341,7 @@ async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tu
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
                       domain_name=DOMAIN_NAME,
-                      fingerprint=b'')
+                      fingerprint='')
     request_connection_details_spy.assert_not_awaited()
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_awaited_once()
@@ -364,12 +361,13 @@ async def test_get_pairing_token_str(dao: Dao,
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
                       domain_name=DOMAIN_NAME,
-                      fingerprint=b'')
+                      fingerprint='')
 
     client_s2_node_id = str(s2_client_description.id.model_dump(exclude_none=True))
-    token = dao.load_connection_details(client_s2_node_id)['accessToken']
-    assert isinstance(token, str), token
-    assert len(token) > 0
+    connection_details: dict[str, Any] | None = dao.load_connection_details(client_s2_node_id)
+    assert connection_details is not None
+    assert isinstance(connection_details['accessToken'], str), connection_details['accessToken']
+    assert len(connection_details['accessToken']) > 0
 
 
 async def test_post_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock]) -> None:

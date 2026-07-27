@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import json
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from sqlalchemy import Select, String, create_engine, select
 from sqlalchemy.inspection import inspect
@@ -21,6 +20,8 @@ class ConnectionDetail(Base):
     selectedCommunicationProtocol: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     serverNodeDescription: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     serverEndpointDescription: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    websocketToken: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    websocketUrl: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 class Dao:
     """
@@ -54,7 +55,7 @@ class Dao:
                     session.add(obj)
 
                 for detail_key, model_attr in details.items():
-                    setattr(obj, detail_key, details.get(detail_key))
+                    setattr(obj, detail_key, model_attr)
 
     def load_connection_details(self, s2_node_id: str) -> Optional[dict[str, Any]]:
         """Load the full connection details object for the given node ID."""

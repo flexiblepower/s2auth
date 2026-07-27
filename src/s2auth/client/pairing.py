@@ -55,7 +55,7 @@ async def pair(pairing_uri: str,
                supportedHmacHashingAlgorithms: List[str],
                s2_client_description: NodeDescription,
                domain_name: str,
-               fingerprint: bytes,
+               fingerprint: str,
                pairingS2NodeId: Optional[str] = None,
                verify: bool = True) -> bool:
     """
@@ -138,17 +138,15 @@ async def pair(pairing_uri: str,
                                    algorithm=pairing_response.selectedHmacHashingAlgorithm):
                 raise VerificationError("HMAC chellange does not match")
             assert s2_role in (Role.RM, Role.CEM)
-            
-            
+
+
             resp = create_response(pairing_token=pairing_token,
                                    challenge=pairing_response.serverHmacChallenge,
                                    deployment=s2_deployment,
                                    domain_name=domain_name,
                                    fingerprint=fingerprint,
                                    algorithm=pairing_response.selectedHmacHashingAlgorithm)
-            #assert False, (str(resp), type(resp))
-            
-            
+
             if s2_role == Role.RM:
                 connection_details_dict = await request_connection_details(pairing_uri=pairing_uri,
                                                                            attempt_id=pairing_response.pairingAttemptId.root,
@@ -177,7 +175,7 @@ async def pair(pairing_uri: str,
                                                     attempt_id=pairing_response.pairingAttemptId.root,
                                                     success=True,
                                                     verify=verify)
-                            
+
             return (final_response.status_code == 204)
     except httpx.HTTPError as e:
         # Handle HTTP error
@@ -317,8 +315,7 @@ async def connect(pairing_uri: str,
                 "selectedCommunicationProtocol": selected_communication_protocol,
             },
         )
-
-        confirmation = await confirmToken(pairing_uri, storage, client_s2_node_id, response.json().get("pendingToken"), verify)
+        confirmation = await confirmToken(pairing_uri, storage, client_s2_node_id, response.json().get("accessToken"), verify)
 
         storage.store_connection_details(
             client_s2_node_id,
@@ -330,21 +327,20 @@ async def connect(pairing_uri: str,
         return confirmation.status_code == 200
 
 
-async def confirmToken(pairing_uri: str, storage: Dao, client_s2_node_id: str, pendingToken: str, verify: bool = True) -> httpx.Response:
+async def confirmToken(pairing_uri: str, storage: Dao, client_s2_node_id: str, accessToken: str, verify: bool = True) -> httpx.Response:
     """
     Sent confirmation the token
     Attributes:
         pairing_uri: the uri of the initiateConnection endpoint
         storage: The storage backend for persisting pairing information.
         client_s2_node_id: The s2 node id of the client
-        pendingToken: the token to send
+        accessToken: the pending token to send
         verify: should ssl certificates be verified
     """
-
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
-        body = '{"pendingToken": "' + pendingToken + '"}'
+        body = '{"accessToken": "' + accessToken + '"}'
         details = storage.load_connection_details(client_s2_node_id) or {}
-        headers = add_header(token=details.get("pendingToken"))
+        headers = add_header(token=details.get("accessToken"))
         response = await client.post(f'{pairing_uri}/confirmAccessToken',
                                      headers=headers,
                                      content=body)
