@@ -90,20 +90,6 @@ def select_algorithm(
     return [alg for alg in supported_algorithms if alg in common][-1]
 
 
-#def create_response(
-#    pairing_token: PairingToken,
-#    challenge: HmacChallenge,
-#    hmac_salt: str,
-#    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256
-#) -> bytes:
-#    try:
-#        digestmod = _get_hashing_algorithm(algorithm)
-#    except ValueError as e:
-#        raise VerificationError(str(e)) from e
-#    msg_bin = (pairing_token + hmac_salt).encode("utf-8")
-#    return hmac.new(key=challenge.root, msg=msg_bin, digestmod=digestmod).digest()
-
-
 def create_response(pairing_token: str,
                     challenge: HmacChallenge,
                     deployment: Deployment,

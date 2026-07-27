@@ -12,7 +12,7 @@ from pydantic import AnyUrl, TypeAdapter
 from s2auth.client.dao import Dao
 from s2auth.common.exceptions import S2PairingError, VerificationError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
-                                verify_response)
+                                create_response, verify_response)
 from s2auth.common.model.s2_connect_common import (AccessToken,
                                                    CommunicationProtocol,
                                                    Deployment,
@@ -125,7 +125,7 @@ async def pair(pairing_uri: str,
 
     try:
         async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
-            response = await client.post(f'{pairing_uri}/requestPairing', content=body, headers={"Content-Type": "application/json", "Authorization": f"Bearer {pairing_token}"})
+            response = await client.post(f'{pairing_uri}/requestPairing', content=body, headers={"Content-Type": "application/json"})
             response.raise_for_status()
 
             pairing_response: RequestPairingPostResponse = RequestPairingPostResponse.model_validate(response.json())
@@ -138,10 +138,21 @@ async def pair(pairing_uri: str,
                                    algorithm=pairing_response.selectedHmacHashingAlgorithm):
                 raise VerificationError("HMAC chellange does not match")
             assert s2_role in (Role.RM, Role.CEM)
+            
+            
+            resp = create_response(pairing_token=pairing_token,
+                                   challenge=pairing_response.serverHmacChallenge,
+                                   deployment=s2_deployment,
+                                   domain_name=domain_name,
+                                   fingerprint=fingerprint,
+                                   algorithm=pairing_response.selectedHmacHashingAlgorithm)
+            #assert False, (str(resp), type(resp))
+            
+            
             if s2_role == Role.RM:
                 connection_details_dict = await request_connection_details(pairing_uri=pairing_uri,
-                                                                           attempt_id=pairing_response.pairingAttemptId.model_dump(exclude_none=True),
-                                                                           serverHmacChallangeResponse=pairing_response.serverHmacChallenge,
+                                                                           attempt_id=pairing_response.pairingAttemptId.root,
+                                                                           hmacChallangeResponse=resp,
                                                                            storage=storage,
                                                                            verify=verify)
                 # Store connection details in the database
@@ -153,14 +164,14 @@ async def pair(pairing_uri: str,
                 access_token: AccessToken = AccessToken(b64str_token.encode("ascii"))
                 connection_details: ConnectionDetails = ConnectionDetails(initiateSessionUrl=initiateSessionUrl, accessToken=access_token)
                 response = await post_connection_details(pairing_uri,
-                                                         pairing_response.pairingAttemptId.model_dump(exclude_none=True),
+                                                         pairing_response.pairingAttemptId.root,
                                                          connection_details,
                                                          pairing_response.serverHmacChallenge,
                                                          storage=storage,
                                                          verify=verify)
 
             final_response = await finalize_pairing(pairing_uri=pairing_uri,
-                                                    attempt_id=pairing_response.pairingAttemptId.model_dump(exclude_none=True),
+                                                    attempt_id=pairing_response.pairingAttemptId.root,
                                                     success=True,
                                                     verify=verify)
             return (final_response.status_code == 204)
@@ -169,18 +180,18 @@ async def pair(pairing_uri: str,
         raise S2PairingError(f"Pairing connection failed: {e}") from e
 
 
-async def request_connection_details(pairing_uri: str, attempt_id: str, serverHmacChallangeResponse: HmacChallenge, storage: Dao, verify: bool = True) -> dict[Any, Any]:
+async def request_connection_details(pairing_uri: str, attempt_id: str, hmacChallangeResponse: bytes, storage: Dao, verify: bool = True) -> dict[Any, Any]:
     """
     Request connection details from server
     Attributes:
         pairing_uri: the uri of the pairing endpoint
         attempt_id: a unique id of this pairing attempt
-        serverHmacChallangeResponse: the response to the hmac challange received from teh server
+        serverHmacChallangeResponse: the response to the hmac challange received from the server
         verify: should ssl certificates be verified
     """
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
         payload: RequestConnectionDetailsPostRequest = RequestConnectionDetailsPostRequest(
-            serverHmacChallengeResponse=HmacChallengeResponse(serverHmacChallangeResponse.model_dump(exclude_none=True))
+            serverHmacChallengeResponse=HmacChallengeResponse(b64encode(hmacChallangeResponse))
         )
         body = payload.model_dump_json(exclude_none=True)
         headers = add_header(pairing_attempt_id=attempt_id)
@@ -383,5 +394,5 @@ def add_header(access_token: Optional[str] = None, pairing_attempt_id: Optional[
     if access_token:
         header["accessToken"] = access_token
     if pairing_attempt_id:
-        header["pairingAttemptId"] = pairing_attempt_id
+        header["Authorization"] = f"Bearer {pairing_attempt_id}"
     return header

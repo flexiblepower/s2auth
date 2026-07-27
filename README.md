@@ -24,12 +24,13 @@ Typical example:
 ```bash
 poetry run client \
   --server_url https://localhost:8005/v1 \
-  --domain s2.example.com \
-  --pairing_token your-pairing-token \
+  --domain s2connect.example.com \
+  --pairing_token test \
   --skip_cert_verify \
   --deployment WAN \
   --pairing_s2_node_id ninechars
   --s2_role RM
+  --verbose
 ```
 
 Required input:
