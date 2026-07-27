@@ -75,14 +75,14 @@ async def _run_client():
                       pairingS2NodeId=args.pairing_S2_nodeId,
                       verify=not args.skip_cert_verify)
 
-    assert connect(pairing_uri=server_url,
-                   storage=dao,
-                   supported_s2_message_versions=args.supported_s2_message_versions,
-                   supported_communication_protocols=args.communication_protocols,
-                   s2_client_description=s2_client_description,
-                   serverS2NodeId=str(serverS2NodeId),
-                   clientS2NodeId=str(clientS2NodeId),
-                   verify=not args.skip_cert_verify)
+#    assert await connect(pairing_uri=server_url,
+#                   storage=dao,
+#                   supported_s2_message_versions=args.supported_s2_message_versions,
+#                   supported_communication_protocols=args.communication_protocols,
+#                   s2_client_description=s2_client_description,
+#                   serverS2NodeId=str(serverS2NodeId),
+#                   clientS2NodeId=str(clientS2NodeId),
+#                   verify=not args.skip_cert_verify)
 
     logger.warning(f"Initiated connection with token : {dao.load_token(str(clientS2NodeId))}")
     logger.warning(f"Retreived communication defauls : {dao.load_ws_connection_details(str(clientS2NodeId))}")
