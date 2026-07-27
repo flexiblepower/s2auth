@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import logging
+from base64 import b64decode
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
@@ -49,7 +50,7 @@ async def _run_client():
     # generate client id if not given
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
     pairing_s2_node_id: str | None = args.pairing_s2_node_id if args.pairing_s2_node_id else args.pairing_S2_nodeId
-    
+
     logger.warning(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
 
     s2_client_description: NodeDescription = NodeDescription(id=NodeId(clientS2NodeId),
@@ -72,7 +73,7 @@ async def _run_client():
                       supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
                       s2_client_description=s2_client_description,
                       domain_name = args.domain,
-                      fingerprint = args.fingerprint,
+                      fingerprint =  b64decode(args.fingerprint) if args.fingerprint else None,
                       pairingS2NodeId=pairing_s2_node_id,
                       verify=not args.skip_cert_verify)
 
