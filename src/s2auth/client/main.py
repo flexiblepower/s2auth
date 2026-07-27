@@ -6,7 +6,7 @@ import logging
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import connect, pair, strip_pairing_url
+from s2auth.client.pairing import pair, strip_pairing_url
 from s2auth.common.exceptions import S2PairingError
 from s2auth.common.model.s2_connect_common import NodeDescription, NodeId
 from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
@@ -48,7 +48,8 @@ async def _run_client():
 
     # generate client id if not given
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
-    serverS2NodeId: UUID = UUID(args.server_S2_nodeId) if args.server_S2_nodeId else clientS2NodeId
+    pairing_s2_node_id: str | None = args.pairing_s2_node_id if args.pairing_s2_node_id else args.pairing_S2_nodeId
+    
     logger.warning(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
 
     s2_client_description: NodeDescription = NodeDescription(id=NodeId(clientS2NodeId),
@@ -72,20 +73,23 @@ async def _run_client():
                       s2_client_description=s2_client_description,
                       domain_name = args.domain,
                       fingerprint = args.fingerprint,
-                      pairingS2NodeId=args.pairing_S2_nodeId,
+                      pairingS2NodeId=pairing_s2_node_id,
                       verify=not args.skip_cert_verify)
 
+    storage_key = pairing_s2_node_id if pairing_s2_node_id else str(clientS2NodeId)
+    logger.warning(f"pairing_s2_node_id: {pairing_s2_node_id}")
+    logger.warning(f"Connection details rereived: {dao.load_connection_details(storage_key)}")
 #    assert await connect(pairing_uri=server_url,
-#                   storage=dao,
-#                   supported_s2_message_versions=args.supported_s2_message_versions,
-#                   supported_communication_protocols=args.communication_protocols,
-#                   s2_client_description=s2_client_description,
-#                   serverS2NodeId=str(serverS2NodeId),
-#                   clientS2NodeId=str(clientS2NodeId),
-#                   verify=not args.skip_cert_verify)
-
-    logger.warning(f"Initiated connection with token : {dao.load_token(str(clientS2NodeId))}")
-    logger.warning(f"Retreived communication defauls : {dao.load_ws_connection_details(str(clientS2NodeId))}")
+#                         storage=dao,
+#                         supported_s2_message_versions=args.supported_s2_message_versions,
+#                         supported_communication_protocols=args.communication_protocols,
+#                         s2_client_description=s2_client_description,
+#                         serverS2NodeId=str(serverS2NodeId),
+#                         clientS2NodeId=str(clientS2NodeId),
+#                         verify=not args.skip_cert_verify)
+#
+#    logger.warning(f"Initiated connection with token: {dao.load_token(str(clientS2NodeId))}")
+#    logger.warning(f"Retreived communication defauls: {dao.load_ws_connection_details(str(pairing_s2_node_id))}")
 
 
 def main():
