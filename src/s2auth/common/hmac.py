@@ -92,14 +92,16 @@ def select_algorithm(
 
 def create_response(pairing_token: str,
                     challenge: HmacChallenge,
-                    deployment: Deployment,
-                    domain_name: str,
-                    fingerprint: str,
+                    deployment: str | Deployment,
+                    domain_name: str | None,
+                    fingerprint: bytes | None,
                     algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256):
     digestmod = _get_hashing_algorithm(algorithm)
     if deployment == Deployment.LAN:
+        assert fingerprint is not None
         return hmac_response_lan(pairing_token.encode('utf-8'), challenge.root, fingerprint, digestmod)
     else:
+        assert domain_name is not None
         return hmac_response_wan(pairing_token.encode('utf-8'), challenge.root, domain_name, digestmod)
 
 
@@ -126,9 +128,9 @@ def verify_response(
     pairing_token: str,
     challenge: HmacChallenge,
     response: bytes,
-    deployment: Deployment,
-    domain_name: str,
-    fingerprint:str,
+    deployment: str | Deployment,
+    domain_name: str | None,
+    fingerprint: bytes | None,
     algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256,
 ) -> bool:
     """

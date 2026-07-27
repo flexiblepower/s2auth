@@ -54,8 +54,8 @@ async def pair(pairing_uri: str,
                supported_communication_protocols: List[str],
                supportedHmacHashingAlgorithms: List[str],
                s2_client_description: NodeDescription,
-               domain_name: str,
-               fingerprint: str,
+               domain_name: str | None,
+               fingerprint: bytes | None,
                pairingS2NodeId: Optional[str] = None,
                verify: bool = True) -> bool:
     """
