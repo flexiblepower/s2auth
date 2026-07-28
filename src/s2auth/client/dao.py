@@ -69,3 +69,21 @@ class Dao:
             if obj is None:
                 return None
             return {c.key: getattr(obj, c.key) for c in inspect(obj).mapper.column_attrs}
+
+    def remove_connection_details(self, s2_node_id: str) -> bool:
+        """Remove connection details for the given node ID.
+
+        Returns True when an entry was deleted, otherwise False.
+        """
+        stmt: Select[Any] = (
+            select(ConnectionDetail)
+            .where(ConnectionDetail.s2_node_id == s2_node_id)
+            .limit(1)
+        )
+        with self._SessionLocal() as session:
+            with session.begin():
+                obj = session.execute(stmt).scalars().first()
+                if obj is None:
+                    return False
+                session.delete(obj)
+            return True

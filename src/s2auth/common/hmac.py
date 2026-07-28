@@ -95,7 +95,7 @@ def create_response(pairing_token: str,
                     deployment: str | Deployment,
                     domain_name: str | None,
                     fingerprint: bytes | None,
-                    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256):
+                    algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256) -> bytes:
     digestmod = _get_hashing_algorithm(algorithm)
     if deployment == Deployment.LAN:
         assert fingerprint is not None

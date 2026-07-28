@@ -42,23 +42,6 @@ def encode_base64_text(text: str) -> str:
     return b64encode(text.encode('ascii')).decode('ascii')
 
 
-def make_access_token() -> AccessToken:
-    token = create_pairing_code(length=32)
-    return AccessToken(b64encode(token.encode('ascii')))
-
-
-@pytest.fixture(autouse=True)
-def patch_pairing_base64_compat(mocker: MockerFixture) -> None:
-    import s2auth.client.pairing as pairing
-
-    def access_token_factory(value: str | bytes) -> AccessToken:
-        if isinstance(value, str):
-            value = value.encode('ascii')
-        return AccessToken(value)
-
-    mocker.patch.object(pairing, 'AccessToken', side_effect=access_token_factory)
-
-
 @pytest.fixture()
 def dao(tmp_path: PosixPath) -> Dao:
     return Dao("sqlite:///" + os.path.join("sqlite://", tmp_path, "connection_details.db"))
@@ -199,7 +182,7 @@ def mock_AsyncClient(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
             RequestConnectionDetailsPostRequest.model_validate_json(str(kwargs["content"]))
             validated_url: AnyUrl = TypeAdapter(AnyUrl).validate_python('http://s2server.example.com/v1')
             connection_details = \
-                ConnectionDetails(accessToken=make_access_token(),
+                ConnectionDetails(accessToken=AccessToken(create_pairing_code(length=32)),
                                   initiateSessionUrl=validated_url)
             return httpx.Response(
                 status_code=200,
@@ -258,11 +241,10 @@ def mock_AsyncClient(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
 
 
 async def test_request_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock]) -> None:
-    resp = await request_connection_details(pairing_uri='http://s2server.example.com/v1',
-                                            attempt_id="550e8400-e29b-41d4-a716-446655440000",
-                                            hmacChallangeResponse=create_challenge().root,
-                                            storage=dao,
-                                            verify=True)
+    resp: dict[str, Any] = await request_connection_details(pairing_uri='http://s2server.example.com/v1',
+                                                           attempt_id="550e8400-e29b-41d4-a716-446655440000",
+                                                           hmacChallangeResponse=HmacChallengeResponse(b64encode(b"server-hmac-response")),
+                                                           verify=True)
     assert 'accessToken' in resp
     assert resp['initiateSessionUrl'] == 'http://s2server.example.com/v1'
 
@@ -373,12 +355,11 @@ async def test_get_pairing_token_str(dao: Dao,
 async def test_post_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock]) -> None:
     validated_url: AnyUrl = TypeAdapter(AnyUrl).validate_python('http://s2server.example.com/v1')
     connection_details: ConnectionDetails = \
-        ConnectionDetails(accessToken=make_access_token(),
+        ConnectionDetails(accessToken=create_pairing_code(length=32),
                           initiateSessionUrl=validated_url)
     await post_connection_details('http://s2server.example.com/v1',
                                   "550e8400-e29b-41d4-a716-446655440000", connection_details,
-                                  create_challenge(),
-                                  storage=dao,
+                                  HmacChallengeResponse(b64encode(b"server-hmac-response")),
                                   verify=True)
 
 
