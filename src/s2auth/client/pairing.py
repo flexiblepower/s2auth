@@ -1,8 +1,12 @@
 """Utilities for performing the pairing process of S2 as a client.
 """
 
+import hashlib
 import logging
 from base64 import b64encode
+from pathlib import Path
+import re
+import ssl
 from typing import Any, List, Optional, cast
 from uuid import UUID
 
@@ -27,17 +31,33 @@ from s2auth.common.model.s2_connect_pairing import (
 
 LOGGER = logging.getLogger(__name__)
 
+
+def calculate_fingerprint(certificate_file: str | None) -> bytes | None:
+    if not certificate_file:
+        return None
+
+    pem_data = Path(certificate_file).read_text()
+    blocks = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", pem_data, flags=re.S)
+    cert_pem = blocks[0]
+    der = ssl.PEM_cert_to_DER_cert(cert_pem)
+    digest = hashlib.sha256(der).digest()
+    return digest
+
+
+
 async def _log_request(request: httpx.Request):
     LOGGER.info(f"Call to {request.url}")
     LOGGER.debug(f"Method: {request.method}")
     LOGGER.debug(f"Headers: {request.headers}")
     LOGGER.debug(f"Content: {request.content}")
 
+
 async def _log_response(response: httpx.Response):
     await response.aread()
     LOGGER.info(f"Rsponse: {response.status_code}")
     LOGGER.info(f"Headers: {response.headers}")
     LOGGER.info(f"Content: {response.text}")
+
 
 HTTPX_HOOKS = {"request": [_log_request], "response": [_log_response]}
 event_hooks=HTTPX_HOOKS
@@ -53,9 +73,9 @@ async def pair(pairing_uri: str,
                supportedHmacHashingAlgorithms: List[str],
                s2_client_description: NodeDescription,
                domain_name: str | None,
-               fingerprint: bytes | None,
+               certificate_file: str | None,
                pairingS2NodeId: Optional[str] = None,
-               verify: bool = True) -> bool:
+               verify: str | bool = True) -> bool:
     """
     Preform the initial pairing
     Attributes:
@@ -71,7 +91,7 @@ async def pair(pairing_uri: str,
         such as brand, model, logo URL etc. Also contains a globally unique identifier
         of the S2 node this client wants to pair to a node on the server
         domain_name the domain name to use in a wan deployment
-        fingerprint: certificate to use in a lan deployment
+        certificate_file: certificate to use in a lan deployment
         verify: should ssl certificates be verified
     """
     # Create client HMAC challenge that the server needs to solve
@@ -98,6 +118,8 @@ async def pair(pairing_uri: str,
         raise S2PairingError("Access token required for pairing RM")
     elif not pairing_token:
         pairing_token = create_pairing_code()
+
+    fingerprint = calculate_fingerprint(certificate_file) if certificate_file else None
 
     # id logic seperately in case we get something like "-pairing_token" (i.e. an empty id but still combined)
     s2_node_id: str = str(pairing_s2_node_id) if pairing_s2_node_id else str(s2_client_description.id.root)
@@ -186,7 +208,7 @@ async def pair(pairing_uri: str,
 async def request_connection_details(pairing_uri: str,
                                      attempt_id: str,
                                      hmacChallangeResponse: HmacChallengeResponse,
-                                     verify: bool = True) -> dict[str, Any]:
+                                     verify: bool | str = True) -> dict[str, Any]:
     """
     Request connection details from server
     Attributes:
@@ -216,7 +238,7 @@ async def post_connection_details(pairing_uri: str,
                                   attempt_id: str,
                                   connection_details: ConnectionDetails,
                                   serverHmacChallangeResponse: HmacChallengeResponse,
-                                  verify: bool = True) -> None:
+                                  verify: bool | str = True) -> None:
     """
     Post connection details to server
     Attributes:
@@ -246,7 +268,7 @@ async def post_connection_details(pairing_uri: str,
 async def finalize_pairing(pairing_uri: str,
                            attempt_id: str,
                            success: Optional[bool] = None,
-                           verify: bool = True) -> httpx.Response:
+                           verify: str | bool = True) -> httpx.Response:
     """
     Finalise the pairing process: post statusthe to finalizePairing endpoint
     Attributes:
@@ -336,7 +358,7 @@ async def connect(pairing_uri: str,
         return confirmation.status_code == 200
 
 
-async def confirmToken(pairing_uri: str, storage: Dao, client_s2_node_id: str, accessToken: str, verify: bool = True) -> httpx.Response:
+async def confirmToken(pairing_uri: str, storage: Dao, client_s2_node_id: str, accessToken: str, verify: bool | str = True) -> httpx.Response:
     """
     Sent confirmation the token
     Attributes:
