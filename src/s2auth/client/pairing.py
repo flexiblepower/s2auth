@@ -3,18 +3,16 @@
 
 import logging
 from base64 import b64encode
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 from uuid import UUID
 
 import httpx
-from pydantic import AnyUrl, TypeAdapter
 
 from s2auth.client.dao import Dao
 from s2auth.common.exceptions import S2PairingError, VerificationError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 create_response, verify_response)
-from s2auth.common.model.s2_connect_common import (AccessToken,
-                                                   CommunicationProtocol,
+from s2auth.common.model.s2_connect_common import (CommunicationProtocol,
                                                    Deployment,
                                                    EndpointDescription,
                                                    NodeDescription, NodeId,
@@ -22,7 +20,7 @@ from s2auth.common.model.s2_connect_common import (AccessToken,
 from s2auth.common.model.s2_connect_session_init import \
     InitiateSessionPostRequest
 from s2auth.common.model.s2_connect_pairing import (
-    ConnectionDetails, FinalizePairingPostRequest, HmacChallenge,
+    ConnectionDetails, FinalizePairingPostRequest,
     HmacChallengeResponse, HmacHashingAlgorithm, NodeIdAlias,
     PostConnectionDetailsPostRequest, RequestConnectionDetailsPostRequest,
     RequestPairingPostRequest, RequestPairingPostResponse)
@@ -106,6 +104,9 @@ async def pair(pairing_uri: str,
 
     LOGGER.warning(f"Using access token: {pairing_token} and s2_node_id {s2_node_id}")
 
+    # remove any previously stored connection details for this node id
+    storage.remove_connection_details(s2_node_id)
+
     client_hmac_challenge = create_challenge()
     request_payload: RequestPairingPostRequest = RequestPairingPostRequest(
         clientNodeDescription=s2_client_description,
@@ -140,37 +141,37 @@ async def pair(pairing_uri: str,
             assert s2_role in (Role.RM, Role.CEM)
 
 
-            resp = create_response(pairing_token=pairing_token,
-                                   challenge=pairing_response.serverHmacChallenge,
-                                   deployment=s2_deployment,
-                                   domain_name=domain_name,
-                                   fingerprint=fingerprint,
-                                   algorithm=pairing_response.selectedHmacHashingAlgorithm)
+            resp: HmacChallengeResponse = HmacChallengeResponse(b64encode(
+                create_response(pairing_token=pairing_token,
+                                challenge=pairing_response.serverHmacChallenge,
+                                deployment=s2_deployment,
+                                domain_name=domain_name,
+                                fingerprint=fingerprint,
+                                algorithm=pairing_response.selectedHmacHashingAlgorithm)))
 
+            connection_details_dict:dict[str, Any] = {}
             if s2_role == Role.RM:
                 connection_details_dict = await request_connection_details(pairing_uri=pairing_uri,
                                                                            attempt_id=pairing_response.pairingAttemptId.root,
                                                                            hmacChallangeResponse=resp,
-                                                                           storage=storage,
                                                                            verify=verify)
-                # Store connection details in the database
-                storage.store_connection_details(
-                    s2_node_id,
-                    connection_details_dict,
-                )
-            else:  # s2_role.CEM
+            else:
+                assert s2_role == Role.CEM
                 # Post connection details logic for CEM role
-                initiateSessionUrl: AnyUrl = TypeAdapter(AnyUrl).validate_python(f"{pairing_uri}/initiateSession")
-                b64str_token = b64encode(pairing_token.encode("utf-8")).decode("ascii")
-                access_token: AccessToken = AccessToken(b64str_token.encode("ascii"))
-                connection_details: ConnectionDetails = ConnectionDetails(initiateSessionUrl=initiateSessionUrl, accessToken=access_token)
-                response = await post_connection_details(pairing_uri,
-                                                         pairing_response.pairingAttemptId.root,
-                                                         connection_details,
-                                                         pairing_response.serverHmacChallenge,
-                                                         storage=storage,
+                initiateSessionUrl: str = f"{pairing_uri}/initiateSession"
+                access_token = b64encode(pairing_token.encode("utf-8")).decode("ascii")
+                connection_details_dict = {"initiateSessionUrl": initiateSessionUrl, "accessToken": access_token}
+                response = await post_connection_details(pairing_uri=pairing_uri,
+                                                         attempt_id=pairing_response.pairingAttemptId.root,
+                                                         connection_details=ConnectionDetails.model_validate(connection_details_dict),
+                                                         serverHmacChallangeResponse=resp,
                                                          verify=verify)
 
+            # Store connection details in the database
+            storage.store_connection_details(
+                s2_node_id,
+                connection_details_dict,
+            )
             final_response = await finalize_pairing(pairing_uri=pairing_uri,
                                                     attempt_id=pairing_response.pairingAttemptId.root,
                                                     success=True,
@@ -182,7 +183,10 @@ async def pair(pairing_uri: str,
         raise S2PairingError(f"Pairing connection failed: {e}") from e
 
 
-async def request_connection_details(pairing_uri: str, attempt_id: str, hmacChallangeResponse: bytes, storage: Dao, verify: bool = True) -> dict[Any, Any]:
+async def request_connection_details(pairing_uri: str,
+                                     attempt_id: str,
+                                     hmacChallangeResponse: HmacChallengeResponse,
+                                     verify: bool = True) -> dict[str, Any]:
     """
     Request connection details from server
     Attributes:
@@ -193,7 +197,7 @@ async def request_connection_details(pairing_uri: str, attempt_id: str, hmacChal
     """
     async with httpx.AsyncClient(verify=verify, event_hooks=HTTPX_HOOKS) as client:
         payload: RequestConnectionDetailsPostRequest = RequestConnectionDetailsPostRequest(
-            serverHmacChallengeResponse=HmacChallengeResponse(b64encode(hmacChallangeResponse))
+            serverHmacChallengeResponse=hmacChallangeResponse
         )
         body = payload.model_dump_json(exclude_none=True)
         headers = add_header(token=attempt_id)
@@ -202,14 +206,16 @@ async def request_connection_details(pairing_uri: str, attempt_id: str, hmacChal
             headers=headers,
             content=body,
         )
-        return response.json()
+        response_json = response.json()
+        if not isinstance(response_json, dict):
+            raise S2PairingError("requestConnectionDetails returned invalid JSON payload")
+        return cast(dict[str, Any], response_json)
 
 
 async def post_connection_details(pairing_uri: str,
                                   attempt_id: str,
                                   connection_details: ConnectionDetails,
-                                  serverHmacChallangeResponse: HmacChallenge,
-                                  storage: Dao,
+                                  serverHmacChallangeResponse: HmacChallengeResponse,
                                   verify: bool = True) -> None:
     """
     Post connection details to server
@@ -237,7 +243,10 @@ async def post_connection_details(pairing_uri: str,
             raise S2PairingError("postConnectionDetails failed")
 
 
-async def finalize_pairing(pairing_uri: str, attempt_id: str, success: Optional[bool] = None, verify: bool = True) -> httpx.Response:
+async def finalize_pairing(pairing_uri: str,
+                           attempt_id: str,
+                           success: Optional[bool] = None,
+                           verify: bool = True) -> httpx.Response:
     """
     Finalise the pairing process: post statusthe to finalizePairing endpoint
     Attributes:

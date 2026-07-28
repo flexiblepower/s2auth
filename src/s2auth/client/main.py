@@ -29,7 +29,7 @@ async def _run_client():
     parser.add_argument("--pairing_token", help="Pairing token for pairing, (default: auto generated, but auto generated is only valid if we are pairing server)")
     parser.add_argument("--s2_role", default="RM", help="The S2 role we are fulfilling, Either RM or CEM (Default: RM)")
     parser.add_argument("--deployment", default="LAN", help="The deployment of this client (WAM or LAN)")
-    parser.add_argument("--supported_s2_message_versions", default=["v0.0.2-beta"], help="The supported S2 message versions (one per use of the parameter, default: v0.0.2-beta)")
+    parser.add_argument("--supported_s2_message_versions", default=["v1"], help="The supported S2 message versions (one per use of the parameter, default: v1)")
     parser.add_argument("--communication_protocols", default=["WebSocket"], action="append", help="The communication protocols supported (one per use of the parameter, default: Websocket)")
     parser.add_argument("--supported_hmac_hashingAlgorithms", default=["SHA256"], action="append", help="The Hmac Hashing Algorithms supported (one per use of the parameter, default: \"SHA256\")")
 

@@ -36,3 +36,20 @@ def test_load_connection_details_missing_node(tmp_path: PosixPath) -> None:
     dao = Dao(f"sqlite:///{os.path.join(str(tmp_path), 'connection_details.db')}")
 
     assert dao.load_connection_details("missing-node") is None
+
+
+def test_remove_connection_details(tmp_path: PosixPath) -> None:
+    dao = Dao(f"sqlite:///{os.path.join(str(tmp_path), 'connection_details.db')}")
+    s2_node_id = "550e8400-e29b-41d4-a716-446655440000"
+
+    dao.store_connection_details(
+        s2_node_id,
+        {
+            "initiateSessionUrl": "https://test.example.com",
+            "accessToken": "token-value",
+        },
+    )
+
+    assert dao.remove_connection_details(s2_node_id) is True
+    assert dao.load_connection_details(s2_node_id) is None
+    assert dao.remove_connection_details("missing-node") is False
