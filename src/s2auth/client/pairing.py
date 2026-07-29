@@ -149,8 +149,6 @@ async def pair(pairing_uri: str,
     # id logic seperately in case we get something like "-pairing_token" (i.e. an empty id but still combined)
     s2_node_id: str = str(pairing_s2_node_id) if pairing_s2_node_id else str(s2_client_description.id.root)
 
-    LOGGER.debug(f"Using access token: {pairing_token} and s2_node_id {s2_node_id}\n")
-
     # remove any previously stored connection details for this node id
     storage.remove_connection_details(s2_node_id)
 

@@ -52,9 +52,9 @@ async def _run_client():
     parser.add_argument("--pairing_token", help="Pairing token for pairing, (default: auto generated, but auto generated is only valid if we are pairing server)")
     parser.add_argument("--s2_role", default="RM", help="The S2 role we are fulfilling, Either RM or CEM (Default: RM)")
     parser.add_argument("--deployment", default=None, help="The deployment of this client (WAM or LAN) if not specified this script will try to auto detect based on the server_url, domain and certificate_file parameters")
-    parser.add_argument("--supported_s2_message_versions", default=["v1"], help="The supported S2 message versions (one per use of the parameter, default: v1)")
-    parser.add_argument("--communication_protocols", default=["WebSocket"], action="append", help="The communication protocols supported (one per use of the parameter, default: Websocket)")
-    parser.add_argument("--supported_hmac_hashingAlgorithms", default=["SHA256"], action="append", help="The Hmac Hashing Algorithms supported (one per use of the parameter, default: \"SHA256\")")
+    parser.add_argument("--supported_s2_message_versions", default=None, action="append", help="The supported S2 message versions (one per use of the parameter, default: v1)")
+    parser.add_argument("--communication_protocols", default=None, action="append", help="The communication protocols supported (one per use of the parameter, default: Websocket)")
+    parser.add_argument("--supported_hmac_hashing_algorithms", default=None, action="append", help="The Hmac Hashing Algorithms supported (one per use of the parameter, default: \"SHA256\")")
 
     parser.add_argument("--brand", default="ExampleHeatCo", help="The brand of this S2 node (default: ExampleHeatCo)")
     parser.add_argument("--type", default="Heatpump", help="The type of this S2 node (default: auto Heatpump)")
@@ -67,14 +67,22 @@ async def _run_client():
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
+    args.supported_s2_message_versions = args.supported_s2_message_versions or ["v1"]
+    args.communication_protocols = args.communication_protocols or ["WebSocket"]
+    args.supported_hmac_hashing_algorithms = args.supported_hmac_hashing_algorithms or ["SHA256"]
+
     server_url: str = strip_pairing_url(args.server_url)
     if args.deployment is None:
         args.deployment, reason = detect_deployment(server_url, args.domain, args.certificate_file)
         LOGGER.warning(f"Auto-detected deployment={args.deployment} ({reason})")
+        if reason.startswith("host '"):
+            LOGGER.warning("Deployment was inferred heuristically from server_url host; set --deployment explicitly to override.")
 
     if args.deployment.upper() == "WAN" and args.domain is None:
         server_url_str: str = args.server_url
-        args.domain = urlparse(server_url_str).hostname or ""
+        args.domain = urlparse(server_url_str).hostname
+        if args.domain is None:
+            raise ValueError("Could not auto-detect domain from --server_url; set --domain explicitly for WAN deployment.")
         LOGGER.warning(f"Auto-detected domain='{args.domain}' from server_url")
 
     # generate client id if not given
@@ -90,7 +98,6 @@ async def _run_client():
                                                              role=args.s2_role)
 
     dao = Dao()
-
     pairing_code: str = f"{args.pairing_s2_node_id}-{args.pairing_token}" if args.pairing_s2_node_id else args.pairing_token
     assert await pair(pairing_uri=server_url,
                       pairing_code=pairing_code,
@@ -99,7 +106,7 @@ async def _run_client():
                       deployment=args.deployment.upper(),
                       supported_s2_message_versions=args.supported_s2_message_versions,
                       supported_communication_protocols=args.communication_protocols,
-                      supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
+                      supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashing_algorithms)),
                       s2_client_description=s2_client_description,
                       domain_name = args.domain,
                       pairingS2NodeId=pairing_s2_node_id,
@@ -107,9 +114,9 @@ async def _run_client():
                       ca_cert_file=args.certificate_file)
 
     storage_key = pairing_s2_node_id if pairing_s2_node_id else str(clientS2NodeId)
-    LOGGER.warning("--- Pairing info: ---")
-    LOGGER.warning(f"pairing_s2_node_id: {pairing_s2_node_id}")
-    LOGGER.warning(f"Connection details rereived: {dao.load_connection_details(storage_key)}")
+    LOGGER.info("--- Pairing info: ---")
+    LOGGER.info(f"pairing_s2_node_id: {pairing_s2_node_id}")
+    LOGGER.info(f"Connection details retrieved: {dao.load_connection_details(storage_key)}")
 
 #    assert await connect(pairing_uri=server_url,
 #                         storage=dao,
