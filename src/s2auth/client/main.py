@@ -21,7 +21,7 @@ async def _run_client():
     parser.add_argument("--server_url", default="http://localhost", help="The pairing URL of the pairing server (default: http://localhost)")
 
     parser.add_argument("--domain", default=None, help="The domain name to use in a WAN deployment (default: None, example: example.com)")
-    parser.add_argument("--certificate_file", default="", help="Path to the PEM certificate file to use as fingerprint in a LAN deployment (default: localhost.chain.pem)")
+    parser.add_argument("--certificate_file", default="", help="Path to the PEM certificate file to use as fingerprint in a LAN deployment (default: auto-detect)")
 
     parser.add_argument("--pairing_S2_nodeId", default=None, help="The id of the client S2 node, (default: None, examle ninechars)")
     parser.add_argument("--client_S2_nodeId", default=None, help="The id of the client S2 node, (default: auto generated)")
@@ -44,20 +44,8 @@ async def _run_client():
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
-    if args.domain is not None and args.certificate_file != "":
-        raise S2PairingError("Cannot specify both a domain name and a certificate file")
-
-    if args.domain is None and args.certificate_file == "":  # set deafult certificate file if not specified
-        args.certificate_file = "localhost.chain.pem"
-
-    cert_path = Path(args.certificate_file)
-    cert_file_exists = cert_path.is_file()
-
-    if args.domain is None and not cert_file_exists:
-        raise S2PairingError(f"No domain name set and certificate file '{args.certificate_file}' not found")
-
-    if not args.skip_cert_verify and not cert_file_exists:
-        raise S2PairingError(f"Certificate file '{args.certificate_file}' not found, cannot verify certificate, specify --skip_cert_verify to skip verification")
+    if args.deployment.upper() == "WAN" and args.domain is None:
+        raise S2PairingError("WAN deployment requires --domain. --certificate_file may be omitted for auto-detection.")
 
     # generate client id if not given
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
@@ -79,7 +67,7 @@ async def _run_client():
                       pairing_code=pairing_code,
                       storage=dao,
                       role=args.s2_role,
-                      deployment=args.deployment,
+                      deployment=args.deployment.upper(),
                       supported_s2_message_versions=args.supported_s2_message_versions,
                       supported_communication_protocols=args.communication_protocols,
                       supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
@@ -87,7 +75,7 @@ async def _run_client():
                       domain_name = args.domain,
                       certificate_file = args.certificate_file,
                       pairingS2NodeId=pairing_s2_node_id,
-                      verify=False if args.skip_cert_verify else args.certificate_file)
+                      certificate_validation=False if args.skip_cert_verify else args.certificate_file)
 
     storage_key = pairing_s2_node_id if pairing_s2_node_id else str(clientS2NodeId)
     logger.warning(f"pairing_s2_node_id: {pairing_s2_node_id}")
