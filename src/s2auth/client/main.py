@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import pair, strip_pairing_url, unpair
+from s2auth.client.pairing import connect, pair, strip_pairing_url, unpair
 from s2auth.common.model.s2_connect_common import NodeDescription, NodeId
 from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
 
@@ -64,19 +64,46 @@ async def _run_client():
     parser.add_argument("--pairing_s2_node_id", default=None, help="Target identifier for the node to pair: UUID (sent as nodeId) or short alphanumeric alias (sent as nodeIdAlias). Default None indicates id same as client, assuming only 1 device per client")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--skip_cert_verify", action="store_true", help="Skip certificate verification")
+    parser.add_argument("--connect", action="store_true", help="Connect mode. Must be used together with --pairing_s2_node_id (or --pairing_S2_nodeId) and --verbose if desired.")
     parser.add_argument("--unpair", action="store_true", help="Unpair mode. Must be used together with --pairing_s2_node_id (or --pairing_S2_nodeId) and --verbose if desired.")
 
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
+    # generate client id if not given
+    clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
+    pairing_s2_node_id: str | None = args.pairing_s2_node_id if args.pairing_s2_node_id else args.pairing_S2_nodeId
+    storage_key = pairing_s2_node_id if pairing_s2_node_id else str(clientS2NodeId)
+
+    allowed_connect_unpair_args = {"verbose", "pairing_s2_node_id", "pairing_S2_nodeId"}
+    if args.connect:
+        allowed_connect_args = {"connect"} | allowed_connect_unpair_args
+        unexpected_args = [name for name, value in vars(args).items() if name not in allowed_connect_args and value != parser.get_default(name)]
+        if unexpected_args:
+            parser.error("--connect only allows --verbose plus --pairing_s2_node_id " "(or --pairing_S2_nodeId).")
+
+        if not pairing_s2_node_id:
+            parser.error("--connect expects --pairing_s2_node_id (or --pairing_S2_nodeId)")
+
+        assert await connect(storage=dao, pairing_s2_node_id=pairing_s2_node_id)
+        connection_details = dao.load_connection_details(storage_key)
+        assert connection_details is not None, f"Connection details for pairing_s2_node_id '{storage_key}' not found after connect."
+
+        LOGGER.info("--- Connecteion info: ---")
+        LOGGER.info(f"selected_communication_protocol: {connection_details.get('selected_communication_protocol', None)}")
+        LOGGER.info(f"selected_s2_message_version: {connection_details.get('selected_s2_message_version', None)}")
+        LOGGER.info(f"server_node_description: {connection_details.get('server_node_description', None)}")
+        LOGGER.info(f"server_endpoint_description: {connection_details.get('server_endpoint_description', None)}")
+        LOGGER.info(f"access_token: {connection_details.get('access_token', None)}")
+        return
+
     if args.unpair:
-        allowed_unpair_args = {"unpair", "verbose", "pairing_s2_node_id","pairing_S2_nodeId"}
+        allowed_unpair_args = {"unpair"} | allowed_connect_unpair_args
         unexpected_args = [name for name, value in vars(args).items() if name not in allowed_unpair_args and value != parser.get_default(name)]
         if unexpected_args:
             parser.error("--unpair only allows --verbose plus --pairing_s2_node_id " "(or --pairing_S2_nodeId).")
 
-        pairing_s2_node_id = args.pairing_s2_node_id if args.pairing_s2_node_id else args.pairing_S2_nodeId
         if not pairing_s2_node_id:
             parser.error("--unpair expects --pairing_s2_node_id (or --pairing_S2_nodeId)")
 
@@ -101,10 +128,6 @@ async def _run_client():
             raise ValueError("Could not auto-detect domain from --server_url; set --domain explicitly for WAN deployment.")
         LOGGER.warning(f"Auto-detected domain='{args.domain}' from server_url")
 
-    # generate client id if not given
-    clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
-    pairing_s2_node_id: str | None = args.pairing_s2_node_id if args.pairing_s2_node_id else args.pairing_S2_nodeId
-
     LOGGER.info(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
 
     s2_client_description: NodeDescription = NodeDescription(id=NodeId(clientS2NodeId),
@@ -128,24 +151,13 @@ async def _run_client():
                       verify_tls=not args.skip_cert_verify,
                       ca_cert_file=args.certificate_file)
 
-    storage_key = pairing_s2_node_id if pairing_s2_node_id else str(clientS2NodeId)
+    connection_details = dao.load_connection_details(storage_key)
+    assert connection_details is not None, f"Connection details for pairing_s2_node_id '{storage_key}' not found after pairing."
     LOGGER.info("--- Pairing info: ---")
     LOGGER.info(f"pairing_s2_node_id: {pairing_s2_node_id}")
-    LOGGER.info(f"Connection details retrieved: {dao.load_connection_details(storage_key)}")
-
-#    assert await connect(pairing_uri=server_url,
-#                         storage=dao,
-#                         supported_s2_message_versions=args.supported_s2_message_versions,
-#                         supported_communication_protocols=args.communication_protocols,
-#                         s2_client_description=s2_client_description,
-#                         serverS2NodeId=storage_key,
-#                         clientS2NodeId=str(clientS2NodeId),
-#                         verify_tls=not args.skip_cert_verify,
-#                         ca_cert_file=args.certificate_file)
-#
-#    LOGGER.warning(f"Initiated connection with token: {dao.load_token(str(clientS2NodeId))}")
-#    LOGGER.warning(f"Retreived communication defauls: {dao.load_ws_connection_details(str(pairing_s2_node_id))}")
-
+    LOGGER.info(f"client_s2_node_id: {connection_details.get('client_s2_node_id', None)}")
+    LOGGER.info(f"initiate_session_url: {connection_details.get('initiate_session_url', None)}")
+    LOGGER.info(f"access_token: {connection_details.get('access_token', None)}")
 
 def main():
     asyncio.run(_run_client())
