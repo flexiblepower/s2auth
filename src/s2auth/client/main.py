@@ -64,29 +64,17 @@ async def _run_client():
     parser.add_argument("--pairing_s2_node_id", default=None, help="Target identifier for the node to pair: UUID (sent as nodeId) or short alphanumeric alias (sent as nodeIdAlias). Default None indicates id same as client, assuming only 1 device per client")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--skip_cert_verify", action="store_true", help="Skip certificate verification")
-    parser.add_argument("--unpair", action="store_true", help="Stub for unpair mode. Must be used without any other parameters.")
+    parser.add_argument("--unpair", action="store_true", help="Unpair mode. Must be used together with --pairing_s2_node_id (or --pairing_S2_nodeId) and --verbose if desired.")
 
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
     if args.unpair:
-        allowed_unpair_args = {
-            "unpair",
-            "verbose",
-            "pairing_s2_node_id",
-            "pairing_S2_nodeId",
-        }
-        unexpected_args = [
-            name
-            for name, value in vars(args).items()
-            if name not in allowed_unpair_args and value != parser.get_default(name)
-        ]
+        allowed_unpair_args = {"unpair", "verbose", "pairing_s2_node_id","pairing_S2_nodeId"}
+        unexpected_args = [name for name, value in vars(args).items() if name not in allowed_unpair_args and value != parser.get_default(name)]
         if unexpected_args:
-            parser.error(
-                "--unpair only allows --verbose plus --pairing_s2_node_id "
-                "(or --pairing_S2_nodeId)."
-            )
+            parser.error("--unpair only allows --verbose plus --pairing_s2_node_id " "(or --pairing_S2_nodeId).")
 
         pairing_s2_node_id = args.pairing_s2_node_id if args.pairing_s2_node_id else args.pairing_S2_nodeId
         if not pairing_s2_node_id:
