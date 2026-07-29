@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import pair, strip_pairing_url
+from s2auth.client.pairing import pair, strip_pairing_url, unpair
 from s2auth.common.model.s2_connect_common import NodeDescription, NodeId
 from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
 
@@ -39,6 +39,8 @@ def detect_deployment(
 
 
 async def _run_client():
+    dao = Dao()
+
     parser = argparse.ArgumentParser(description="S2 pairing client example implementation.")
 
     parser.add_argument("--server_url", default="http://localhost", help="The pairing URL of the pairing server (default: http://localhost)")
@@ -46,7 +48,7 @@ async def _run_client():
     parser.add_argument("--domain", default=None, help="The domain name to use in a WAN deployment (default: None, example: example.com)")
     parser.add_argument("--certificate_file", default=None, help="Path to the PEM certificate file to use as fingerprint in a LAN deployment (default: auto-detect)")
 
-    parser.add_argument("--pairing_S2_nodeId", default=None, help="The id of the client S2 node, (default: None, examle ninechars)")
+    parser.add_argument("--pairing_S2_nodeId", default=None, help="Target identifier for the node to pair: UUID (sent as nodeId) or short alphanumeric alias (sent as nodeIdAlias). Default None indicates id same as client, assuming only 1 device per client")
     parser.add_argument("--client_S2_nodeId", default=None, help="The id of the client S2 node, (default: auto generated)")
     parser.add_argument("--server_S2_nodeId", default=None, help="The id of the server S2 node, (default: auto generated)")
     parser.add_argument("--pairing_token", help="Pairing token for pairing, (default: auto generated, but auto generated is only valid if we are pairing server)")
@@ -59,13 +61,39 @@ async def _run_client():
     parser.add_argument("--brand", default="ExampleHeatCo", help="The brand of this S2 node (default: ExampleHeatCo)")
     parser.add_argument("--type", default="Heatpump", help="The type of this S2 node (default: auto Heatpump)")
     parser.add_argument("--model_name", default="SmartHeatPump X200", help="The model name of this S2 node (default: SmartHeatPump X200)")
-    parser.add_argument("--pairing_s2_node_id", default=None, help="The s2 node id of the S2 node to pair (default None, indicating id same as client, assuming only 1 device per client)")
+    parser.add_argument("--pairing_s2_node_id", default=None, help="Target identifier for the node to pair: UUID (sent as nodeId) or short alphanumeric alias (sent as nodeIdAlias). Default None indicates id same as client, assuming only 1 device per client")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--skip_cert_verify", action="store_true", help="Skip certificate verification")
+    parser.add_argument("--unpair", action="store_true", help="Stub for unpair mode. Must be used without any other parameters.")
 
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
+
+    if args.unpair:
+        allowed_unpair_args = {
+            "unpair",
+            "verbose",
+            "pairing_s2_node_id",
+            "pairing_S2_nodeId",
+        }
+        unexpected_args = [
+            name
+            for name, value in vars(args).items()
+            if name not in allowed_unpair_args and value != parser.get_default(name)
+        ]
+        if unexpected_args:
+            parser.error(
+                "--unpair only allows --verbose plus --pairing_s2_node_id "
+                "(or --pairing_S2_nodeId)."
+            )
+
+        pairing_s2_node_id = args.pairing_s2_node_id if args.pairing_s2_node_id else args.pairing_S2_nodeId
+        if not pairing_s2_node_id:
+            parser.error("--unpair expects --pairing_s2_node_id (or --pairing_S2_nodeId)")
+
+        assert await unpair(storage=dao, pairing_s2_node_id=pairing_s2_node_id)
+        return
 
     args.supported_s2_message_versions = args.supported_s2_message_versions or ["v1"]
     args.communication_protocols = args.communication_protocols or ["WebSocket"]
@@ -97,8 +125,7 @@ async def _run_client():
                                                              modelName=args.model_name,
                                                              role=args.s2_role)
 
-    dao = Dao()
-    pairing_code: str = f"{args.pairing_s2_node_id}-{args.pairing_token}" if args.pairing_s2_node_id else args.pairing_token
+    pairing_code: str | None = args.pairing_token
     assert await pair(pairing_uri=server_url,
                       pairing_code=pairing_code,
                       storage=dao,

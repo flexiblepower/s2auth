@@ -11,12 +11,16 @@ def test_load_connection_details_roundtrip(tmp_path: PosixPath) -> None:
     dao.store_connection_details(
         s2_node_id,
         {
-            "initiateSessionUrl": "https://test.example.com",
-            "accessToken": "AHsUZCP0B+uXe6k/Pjm9aFKNWouRjWdnoD2DhIi2844=",
-            "supportedS2MessageVersion": "v0.0.2-beta",
-            "selectedCommunicationProtocol": "WebSocket",
-            "serverNodeDescription": '{"id":"123","brand":"Brand","type":"CEM","modelName":"Model","role":"CEM"}',
-            "serverEndpointDescription": '{"name":"Endpoint","logoUrl":"https://logo.example.com","deployment":"WAN"}',
+            "client_s2_node_id": "client_s2_node_id",
+            "pairing_server_url": "https://pairing.example.com/v1",
+            "verify_tls": True,
+            "ca_cert_file": "path/to/ca_cert.pem",
+            "initiate_session_url": "https://test.example.com",
+            "access_token": "AHsUZCP0B+uXe6k/Pjm9aFKNWouRjWdnoD2DhIi2844=",
+            "supported_s2_message_version": "v0.0.2-beta",
+            "selected_communication_protocol": "WebSocket",
+            "server_node_description": '{"id":"123","brand":"Brand","type":"CEM","modelName":"Model","role":"CEM"}',
+            "server_endpoint_description": '{"name":"Endpoint","logoUrl":"https://logo.example.com","deployment":"WAN"}',
         },
     )
 
@@ -24,12 +28,15 @@ def test_load_connection_details_roundtrip(tmp_path: PosixPath) -> None:
 
     assert details is not None
     assert details["s2_node_id"] == s2_node_id
-    assert details["initiateSessionUrl"] == "https://test.example.com"
-    assert details["accessToken"] == "AHsUZCP0B+uXe6k/Pjm9aFKNWouRjWdnoD2DhIi2844="
-    assert details["supportedS2MessageVersion"] == "v0.0.2-beta"
-    assert details["selectedCommunicationProtocol"] == "WebSocket"
-    assert details["serverNodeDescription"] == '{"id":"123","brand":"Brand","type":"CEM","modelName":"Model","role":"CEM"}'
-    assert details["serverEndpointDescription"] == '{"name":"Endpoint","logoUrl":"https://logo.example.com","deployment":"WAN"}'
+    assert details["pairing_server_url"] == "https://pairing.example.com/v1"
+    assert details["verify_tls"] is True
+    assert details["ca_cert_file"] == "path/to/ca_cert.pem"
+    assert details["initiate_session_url"] == "https://test.example.com"
+    assert details["access_token"] == "AHsUZCP0B+uXe6k/Pjm9aFKNWouRjWdnoD2DhIi2844="
+    assert details["supported_s2_message_version"] == "v0.0.2-beta"
+    assert details["selected_communication_protocol"] == "WebSocket"
+    assert details["server_node_description"] == '{"id":"123","brand":"Brand","type":"CEM","modelName":"Model","role":"CEM"}'
+    assert details["server_endpoint_description"] == '{"name":"Endpoint","logoUrl":"https://logo.example.com","deployment":"WAN"}'
 
 
 def test_load_connection_details_missing_node(tmp_path: PosixPath) -> None:
@@ -45,8 +52,9 @@ def test_remove_connection_details(tmp_path: PosixPath) -> None:
     dao.store_connection_details(
         s2_node_id,
         {
-            "initiateSessionUrl": "https://test.example.com",
-            "accessToken": "token-value",
+            "pairing_server_url": "https://pairing.example.com/v1",
+            "initiate_session_url": "https://test.example.com",
+            "access_token": "token-value",
         },
     )
 

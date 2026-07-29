@@ -304,11 +304,46 @@ async def test_paiting_rm(dao: Dao,
     assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["v0.0.2-beta"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
     connection_details = dao.load_connection_details(server_s2_node_id)
     assert connection_details is not None
-    assert connection_details['accessToken'] == PENDING_TOKEN
+    assert connection_details['access_token'] == PENDING_TOKEN
 
-    assert connection_details['websocketToken'] != connection_details['accessToken']
-    assert connection_details['websocketToken'] == WS_TOKEN
-    assert connection_details['websocketUrl'] == 'wss://example.com/v1/s2exampleWS'
+    assert connection_details['websocket_token'] != connection_details['access_token']
+    assert connection_details['websocket_token'] == WS_TOKEN
+    assert connection_details['websocket_url'] == 'wss://example.com/v1/s2exampleWS'
+
+
+async def test_pairing_uuid_node_id_is_sent_as_node_id(
+    dao: Dao,
+    mock_AsyncClient: tuple[MagicMock, MagicMock],
+    s2_client_description: NodeDescription,
+) -> None:
+    uuid_node_id = "233b6a7d-c630-4fbf-a6ff-7a35d0f6d62d"
+    _, mock_client = mock_AsyncClient
+
+    assert await pair(
+        pairing_uri='http://s2server.example.com/v1',
+        pairing_code=PAIRING_TOKEN,
+        storage=dao,
+        role="RM",
+        deployment=Deployment.WAN,
+        supported_s2_message_versions=["v0.0.2-beta"],
+        supported_communication_protocols=["WebSocket"],
+        supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
+        s2_client_description=s2_client_description,
+        domain_name=DOMAIN_NAME,
+        pairingS2NodeId=uuid_node_id,
+        ca_cert_file="./tests/localhost.chain.pem",
+    )
+
+    request_calls = [
+        c for c in mock_client.post.await_args_list
+        if c.args and str(c.args[0]).endswith('/requestPairing')
+    ]
+    assert request_calls
+
+    payload = RequestPairingPostRequest.model_validate_json(str(request_calls[0].kwargs["content"]))
+    assert payload.nodeId is not None
+    assert str(payload.nodeId.root) == uuid_node_id
+    assert payload.nodeIdAlias is None
 
 
 async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tuple[MagicMock, MagicMock], s2_client_description: NodeDescription) -> None:
@@ -353,8 +388,8 @@ async def test_get_pairing_token_str(dao: Dao,
     client_s2_node_id = str(s2_client_description.id.model_dump(exclude_none=True))
     connection_details: dict[str, Any] | None = dao.load_connection_details(client_s2_node_id)
     assert connection_details is not None
-    assert isinstance(connection_details['accessToken'], str), connection_details['accessToken']
-    assert len(connection_details['accessToken']) > 0
+    assert isinstance(connection_details['access_token'], str), connection_details['access_token']
+    assert len(connection_details['access_token']) > 0
 
 
 async def test_post_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock]) -> None:
@@ -375,4 +410,21 @@ async def test_confirmToken(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMo
 
 async def test_unpair(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
                       s2_client_description: NodeDescription) -> None:
-    assert await unpair('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "550e8400-e29b-41d4-a716-446655440000", verify_tls=True)
+    pairing_s2_node_id = str(s2_client_description.id.model_dump())
+    dao.store_connection_details(
+        pairing_s2_node_id,
+        {
+            "client_s2_node_id": pairing_s2_node_id,
+            "pairing_server_url": "http://s2server.example.com/v1",
+            "access_token": "token-value",
+            "verify_tls": True,
+            "ca_cert_file": "./tests/localhost.chain.pem"
+        },
+    )
+    assert await unpair(dao, pairing_s2_node_id)
+
+
+async def test_unpair_missing_details_raises(dao: Dao) -> None:
+    with pytest.raises(S2PairingError) as excinfo:
+        await unpair(dao, "missing-node")
+    assert "Connection details for pairing_s2_node_id 'missing-node' not found or incomplete." in str(excinfo.value)

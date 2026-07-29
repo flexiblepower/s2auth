@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import Select, String, create_engine, select
+from sqlalchemy import Boolean, Select, String, create_engine, select
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import (Mapped, declarative_base, mapped_column,
                             sessionmaker)
@@ -14,14 +14,19 @@ class ConnectionDetail(Base):
     __tablename__ = "connection_details"
 
     s2_node_id: Mapped[str] = mapped_column(String, nullable=False, index=True, primary_key=True)
-    initiateSessionUrl: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    accessToken: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    supportedS2MessageVersion: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    selectedCommunicationProtocol: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    serverNodeDescription: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    serverEndpointDescription: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    websocketToken: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    websocketUrl: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    client_s2_node_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pairing_server_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    verify_tls: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    ca_cert_file: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    initiate_session_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    access_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pending_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    supported_s2_message_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    selected_communication_protocol: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    server_node_description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    server_endpoint_description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    websocket_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    websocket_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 class Dao:
     """
@@ -46,7 +51,6 @@ class Dao:
         Insert or overwrite a connection detail identified by s2_node_id.
         """
         with self._SessionLocal() as session:
-            print(details)
             with session.begin():
                 obj = session.query(ConnectionDetail).filter(ConnectionDetail.s2_node_id == s2_node_id).one_or_none()
 
@@ -55,7 +59,10 @@ class Dao:
                     session.add(obj)
 
                 for detail_key, model_attr in details.items():
-                    setattr(obj, detail_key, model_attr)
+                    if hasattr(ConnectionDetail, detail_key):
+                        setattr(obj, detail_key, model_attr)
+                    else:
+                        raise ValueError(f"Invalid detail key: {detail_key}")
 
     def load_connection_details(self, s2_node_id: str) -> Optional[dict[str, Any]]:
         """Load the full connection details object for the given node ID."""
