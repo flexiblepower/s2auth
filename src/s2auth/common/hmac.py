@@ -99,6 +99,7 @@ def create_response(pairing_token: str,
     digestmod = _get_hashing_algorithm(algorithm)
     if deployment == Deployment.LAN:
         assert fingerprint is not None
+        LOGGER.debug(f"Creating LAN HMAC response with fingerprint: fingerprint=CertificateHash(Sha256({list(fingerprint)}))")
         return hmac_response_lan(pairing_token.encode('utf-8'), challenge.root, fingerprint, digestmod)
     else:
         assert domain_name is not None
