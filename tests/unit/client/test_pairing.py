@@ -304,11 +304,11 @@ async def test_paiting_rm(dao: Dao,
     assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["v0.0.2-beta"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
     connection_details = dao.load_connection_details(server_s2_node_id)
     assert connection_details is not None
-    assert connection_details['accessToken'] == PENDING_TOKEN
+    assert connection_details['access_token'] == PENDING_TOKEN
 
-    assert connection_details['websocketToken'] != connection_details['accessToken']
-    assert connection_details['websocketToken'] == WS_TOKEN
-    assert connection_details['websocketUrl'] == 'wss://example.com/v1/s2exampleWS'
+    assert connection_details['websocket_token'] != connection_details['access_token']
+    assert connection_details['websocket_token'] == WS_TOKEN
+    assert connection_details['websocket_url'] == 'wss://example.com/v1/s2exampleWS'
 
 
 async def test_pairing_uuid_node_id_is_sent_as_node_id(
@@ -388,8 +388,8 @@ async def test_get_pairing_token_str(dao: Dao,
     client_s2_node_id = str(s2_client_description.id.model_dump(exclude_none=True))
     connection_details: dict[str, Any] | None = dao.load_connection_details(client_s2_node_id)
     assert connection_details is not None
-    assert isinstance(connection_details['accessToken'], str), connection_details['accessToken']
-    assert len(connection_details['accessToken']) > 0
+    assert isinstance(connection_details['access_token'], str), connection_details['access_token']
+    assert len(connection_details['access_token']) > 0
 
 
 async def test_post_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock]) -> None:
@@ -414,8 +414,9 @@ async def test_unpair(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
     dao.store_connection_details(
         pairing_s2_node_id,
         {
+            "client_s2_node_id": pairing_s2_node_id,
             "pairing_server_url": "http://s2server.example.com/v1",
-            "accessToken": "token-value",
+            "access_token": "token-value",
             "verify_tls": True,
             "ca_cert_file": "./tests/localhost.chain.pem"
         },

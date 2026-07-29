@@ -230,19 +230,32 @@ async def pair(pairing_uri: str,
                 "ca_cert_file": ca_cert_file,
             }
             if s2_role == Role.RM:
-                connection_details_dict |= await request_connection_details(pairing_uri=pairing_uri,
-                                                                           attempt_id=pairing_response.pairingAttemptId.root,
-                                                                           hmacChallangeResponse=resp,
-                                                                           httpx_verify=httpx_verify)
+                rm_connection_details = await request_connection_details(
+                    pairing_uri=pairing_uri,
+                    attempt_id=pairing_response.pairingAttemptId.root,
+                    hmacChallangeResponse=resp,
+                    httpx_verify=httpx_verify,
+                )
+                connection_details_dict |= {
+                    "initiate_session_url": rm_connection_details.get("initiateSessionUrl"),
+                    "access_token": rm_connection_details.get("accessToken"),
+                }
             else:
                 assert s2_role == Role.CEM
                 # Post connection details logic for CEM role
                 initiateSessionUrl: str = f"{pairing_uri}/initiateSession"
                 access_token = b64encode(pairing_token.encode("utf-8")).decode("ascii")
-                connection_details_dict |= {"initiateSessionUrl": initiateSessionUrl, "accessToken": access_token}
+                connection_details_dict |= {
+                    "initiate_session_url": initiateSessionUrl,
+                    "access_token": access_token,
+                }
+                cem_connection_details = {
+                    "initiateSessionUrl": initiateSessionUrl,
+                    "accessToken": access_token,
+                }
                 response = await post_connection_details(pairing_uri=pairing_uri,
                                                          attempt_id=pairing_response.pairingAttemptId.root,
-                                                         connection_details=ConnectionDetails.model_validate(connection_details_dict),
+                                                         connection_details=ConnectionDetails.model_validate(cem_connection_details),
                                                          serverHmacChallangeResponse=resp,
                                                          httpx_verify=httpx_verify)
 
@@ -381,7 +394,7 @@ async def connect(pairing_uri: str,
 
         body = init_payload.model_dump_json(exclude_none=True)
         connection_details = storage.load_connection_details(client_s2_node_id) or {}
-        headers = add_header(token=connection_details.get("accessToken"))
+        headers = add_header(token=connection_details.get("access_token"))
         response = await client.post(
             f'{pairing_uri}/initiateSession',
             headers=headers,
@@ -398,10 +411,10 @@ async def connect(pairing_uri: str,
         storage.store_connection_details(
             client_s2_node_id,
             {
-                "accessToken": access_token,
-                "pendingToken": response.json().get("pendingToken"),
-                "supportedS2MessageVersion": supported_s2_message_version,
-                "selectedCommunicationProtocol": selected_communication_protocol,
+                "access_token": access_token,
+                "pending_token": response.json().get("pendingToken"),
+                "supported_s2_message_version": supported_s2_message_version,
+                "selected_communication_protocol": selected_communication_protocol,
             },
         )
         confirmation = await confirmToken(pairing_uri,
@@ -413,8 +426,8 @@ async def connect(pairing_uri: str,
         storage.store_connection_details(
             client_s2_node_id,
             {
-                "websocketToken": confirmation.json().get("websocketToken"),
-                "websocketUrl": confirmation.json().get("websocketUrl"),
+                "websocket_token": confirmation.json().get("websocketToken"),
+                "websocket_url": confirmation.json().get("websocketUrl"),
             },
         )
         return confirmation.status_code == 200
@@ -437,7 +450,7 @@ async def confirmToken(pairing_uri: str,
     async with httpx.AsyncClient(verify=httpx_verify, event_hooks=HTTPX_HOOKS) as client:
         body = '{"accessToken": "' + accessToken + '"}'
         details = storage.load_connection_details(client_s2_node_id) or {}
-        headers = add_header(token=details.get("accessToken"))
+        headers = add_header(token=details.get("access_token"))
         response = await client.post(f'{pairing_uri}/confirmAccessToken',
                                      headers=headers,
                                      content=body)
@@ -456,7 +469,7 @@ async def unpair(storage: Dao,
 
     details = storage.load_connection_details(pairing_s2_node_id)
     pairing_uri = details.get("pairing_server_url", None) if details else None
-    access_token = details.get("accessToken", None) if details else None
+    access_token = details.get("access_token", None) if details else None
     verify_tls = details.get("verify_tls", None) if details else None
     ca_cert_file = details.get("ca_cert_file", None) if details else None
     client_s2_node_id = details.get("client_s2_node_id", None) if details else None
