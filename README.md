@@ -19,7 +19,7 @@ From a development checkout, run it by:
 
 There is also a helper script in the repository:
 
-Typical example:
+Typical WAN example:
 
 ```bash
 poetry run client \
@@ -28,21 +28,49 @@ poetry run client \
   --pairing_token test \
   --skip_cert_verify \
   --deployment WAN \
-  --pairing_s2_node_id ninechars
-  --s2_role RM
+  --pairing_s2_node_id ninechars \
+  --s2_role RM \
+  --verbose
+```
+
+Typical LAN example:
+
+```bash
+poetry run client \
+  --server_url https://localhost:8005/v1 \
+  --certificate_file tests/localhost.chain.pem \
+  --pairing_token test \
+  --pairing_s2_node_id ninechars \
+  --s2_role RM \
   --verbose
 ```
 
 Required input:
-- Provide exactly one of `--domain` or `--fingerprint`.
 - Provide a `--pairing_token` to start the pairing flow.
+- For WAN deployments, provide `--domain` or let the client auto-detect it from `--server_url`.
+- For LAN deployments, provide `--certificate_file` if you want to verify against a specific local certificate bundle.
 
 Useful optional arguments:
 - `--server_url` defaults to `http://localhost`.
 - `--client_S2_nodeId` and `--server_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
 - `--pairing_s2_node_id` can be used when the pairing code must include a target S2 node ID.
+- `--certificate_file` points to a CA/certificate bundle file for TLS verification in local or test setups.
 - `--skip_cert_verify` disables certificate verification for local or test setups.
 - `-v` or `--verbose` enables debug logging.
+
+Auto-detection behavior:
+- If `--deployment` is not set, the client tries to auto-detect it.
+- `--domain` set: deployment is treated as `WAN`.
+- `--certificate_file` set: deployment is treated as `LAN`.
+- Otherwise the client inspects `--server_url`.
+- `localhost`, `.local`, and private/local IP addresses are treated as `LAN`.
+- Public hostnames or public IP addresses are treated as `WAN`.
+- When deployment is auto-detected as `WAN` and `--domain` is not set, the client also auto-detects the domain from the hostname in `--server_url`.
+- The client logs a warning whenever deployment or domain is auto-detected.
+
+Test certificate:
+- For local testing, a test certificate bundle is available at `tests/localhost.chain.pem`.
+- This file is intended for development and test scenarios only.
 
 # Run the FastAPI server
 ```bash
