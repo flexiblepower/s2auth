@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, Select, String, create_engine, select
+from sqlalchemy import JSON, Boolean, Select, String, create_engine, select
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import (Mapped, declarative_base, mapped_column,
                             sessionmaker)
@@ -20,13 +20,14 @@ class ConnectionDetail(Base):
     ca_cert_file: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     initiate_session_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     access_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    pending_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    supported_s2_message_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    supported_s2_message_versions: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    supported_communication_protocols: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    supported_hmac_hashing_algorithms: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
+    selected_s2_message_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     selected_communication_protocol: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    server_node_description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    server_endpoint_description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    websocket_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    websocket_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    selected_hmac_hashing_algorithm: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    server_node_description: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    server_endpoint_description: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
 class Dao:
     """

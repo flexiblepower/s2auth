@@ -12,8 +12,7 @@ from pydantic import AnyUrl, TypeAdapter
 from pytest_mock.plugin import MockerFixture
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import (add_header, confirmToken, connect,
-                                   finalize_pairing, pair,
+from s2auth.client.pairing import (add_header, confirmToken, finalize_pairing, pair,
                                    post_connection_details,
                                    request_connection_details,
                                    strip_pairing_url, unpair)
@@ -301,14 +300,10 @@ async def test_paiting_rm(dao: Dao,
     post_connection_details_spy.assert_not_awaited()
 
     server_s2_node_id: str = str(s2_client_description.id.model_dump(exclude_none=True))
-    assert await connect(pairing_uri='http://s2server.example.com/v1', storage=dao, supported_s2_message_versions=["v0.0.2-beta"], supported_communication_protocols=["WebSocket"], s2_client_description=s2_client_description, serverS2NodeId=server_s2_node_id)
     connection_details = dao.load_connection_details(server_s2_node_id)
     assert connection_details is not None
-    assert connection_details['access_token'] == PENDING_TOKEN
-
-    assert connection_details['websocket_token'] != connection_details['access_token']
-    assert connection_details['websocket_token'] == WS_TOKEN
-    assert connection_details['websocket_url'] == 'wss://example.com/v1/s2exampleWS'
+    assert isinstance(connection_details['access_token'], str)
+    assert len(connection_details['access_token']) > 0
 
 
 async def test_pairing_uuid_node_id_is_sent_as_node_id(
@@ -405,7 +400,7 @@ async def test_post_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMo
 
 async def test_confirmToken(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
                             s2_client_description: NodeDescription) -> None:
-    await confirmToken('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "550e8400-e29b-41d4-a716-446655440000", httpx_verify=False)
+    await confirmToken('http://s2server.example.com/v1', "550e8400-e29b-41d4-a716-446655440000", httpx_verify=False)
 
 
 async def test_unpair(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],

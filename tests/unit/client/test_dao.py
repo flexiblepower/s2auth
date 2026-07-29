@@ -17,8 +17,12 @@ def test_load_connection_details_roundtrip(tmp_path: PosixPath) -> None:
             "ca_cert_file": "path/to/ca_cert.pem",
             "initiate_session_url": "https://test.example.com",
             "access_token": "AHsUZCP0B+uXe6k/Pjm9aFKNWouRjWdnoD2DhIi2844=",
-            "supported_s2_message_version": "v0.0.2-beta",
+            "supported_s2_message_versions": ["v0.0.2-beta"],
+            "supported_communication_protocols": ["WebSocket"],
+            "supported_hmac_hashing_algorithms": ["SHA256"],
+            "selected_s2_message_version": "v0.0.2-beta",
             "selected_communication_protocol": "WebSocket",
+            "selected_hmac_hashing_algorithm": "SHA256",
             "server_node_description": '{"id":"123","brand":"Brand","type":"CEM","modelName":"Model","role":"CEM"}',
             "server_endpoint_description": '{"name":"Endpoint","logoUrl":"https://logo.example.com","deployment":"WAN"}',
         },
@@ -33,8 +37,12 @@ def test_load_connection_details_roundtrip(tmp_path: PosixPath) -> None:
     assert details["ca_cert_file"] == "path/to/ca_cert.pem"
     assert details["initiate_session_url"] == "https://test.example.com"
     assert details["access_token"] == "AHsUZCP0B+uXe6k/Pjm9aFKNWouRjWdnoD2DhIi2844="
-    assert details["supported_s2_message_version"] == "v0.0.2-beta"
+    assert details["supported_s2_message_versions"] == ["v0.0.2-beta"]
+    assert details["supported_communication_protocols"] == ["WebSocket"]
+    assert details["supported_hmac_hashing_algorithms"] == ["SHA256"]
+    assert details["selected_s2_message_version"] == "v0.0.2-beta"
     assert details["selected_communication_protocol"] == "WebSocket"
+    assert details["selected_hmac_hashing_algorithm"] == "SHA256"
     assert details["server_node_description"] == '{"id":"123","brand":"Brand","type":"CEM","modelName":"Model","role":"CEM"}'
     assert details["server_endpoint_description"] == '{"name":"Endpoint","logoUrl":"https://logo.example.com","deployment":"WAN"}'
 
