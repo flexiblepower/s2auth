@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import logging
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
@@ -21,7 +20,7 @@ async def _run_client():
     parser.add_argument("--server_url", default="http://localhost", help="The pairing URL of the pairing server (default: http://localhost)")
 
     parser.add_argument("--domain", default=None, help="The domain name to use in a WAN deployment (default: None, example: example.com)")
-    parser.add_argument("--certificate_file", default="", help="Path to the PEM certificate file to use as fingerprint in a LAN deployment (default: auto-detect)")
+    parser.add_argument("--certificate_file", default=None, help="Path to the PEM certificate file to use as fingerprint in a LAN deployment (default: auto-detect)")
 
     parser.add_argument("--pairing_S2_nodeId", default=None, help="The id of the client S2 node, (default: None, examle ninechars)")
     parser.add_argument("--client_S2_nodeId", default=None, help="The id of the client S2 node, (default: auto generated)")
@@ -73,9 +72,9 @@ async def _run_client():
                       supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashingAlgorithms)),
                       s2_client_description=s2_client_description,
                       domain_name = args.domain,
-                      certificate_file = args.certificate_file,
                       pairingS2NodeId=pairing_s2_node_id,
-                      certificate_validation=False if args.skip_cert_verify else args.certificate_file)
+                      verify_tls=not args.skip_cert_verify,
+                      ca_cert_file=args.certificate_file)
 
     storage_key = pairing_s2_node_id if pairing_s2_node_id else str(clientS2NodeId)
     logger.warning(f"pairing_s2_node_id: {pairing_s2_node_id}")
