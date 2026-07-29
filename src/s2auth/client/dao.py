@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import Select, String, create_engine, select
+from sqlalchemy import Boolean, Select, String, create_engine, select
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import (Mapped, declarative_base, mapped_column,
                             sessionmaker)
@@ -14,6 +14,10 @@ class ConnectionDetail(Base):
     __tablename__ = "connection_details"
 
     s2_node_id: Mapped[str] = mapped_column(String, nullable=False, index=True, primary_key=True)
+    client_s2_node_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pairing_server_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    verify_tls: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    ca_cert_file: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     initiateSessionUrl: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     accessToken: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     supportedS2MessageVersion: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -46,7 +50,6 @@ class Dao:
         Insert or overwrite a connection detail identified by s2_node_id.
         """
         with self._SessionLocal() as session:
-            print(details)
             with session.begin():
                 obj = session.query(ConnectionDetail).filter(ConnectionDetail.s2_node_id == s2_node_id).one_or_none()
 

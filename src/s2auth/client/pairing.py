@@ -2,6 +2,7 @@
 """
 
 import hashlib
+import json
 import logging
 from base64 import b64encode
 from pathlib import Path
@@ -222,9 +223,14 @@ async def pair(pairing_uri: str,
                                 algorithm=pairing_response.selectedHmacHashingAlgorithm)))
             LOGGER.debug("--- HMAC: server challenge response created ---\n")
 
-            connection_details_dict:dict[str, Any] = {}
+            connection_details_dict: dict[str, Any] = {
+                "pairing_server_url": pairing_uri,
+                "client_s2_node_id": str(s2_client_description.id.root),
+                "verify_tls": verify_tls,
+                "ca_cert_file": ca_cert_file,
+            }
             if s2_role == Role.RM:
-                connection_details_dict = await request_connection_details(pairing_uri=pairing_uri,
+                connection_details_dict |= await request_connection_details(pairing_uri=pairing_uri,
                                                                            attempt_id=pairing_response.pairingAttemptId.root,
                                                                            hmacChallangeResponse=resp,
                                                                            httpx_verify=httpx_verify)
@@ -233,7 +239,7 @@ async def pair(pairing_uri: str,
                 # Post connection details logic for CEM role
                 initiateSessionUrl: str = f"{pairing_uri}/initiateSession"
                 access_token = b64encode(pairing_token.encode("utf-8")).decode("ascii")
-                connection_details_dict = {"initiateSessionUrl": initiateSessionUrl, "accessToken": access_token}
+                connection_details_dict |= {"initiateSessionUrl": initiateSessionUrl, "accessToken": access_token}
                 response = await post_connection_details(pairing_uri=pairing_uri,
                                                          attempt_id=pairing_response.pairingAttemptId.root,
                                                          connection_details=ConnectionDetails.model_validate(connection_details_dict),
@@ -439,34 +445,36 @@ async def confirmToken(pairing_uri: str,
         return response
 
 
-async def unpair(pairing_uri: str,
-                 storage: Dao,
-                 pairing_s2_node_id: str,
-                 serverS2NodeId: str,
-                 clientS2NodeId: Optional[str] = None,
-                 verify_tls: bool = True,
-                 ca_cert_file: str | None = None) -> bool:
+async def unpair(storage: Dao,
+                 pairing_s2_node_id: str) -> bool:
     """
     Sent command to terminate the pairing
     Attributes:
-        pairing_uri: the uri of the initiateConnection endpoint
         storage: The storage backend for persisting pairing information.
         pairing_s2_node_id id of the node to unpair
-        serverS2NodeId: The s2 node id node of this pairing client/server instance server
-        clientS2NodeId: The s2 node id of the client node if different e.g. if this server takes care of multile S2 devices
-        verify_tls: should ssl certificates be verified
-        ca_cert_file: optional CA/certificate bundle path used for TLS verification
     """
 
-    client_s2_node_id: str = str(clientS2NodeId) if clientS2NodeId else str(serverS2NodeId)
-    httpx_verify = build_httpx_verify(verify_tls, ca_cert_file)
+    details = storage.load_connection_details(pairing_s2_node_id)
+    pairing_uri = details.get("pairing_server_url", None) if details else None
+    access_token = details.get("accessToken", None) if details else None
+    verify_tls = details.get("verify_tls", None) if details else None
+    ca_cert_file = details.get("ca_cert_file", None) if details else None
+    client_s2_node_id = details.get("client_s2_node_id", None) if details else None
+    if not details or pairing_uri is None or access_token is None or verify_tls is None or ca_cert_file is None and client_s2_node_id is not None:
+        raise S2PairingError(
+            f"Connection details for pairing_s2_node_id '{pairing_s2_node_id}' not found or incomplete."
+        )
+    unpair_request = {
+        "clientNodeId": client_s2_node_id,
+        "serverNodeId": pairing_s2_node_id,
+    }
+
+    httpx_verify = build_httpx_verify(bool(verify_tls), ca_cert_file)
     async with httpx.AsyncClient(verify=httpx_verify, event_hooks=HTTPX_HOOKS) as client:
-        body = pairing_s2_node_id
-        details = storage.load_connection_details(client_s2_node_id) or {}
-        headers = add_header(token=details.get("accessToken"))
+        headers = add_header(token=access_token)
         response = await client.post(f'{pairing_uri}/unpair',
                                      headers=headers,
-                                     content=body)
+                                     content=json.dumps(unpair_request))
         response.raise_for_status()
         return response.status_code == 204
 

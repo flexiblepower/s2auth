@@ -410,4 +410,20 @@ async def test_confirmToken(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMo
 
 async def test_unpair(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
                       s2_client_description: NodeDescription) -> None:
-    assert await unpair('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "550e8400-e29b-41d4-a716-446655440000", verify_tls=True)
+    pairing_s2_node_id = str(s2_client_description.id.model_dump())
+    dao.store_connection_details(
+        pairing_s2_node_id,
+        {
+            "pairing_server_url": "http://s2server.example.com/v1",
+            "accessToken": "token-value",
+            "verify_tls": True,
+            "ca_cert_file": "./tests/localhost.chain.pem"
+        },
+    )
+    assert await unpair(dao, pairing_s2_node_id)
+
+
+async def test_unpair_missing_details_raises(dao: Dao) -> None:
+    with pytest.raises(S2PairingError) as excinfo:
+        await unpair(dao, "missing-node")
+    assert "Connection details for pairing_s2_node_id 'missing-node' not found or incomplete." in str(excinfo.value)
