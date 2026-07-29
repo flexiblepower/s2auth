@@ -311,6 +311,41 @@ async def test_paiting_rm(dao: Dao,
     assert connection_details['websocketUrl'] == 'wss://example.com/v1/s2exampleWS'
 
 
+async def test_pairing_uuid_node_id_is_sent_as_node_id(
+    dao: Dao,
+    mock_AsyncClient: tuple[MagicMock, MagicMock],
+    s2_client_description: NodeDescription,
+) -> None:
+    uuid_node_id = "233b6a7d-c630-4fbf-a6ff-7a35d0f6d62d"
+    _, mock_client = mock_AsyncClient
+
+    assert await pair(
+        pairing_uri='http://s2server.example.com/v1',
+        pairing_code=PAIRING_TOKEN,
+        storage=dao,
+        role="RM",
+        deployment=Deployment.WAN,
+        supported_s2_message_versions=["v0.0.2-beta"],
+        supported_communication_protocols=["WebSocket"],
+        supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
+        s2_client_description=s2_client_description,
+        domain_name=DOMAIN_NAME,
+        pairingS2NodeId=uuid_node_id,
+        ca_cert_file="./tests/localhost.chain.pem",
+    )
+
+    request_calls = [
+        c for c in mock_client.post.await_args_list
+        if c.args and str(c.args[0]).endswith('/requestPairing')
+    ]
+    assert request_calls
+
+    payload = RequestPairingPostRequest.model_validate_json(str(request_calls[0].kwargs["content"]))
+    assert payload.nodeId is not None
+    assert str(payload.nodeId.root) == uuid_node_id
+    assert payload.nodeIdAlias is None
+
+
 async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tuple[MagicMock, MagicMock], s2_client_description: NodeDescription) -> None:
     import s2auth.client.pairing as pairing
 

@@ -59,7 +59,7 @@ async def _run_client():
     parser.add_argument("--brand", default="ExampleHeatCo", help="The brand of this S2 node (default: ExampleHeatCo)")
     parser.add_argument("--type", default="Heatpump", help="The type of this S2 node (default: auto Heatpump)")
     parser.add_argument("--model_name", default="SmartHeatPump X200", help="The model name of this S2 node (default: SmartHeatPump X200)")
-    parser.add_argument("--pairing_s2_node_id", default=None, help="The s2 node id of the S2 node to pair (default None, indicating id same as client, assuming only 1 device per client)")
+    parser.add_argument("--pairing_s2_node_id", default=None, help="Target identifier for the node to pair: UUID (sent as nodeId) or short alphanumeric alias (sent as nodeIdAlias). Default None indicates id same as client, assuming only 1 device per client")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--skip_cert_verify", action="store_true", help="Skip certificate verification")
 
@@ -98,7 +98,7 @@ async def _run_client():
                                                              role=args.s2_role)
 
     dao = Dao()
-    pairing_code: str = f"{args.pairing_s2_node_id}-{args.pairing_token}" if args.pairing_s2_node_id else args.pairing_token
+    pairing_code: str | None = args.pairing_token
     assert await pair(pairing_uri=server_url,
                       pairing_code=pairing_code,
                       storage=dao,

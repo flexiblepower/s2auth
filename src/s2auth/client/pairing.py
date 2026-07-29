@@ -135,9 +135,12 @@ async def pair(pairing_uri: str,
     if s2_deployment == Deployment.WAN and (domain_name is None or domain_name.strip() == ""):
         raise S2PairingError("WAN deployment requires domain_name.")
 
-    if pairing_code is not None and '-' in pairing_code:
-        split_code = pairing_code.split('-')
-        pairing_s2_node_id, pairing_token = "".join(split_code[:-1]), split_code[-1]
+    if pairingS2NodeId is not None:
+        pairing_s2_node_id, pairing_token = pairingS2NodeId, pairing_code
+    elif pairing_code is not None and '-' in pairing_code:
+        # Keep backward compatibility with "alias-token" pairing codes while
+        # preserving hyphens in aliases (for example UUID-based aliases).
+        pairing_s2_node_id, pairing_token = pairing_code.rsplit('-', 1)
     else:
         pairing_s2_node_id, pairing_token = None, pairing_code
 
@@ -146,11 +149,22 @@ async def pair(pairing_uri: str,
     elif not pairing_token:
         pairing_token = create_pairing_code()
 
+    target_node_id: NodeId | None = None
+    target_node_alias: NodeIdAlias | None = None
+    if pairing_s2_node_id is not None:
+        try:
+            # UUID values should be sent as full nodeId, not nodeIdAlias.
+            target_node_id = NodeId(UUID(pairing_s2_node_id))
+        except ValueError:
+            if pairing_s2_node_id.isalnum():
+                target_node_alias = NodeIdAlias(pairing_s2_node_id)
+            else:
+                raise S2PairingError(
+                    "pairing_s2_node_id must be either a UUID (for nodeId) or an alphanumeric alias (for nodeIdAlias)."
+                )
+
     # id logic seperately in case we get something like "-pairing_token" (i.e. an empty id but still combined)
     s2_node_id: str = str(pairing_s2_node_id) if pairing_s2_node_id else str(s2_client_description.id.root)
-
-    # remove any previously stored connection details for this node id
-    storage.remove_connection_details(s2_node_id)
 
     # remove any previously stored connection details for this node id
     storage.remove_connection_details(s2_node_id)
@@ -163,7 +177,8 @@ async def pair(pairing_uri: str,
             logoUrl=s2_client_description.logoUrl,
             deployment=s2_deployment,
         ),
-        nodeIdAlias=NodeIdAlias(str(pairing_s2_node_id)) if pairing_s2_node_id is not None else None,
+        nodeId=target_node_id,
+        nodeIdAlias=target_node_alias,
         supportedCommunicationProtocols=communication_protocols,
         supportedS2MessageVersions=supported_s2_message_versions,
         supportedHmacHashingAlgorithms=supported_hmac_hashing_algorithms,
