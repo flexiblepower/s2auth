@@ -152,6 +152,9 @@ async def pair(pairing_uri: str,
     # remove any previously stored connection details for this node id
     storage.remove_connection_details(s2_node_id)
 
+    # remove any previously stored connection details for this node id
+    storage.remove_connection_details(s2_node_id)
+
     client_hmac_challenge = create_challenge()
     request_payload: RequestPairingPostRequest = RequestPairingPostRequest(
         clientNodeDescription=s2_client_description,
