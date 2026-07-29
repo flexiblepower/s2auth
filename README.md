@@ -19,6 +19,13 @@ From a development checkout, run it by:
 
 There is also a helper script in the repository:
 
+Client workflow:
+1. Run pairing first (`poetry run client ...`) to store connection details for a target `--pairing_s2_node_id`.
+2. After pairing is complete, run connect mode to initiate the S2 session and fetch communication details.
+3. If needed, run unpair mode to terminate the pairing.
+
+
+## 1. Run pairing
 Typical WAN example:
 
 ```bash
@@ -71,6 +78,28 @@ Auto-detection behavior:
 Test certificate:
 - For local testing, a test certificate bundle is available at `tests/localhost.chain.pem`.
 - This file is intended for development and test scenarios only.
+
+## 2. Connect after pairing:
+
+```bash
+poetry run client \
+  --connect \
+  --pairing_s2_node_id <pairing-node-id> \
+  --verbose
+```
+
+`--connect` uses the previously stored pairing data, calls `/initiateSession`, confirms the returned pending token, and stores/prints details such as selected protocol/version and server descriptions.
+
+## 3. Unpair after pairing:
+
+```bash
+poetry run client \
+  --unpair \
+  --pairing_s2_node_id <pairing-node-id> \
+  --verbose
+```
+
+**Please note:** `--connect` and `--unpair` are dedicated modes and only accept `--pairing_s2_node_id` (or `--pairing_S2_nodeId`) plus optional `--verbose`.
 
 # Run the FastAPI server
 ```bash
