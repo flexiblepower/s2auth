@@ -41,57 +41,6 @@ def build_httpx_verify(verify_tls: bool, ca_cert_file: str | None) -> str | bool
         raise S2PairingError(f"Certificate file '{ca_cert_file}' not found")
     return ca_cert_file
 
-#def detect_deployment(domain_name: str | None, certificate_file: str | None) -> str:
-#    """
-#    Detects the deployment type based on the provided domain name and certificate file.
-#    Args:
-#        domain_name: The domain name to check for WAN deployment.
-#        certificate_file: The path to the certificate file to check for LAN deployment.
-#    Returns:
-#        A string indicating the deployment type: "WAN" or "LAN".
-#    Raises:
-#        S2PairingError: If both domain_name and certificate_file are provided, or if neither is provided.
-#    """
-#    if domain_name and certificate_file:
-#        raise S2PairingError("Both --domain and --certificate_file are set; please specify only one.")
-#    elif domain_name:
-#        return "WAN"
-#    elif certificate_file:
-#        return "LAN"
-#    else:
-#        raise S2PairingError("Neither --domain nor --certificate_file is set; please specify one.")
-
-
-#def detect_certificate_file_validation(certificate_validation: str | bool) -> str | bool:
-#    """
-#    Detects the certificate file to use for LAN deployment.
-#    Args:
-#        certificate_validation: The path to the certificate file to check for LAN deployment.
-#    Returns:
-#        The path to the certificate file if it exists, or None if not provided.
-#    Raises:
-#        S2PairingError: If the certificate file does not exist.
-#    """
-#    if isinstance(certificate_validation, str):
-#        if certificate_validation == "":
-#            return True
-#        if not Path(certificate_validation).is_file():
-#            raise S2PairingError(f"Certificate file '{certificate_validation}' not found")
-#    return certificate_validation
-
-
-#def calculate_fingerprint(certificate_file: str | None) -> bytes | None:
-#    if not certificate_file:
-#        return None
-#
-#    pem_data = Path(certificate_file).read_text()
-#    blocks = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", pem_data, flags=re.S)
-#    cert_pem = blocks[0]
-#    der = ssl.PEM_cert_to_DER_cert(cert_pem)
-#    digest = hashlib.sha256(der).digest()
-#    return digest
-
-
 def calculate_fingerprint_from_response_certificate(response: httpx.Response) -> bytes | None:
     network_stream = response.extensions.get("network_stream")
     if network_stream is None:
@@ -117,17 +66,18 @@ def calculate_fingerprint_from_response_certificate(response: httpx.Response) ->
 
 
 async def _log_request(request: httpx.Request):
-    LOGGER.info(f"Call to {request.url}")
+    LOGGER.debug("--- HTTP REQUEST ---")
+    LOGGER.debug(f"Call to {request.url}")
     LOGGER.debug(f"Method: {request.method}")
     LOGGER.debug(f"Headers: {request.headers}")
     LOGGER.debug(f"Content: {request.content}")
 
-
 async def _log_response(response: httpx.Response):
     await response.aread()
-    LOGGER.info(f"Rsponse: {response.status_code}")
-    LOGGER.info(f"Headers: {response.headers}")
-    LOGGER.info(f"Content: {response.text}")
+    LOGGER.debug("--- HTTP RESPONSE ---")
+    LOGGER.debug(f"Headers: {response.headers}")
+    LOGGER.debug(f"Content: {response.text}")
+    LOGGER.debug("--------------------\n")
 
 
 HTTPX_HOOKS = {"request": [_log_request], "response": [_log_response]}
@@ -182,6 +132,9 @@ async def pair(pairing_uri: str,
     supported_hmac_hashing_algorithms: List[HmacHashingAlgorithm] = list(map(HmacHashingAlgorithm, supportedHmacHashingAlgorithms))
     fingerprint: bytes | None = None
 
+    if s2_deployment == Deployment.WAN and (domain_name is None or domain_name.strip() == ""):
+        raise S2PairingError("WAN deployment requires domain_name.")
+
     if pairing_code is not None and '-' in pairing_code:
         split_code = pairing_code.split('-')
         pairing_s2_node_id, pairing_token = "".join(split_code[:-1]), split_code[-1]
@@ -196,7 +149,7 @@ async def pair(pairing_uri: str,
     # id logic seperately in case we get something like "-pairing_token" (i.e. an empty id but still combined)
     s2_node_id: str = str(pairing_s2_node_id) if pairing_s2_node_id else str(s2_client_description.id.root)
 
-    LOGGER.warning(f"Using access token: {pairing_token} and s2_node_id {s2_node_id}")
+    LOGGER.debug(f"Using access token: {pairing_token} and s2_node_id {s2_node_id}\n")
 
     # remove any previously stored connection details for this node id
     storage.remove_connection_details(s2_node_id)
@@ -226,10 +179,12 @@ async def pair(pairing_uri: str,
                 if fingerprint is None:
                     raise S2PairingError(
                         "Could not determine LAN certificate fingerprint from /requestPairing TLS connection. "
-                        "Provide --certificate_file or enable TLS cert access in the HTTP transport."
+                        "Provide certificate_file or enable TLS cert access in the HTTP transport."
                     )
 
             pairing_response: RequestPairingPostResponse = RequestPairingPostResponse.model_validate(response.json())
+
+            LOGGER.debug("--- HMAC: verifying server's response to client challenge ---")
             if not verify_response(pairing_token=pairing_token,
                                    challenge=client_hmac_challenge,
                                    response=pairing_response.clientHmacChallengeResponse.root,
@@ -238,9 +193,10 @@ async def pair(pairing_uri: str,
                                    fingerprint = fingerprint,
                                    algorithm=pairing_response.selectedHmacHashingAlgorithm):
                 raise VerificationError("HMAC chellange does not match")
+            LOGGER.debug("--- HMAC: client challenge verified OK ---\n")
             assert s2_role in (Role.RM, Role.CEM)
 
-
+            LOGGER.debug("--- HMAC: creating response to server challenge ---")
             resp: HmacChallengeResponse = HmacChallengeResponse(b64encode(
                 create_response(pairing_token=pairing_token,
                                 challenge=pairing_response.serverHmacChallenge,
@@ -248,6 +204,7 @@ async def pair(pairing_uri: str,
                                 domain_name=domain_name,
                                 fingerprint=fingerprint,
                                 algorithm=pairing_response.selectedHmacHashingAlgorithm)))
+            LOGGER.debug("--- HMAC: server challenge response created ---\n")
 
             connection_details_dict:dict[str, Any] = {}
             if s2_role == Role.RM:

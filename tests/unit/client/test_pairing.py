@@ -249,7 +249,7 @@ async def test_request_connection_details(dao: Dao, mock_AsyncClient: tuple[Magi
     resp: dict[str, Any] = await request_connection_details(pairing_uri='http://s2server.example.com/v1',
                                                            attempt_id="550e8400-e29b-41d4-a716-446655440000",
                                                            hmacChallangeResponse=HmacChallengeResponse(b64encode(b"server-hmac-response")),
-                                                           verify_tls=True)
+                                                           httpx_verify=True)
     assert 'accessToken' in resp
     assert resp['initiateSessionUrl'] == 'http://s2server.example.com/v1'
 
@@ -268,10 +268,10 @@ def test_strip_pairing_url():
 
 
 async def test_finalize_pairing(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock]) -> None:
-    response = await finalize_pairing("http://localhost", "550e8400-e29b-41d4-a716-446655440000", True, True)
+    response = await finalize_pairing("http://localhost", "550e8400-e29b-41d4-a716-446655440000", httpx_verify=True, success=True)
     assert response.status_code == 204
 
-    response = await finalize_pairing("http://localhost", "550e8400-e29b-41d4-a716-446655440000", False, True)
+    response = await finalize_pairing("http://localhost", "550e8400-e29b-41d4-a716-446655440000", httpx_verify=True, success=False)
     assert response.status_code == 401
 
 
@@ -365,12 +365,12 @@ async def test_post_connection_details(dao: Dao, mock_AsyncClient: tuple[MagicMo
     await post_connection_details('http://s2server.example.com/v1',
                                   "550e8400-e29b-41d4-a716-446655440000", connection_details,
                                   HmacChallengeResponse(b64encode(b"server-hmac-response")),
-                                  verify_tls=True)
+                                  httpx_verify=True)
 
 
 async def test_confirmToken(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
                             s2_client_description: NodeDescription) -> None:
-    await confirmToken('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "550e8400-e29b-41d4-a716-446655440000", False)
+    await confirmToken('http://s2server.example.com/v1', dao, s2_client_description.id.model_dump(), "550e8400-e29b-41d4-a716-446655440000", httpx_verify=False)
 
 
 async def test_unpair(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
