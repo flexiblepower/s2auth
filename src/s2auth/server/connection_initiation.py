@@ -1,7 +1,7 @@
 """Server-side helpers for the S2 Connect connection initiation flow.
 
 The communication client starts a new S2 session by calling
-``/initiateConnection`` with its current access token. The communication server
+``/initiateSession`` with its current access token. The communication server
 validates the existing pairing, negotiates the communication protocol and S2
 message version, and returns a newly generated pending access token. The client
 must persist that pending token and then confirm it with ``/confirmAccessToken``
@@ -27,8 +27,8 @@ from s2auth.common.model.s2_connect_common import (
     CommunicationProtocol,
     NodeId,
 )
-from s2auth.common.model.s2_connect_connection_init import (
-    InitiateConnectionPostResponse,
+from s2auth.common.model.s2_connect_session_init import (
+    InitiateSessionPostResponse,
 )
 from s2auth.server.context import (
     AuthenticationContext,
@@ -56,8 +56,8 @@ async def initiateConnection(
     authentication_ctx: AuthenticationContext = Depends[authentication_context],
     new_access_token: AccessToken = Depends[generate_access_token],
     hooks: HookRegistry = Depends[hook_registry],
-) -> InitiateConnectionPostResponse:
-    """Handle ``POST /initiateConnection`` for a paired communication client.
+) -> InitiateSessionPostResponse:
+    """Handle ``POST /initiateSession`` for a paired communication client.
 
     This implements the server side of the specification's connection
     initiation steps 4 through 6:
@@ -156,7 +156,7 @@ async def initiateConnection(
     server_endpoint_description = await endpoint_hook(authentication_ctx.client_node_id)
     server_node_description = await node_hook(authentication_ctx.client_node_id)
 
-    return InitiateConnectionPostResponse(
+    return InitiateSessionPostResponse(
         selectedCommunicationProtocol=selected_protocol,
         selectedS2MessageVersion=selected_version,
         accessToken=next_access_token,
@@ -172,7 +172,7 @@ async def validate_access_token(
     """Handle ``POST /confirmAccessToken`` for a pending access token.
 
     The client calls this after successfully persisting the pending access token
-    returned by ``initiateConnection``. When the token matches the pending token
+    returned by ``initiateSession``. When the token matches the pending token
     for the pairing, it becomes the new active access token. The previous active
     access token is moved to ``current_connection_token`` so it can be used once
     to authenticate the S2 communication channel.

@@ -77,8 +77,8 @@ async def initiate_pairing(
     """
     log.info("Initiating pairing for client %s", client_node_id)
     pairing_attempt_id: PairingAttemptId = uuid4()
-    # Encode UUID string as base64 bytes for S2PairingAttemptId (Base64Bytes)
-    pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode("utf-8"))
+    # Encode UUID string as base64 bytes for S2PairingAttemptId (str)
+    pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode("utf-8")).decode("utf-8")
     pairing_attempt_id_var.set(S2PairingAttemptId(root=pairing_attempt_id_b64))
     pairing_node_id = server_settings.pairing_node_id
     ctx = PairingAttemptContext(
@@ -120,6 +120,7 @@ async def request_pairing(
     storage: ContextStorage = Depends[context_storage_singleton],
     hooks: HookRegistry = Depends[hook_registry],
     cfg: Config = Depends[config],
+    server_settings: Settings = Depends[settings],
 ) -> RequestPairingPostResponse:
     """Initiate a new pairing attempt.
 
@@ -177,8 +178,10 @@ async def request_pairing(
         client_response = create_response(
             pairing_token=pairing_context.pairing_token,
             challenge=request.clientHmacChallenge,
+            deployment=server_settings.cem_deployment_type,
+            domain_name=cfg.hmac_salt,
+            fingerprint=None,
             algorithm=algorithm,
-            hmac_salt=cfg.hmac_salt,
         )
         pairing_context.state = PairingState.INITIATED
         server_challenge = create_challenge()
@@ -208,7 +211,7 @@ async def request_pairing(
             ),
             serverHmacChallenge=server_challenge,
             pairingAttemptId=S2PairingAttemptId(
-                root=b64encode(str(pairing_context.pairing_attempt_id).encode("utf-8"))
+                root=b64encode(str(pairing_context.pairing_attempt_id).encode("utf-8")).decode("utf-8")
             ),
         )
 
@@ -223,6 +226,7 @@ async def handle_client_response(
     hooks: HookRegistry = Depends[hook_registry],
     new_access_token: AccessToken = Depends[generate_access_token],
     cfg: Config = Depends[config],
+    server_settings: Settings = Depends[settings],
 ) -> ConnectionDetails:
     """Handle the client's response and return the server's connection details.
 
@@ -245,7 +249,9 @@ async def handle_client_response(
         algorithm=pairing_context.algorithm,
         challenge=pairing_context.server_hmac_challenge,
         response=challenge_response,
-        hmac_salt=cfg.hmac_salt,
+        deployment=server_settings.cem_deployment_type,
+        domain_name=cfg.hmac_salt,
+        fingerprint=None,
     )
 
     endpoint_hook = hooks.get(get_server_connection_initiation_endpoint)
@@ -257,7 +263,7 @@ async def handle_client_response(
     auth_ctx.next_access_token = None
     pairing_context.state = PairingState.COMPLETED
     return ConnectionDetails(
-        initiateConnectionUrl=server_endpoint, accessToken=access_token
+        initiateSessionUrl=server_endpoint, accessToken=access_token
     )
 
 

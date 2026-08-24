@@ -95,7 +95,7 @@ async def test_store_object(test_storage_db: StorageDbFixture) -> None:
         # Create a test object
         token = "sometoken"
         test_connection_details = ConnectionDetails(
-            initiateConnectionUrl=AnyUrl("http://test.com/1234"),
+            initiateSessionUrl=AnyUrl("http://test.com/1234"),
             accessToken=AccessToken(
                 root=b64encode(token.encode("utf-8"))
             ),
@@ -128,14 +128,14 @@ async def test_store_object(test_storage_db: StorageDbFixture) -> None:
             assert stored_obj.data is not None
             assert isinstance(stored_obj.data, str), "Data should be stored as text"
             data_dict = json.loads(stored_obj.data)
-            assert data_dict["initiateConnectionUrl"] == "http://test.com/1234"
+            assert data_dict["initiateSessionUrl"] == "http://test.com/1234"
             assert b64decode(data_dict["accessToken"]).decode("utf-8") == token
 
             # Verify we can reconstruct the object from stored JSON
             reconstructed = ConnectionDetails.model_validate(data_dict)
             assert (
-                reconstructed.initiateConnectionUrl
-                == test_connection_details.initiateConnectionUrl
+                reconstructed.initiateSessionUrl
+                == test_connection_details.initiateSessionUrl
             )
             assert reconstructed.accessToken is not None
             assert test_connection_details.accessToken is not None

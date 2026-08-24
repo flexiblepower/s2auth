@@ -1,7 +1,7 @@
 from abc import ABC
 from typing import ClassVar, TypeAlias, Union
 from s2auth.common.model.s2_connect_pairing import ErrorMessage as PairingErrorType
-from s2auth.common.model.s2_connect_connection_init import (
+from s2auth.common.model.s2_connect_session_init import (
     ErrorMessage as ConnectionErrorType,
 )
 

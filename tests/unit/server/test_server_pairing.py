@@ -1,6 +1,6 @@
 """Tests for server-side pairing helpers."""
 
-from base64 import b64encode
+from base64 import b64decode, b64encode
 from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 
@@ -10,12 +10,7 @@ from wepositive_di import provider_overrides
 from wepositive_di.context import ContextStorage, context_storage_singleton
 
 from s2auth.common.exceptions import AccessError, PairingNotCompleteError, VerificationError
-from s2auth.common.hmac import (
-    AccessTokenGenerator,
-    create_challenge,
-    create_response,
-    generate_access_token,
-)
+from s2auth.common.hmac import create_challenge, create_response, generate_access_token
 from s2auth.common.model.s2_connect_common import (
     AccessToken,
     CommunicationProtocol,
@@ -66,13 +61,6 @@ HMAC_SALT = "s2.example.com"
 
 def access_token(value: bytes) -> AccessToken:
     return AccessToken(root=b64encode(value))
-
-
-def token_generator(token: AccessToken) -> AccessTokenGenerator:
-    def generate(length: int = 32) -> AccessToken:
-        return token
-
-    return generate
 
 
 def server_settings() -> Settings:
@@ -233,7 +221,9 @@ async def test_request_pairing_stores_authentication_context_and_returns_challen
     expected_response = create_response(
         pairing_token=PAIRING_TOKEN,
         challenge=request.clientHmacChallenge,
-        hmac_salt=HMAC_SALT,
+        deployment=Deployment.WAN,
+        domain_name=HMAC_SALT,
+        fingerprint=None,
     )
     assert response.clientHmacChallengeResponse.root == expected_response
 
@@ -311,7 +301,7 @@ async def test_request_pairing_initializes_context_when_missing() -> None:
     assert pairing_ctx.state == PairingState.INITIATED
     assert pairing_ctx.algorithm == HmacHashingAlgorithm.SHA256
     assert pairing_ctx.server_hmac_challenge == response.serverHmacChallenge
-    assert UUID(response.pairingAttemptId.root.decode("utf-8")) == pairing_ctx.pairing_attempt_id
+    assert UUID(b64decode(response.pairingAttemptId.root).decode("utf-8")) == pairing_ctx.pairing_attempt_id
 
     assert len(stored_auth_contexts) == 1
     assert stored_auth_contexts[0].client_node_id == test_client_node_id
@@ -377,7 +367,9 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
     response = create_response(
         pairing_token=PAIRING_TOKEN,
         challenge=pairing_ctx.server_hmac_challenge,
-        hmac_salt=HMAC_SALT,
+        deployment=Deployment.WAN,
+        domain_name=HMAC_SALT,
+        fingerprint=None,
     )
 
     def new_access_token() -> AccessToken:
@@ -395,7 +387,7 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
         )
 
     assert connection_details.accessToken == access_token_value
-    assert str(connection_details.initiateConnectionUrl) == "https://cem.example.com/connection/"
+    assert str(connection_details.initiateSessionUrl) == "https://cem.example.com/connection/"
     assert auth_ctx.current_access_token == access_token_value
     assert auth_ctx.next_access_token is None
     assert auth_ctx.state == ClientState.PAIRING
