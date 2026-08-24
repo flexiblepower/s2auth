@@ -21,8 +21,8 @@ dependencies = [
     "click",
     "typing-extensions",
     "fastapi",
-    "dependency-injector (>=4.48.3,<5.0.0)",
     "pydantic-settings (>=2.5,<3.0)",
+    "wepositive-di (>=0.1.6,<1.0.0)",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -36,9 +36,8 @@ classifiers = [
     "Source code" = "https://github.com/flexiblepower/s2-ws-json-python"
 
 [project.scripts]
-server = "s2auth.server.run:main"
+server = "s2auth.reference.server.run:main"
 client = "s2auth.client.main:main"
-
 
 [project.optional-dependencies]
 db = ["asyncpg (>=0.31.0,<0.32.0)", "sqlalchemy[asyncio] (>=2.0.46,<3.0.0)"]
@@ -47,12 +46,10 @@ client = ["sqlalchemy[asyncio] (>=2.0.46,<3.0.0)", "sqlalchemy-utils (>=0.42.1,<
 
 [dependency-groups]
 docs = [
-    "sphinx",
-    "sphinx-rtd-theme >= 1.2",
-    "sphinx-tabs",
-    "sphinx_copybutton",
-    "sphinx_fontawesome",
-    "sphinxcontrib.httpdomain",
+    "mkdocs-material (>=9.7.6,<10.0.0)",
+    "mkdocstrings (>=1.0.4,<2.0.0)",
+    "mkdocs-autorefs (>=1.4.4,<2.0.0)",
+    "mkdocstrings-python (>=2.0.3,<3.0.0)"
 ]
 dev = [
     "pytest (<9)", # because we want to support python 3.9
@@ -66,6 +63,8 @@ dev = [
     "aiosqlite (>=0.22.1,<0.23.0)",
     "pytest-mock (>=3.15.1,<4.0.0)",
     "datamodel-code-generator (>=0.53.0,<0.54.0)",
+    "pytest-bdd (>=8.1.0,<9.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
 ]
 
 [tool.poetry.requires-plugins]
@@ -74,12 +73,12 @@ poetry-plugin-shell = "*"
 
 [tool.pytest.ini_options]
 testpaths = "tests"
-markers = []
 addopts = [
 	"--cov=s2auth",
-	"--cov-report=html:./unit_test_coverage/",
-	"-v",
-	"tests/unit/",
+	"--cov-report=term-missing",
+	"--cov-report=html:./unit_test_coverage/html/",
+    	"--cov-report=xml:./unit_test_coverage/coverage.xml",
+    	"-v",
 ]
 asyncio_mode = "auto"
 asyncio_default_test_loop_scope = "session"

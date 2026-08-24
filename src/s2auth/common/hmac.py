@@ -10,12 +10,12 @@ from typing import Annotated, Any, OrderedDict
 
 from pydantic import StringConstraints
 
-from s2auth.common.dependencies import register_provider
+from wepositive_di import register_provider
 from s2auth.common.exceptions import (IncompatibleHmacHashingAlgorithms,
                                       VerificationError)
 from s2auth.common.model.s2_connect_pairing import (HmacChallenge,
                                                     HmacHashingAlgorithm)
-from s2auth.common.model.s2_connect_common import Deployment
+from s2auth.common.model.s2_connect_common import AccessToken, Deployment
 
 
 CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
@@ -67,6 +67,12 @@ def create_challenge(length: int = 128) -> HmacChallenge:
     """
     challenge_value: bytes = secrets.token_bytes(length)
     return HmacChallenge(root=b64encode(challenge_value))
+
+
+@register_provider()
+def generate_access_token() -> AccessToken:
+    """Generate a cryptographically secure random access token."""
+    return AccessToken(root=b64encode(secrets.token_bytes(32)))
 
 
 def get_supported_algorithms() -> list[HmacHashingAlgorithm]:

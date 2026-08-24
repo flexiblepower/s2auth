@@ -1,3 +1,9 @@
+# s2-python-auth
+
+Python helpers for S2 Connect pairing, authentication, and connection initiation.
+
+This package implements client and server building blocks for the S2 communication-layer flows described in the official S2 specification: <https://docs.s2standard.org/docs/communication-layer/discovery-pairing-authentication/>.
+
 # Setup dev environment
 Requires: pyenv with python 3.10 installed on the system.
 Shell scripts are linux compatible.
@@ -18,6 +24,10 @@ From a development checkout, run it by:
 - then calling `poetry run python -client --help`
 
 There is also a helper script in the repository:
+
+```bash
+./run_client.sh
+```
 
 Client workflow:
 1. Run pairing first (`poetry run client ...`) to store connection details for a target `--pairing_s2_node_id`.
@@ -102,6 +112,41 @@ poetry run client \
 **Please note:** `--connect` and `--unpair` are dedicated modes and only accept `--pairing_s2_node_id` (or `--pairing_S2_nodeId`) plus optional `--verbose`.
 
 # Run the FastAPI server
+
+### 1. Install dependencies
+
+```bash
+poetry install --all-extras
+```
+
+### 2. Create a `.env` file
+
+An example file is provided at `.env.example` — copy it and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+The server reads its configuration from a `.env` file in the project root. All fields below are required:
+
+```dotenv
+PAIRING_NODE_ID=PAIR1234          # 8–12 character pairing node identifier
+SERVER_S2_NODE_ID=<uuid>          # UUID for the server-side S2 node
+CEM_S2_NODE_ID=<uuid>             # UUID for the CEM S2 node
+CEM_TYPE=CEM
+CEM_MODEL_NAME=My CEM
+CEM_BRAND=MyBrand
+HMAC_SALT=<your-domain-or-secret> # Salt used for HMAC verification
+```
+
+Optional fields:
+
+```dotenv
+CEM_URL=https://your-cem-host/connection/   # Exposed connection endpoint URL
+```
+
+### 3. Start the server
+
 ```bash
 poetry run server
 ```
@@ -182,3 +227,24 @@ ci/generate_s2_auth.sh
 ```
 Relevant code is under `src/s2auth/gen_protocol/{client,server}/{connection_init,pairing}`
 Code here is not moved automatically so moving the generated code to a usable location is manual for now.
+
+# Documentation
+
+Comprehensive documentation is available in the `docs/` directory. To browse it locally:
+
+```bash
+poetry run mkdocs serve
+```
+
+Start with:
+- `docs/index.md` for the project overview
+- `docs/server/index.md` for server integration
+- `docs/client/index.md` for client usage
+- `docs/api/` for API reference pages
+- `docs/Development.md` for development setup and maintenance notes
+
+Key reference docs:
+- **[Dependency Override Guide](docs/dependency_overrides.md)** - How to override dependencies in the DI system (4 methods: decorator, setup(), function call, context manager)
+- **[Context Storage Override](docs/context_storage_override.md)** - Specific guide for overriding context storage with Redis or other backends
+- **[Pairing Token Override](docs/pairing_token_override.md)** - How to customize pairing token generation (static tokens for testing, custom lengths, external sources)
+- **[Dependency Injection Deployment Models](docs/dependency_injection_deployment_models.md)** - How the DI system works in different deployment scenarios (async, threaded, hybrid)

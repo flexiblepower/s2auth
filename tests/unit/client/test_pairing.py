@@ -16,7 +16,7 @@ from s2auth.client.pairing import (add_header, confirmToken, finalize_pairing, p
                                    post_connection_details,
                                    request_connection_details,
                                    strip_pairing_url, unpair)
-from s2auth.common.exceptions import S2PairingError
+from s2auth.common.exceptions import S2ConnectError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 create_response)
 from s2auth.common.model.s2_connect_common import (AccessToken, Deployment,
@@ -85,7 +85,7 @@ def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> Reque
 
 async def test_paiting_wrong_url(dao: Dao, s2_client_description: NodeDescription) -> None:
     # testing calling url that does not exist
-    with pytest.raises(S2PairingError) as excinfo:
+    with pytest.raises(S2ConnectError) as excinfo:
         assert await pair(pairing_uri='http://s2server.example.com/v1',
                           pairing_code=PAIRING_CODE,
                           storage=dao,
@@ -136,7 +136,7 @@ def mock_AsyncClient_404(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
 
 
 async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, MagicMock], s2_client_description: NodeDescription) -> None:
-    with pytest.raises(S2PairingError) as excinfo:
+    with pytest.raises(S2ConnectError) as excinfo:
         assert await pair(pairing_uri='http://s2server.example.com/v1',
                           pairing_code=PAIRING_TOKEN,
                           storage=dao,
