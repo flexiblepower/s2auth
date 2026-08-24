@@ -78,7 +78,7 @@ def server_settings() -> Settings:
 def config() -> Config:
     return Config(
         sqlalchemy_db_uri=SecretStr("sqlite+aiosqlite:///:memory:"),
-        hmac_salt=HMAC_SALT,
+        domain_name=HMAC_SALT,
     )
 
 
@@ -193,6 +193,7 @@ async def test_request_pairing_stores_authentication_context_and_returns_challen
         {
             context_storage_singleton: test_context_storage,
             client_node_id_provider: override_client_node_id,
+            settings: server_settings,
         }
     ):
         response = await request_pairing(
@@ -258,6 +259,7 @@ async def test_request_pairing_refuses_when_pairing_hook_returns_false() -> None
         {
             context_storage_singleton: test_context_storage,
             client_node_id_provider: override_client_node_id,
+            settings: server_settings,
         }
     ):
         with pytest.raises(AccessError):
@@ -375,7 +377,7 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
     def new_access_token() -> AccessToken:
         return access_token_value
 
-    with provider_overrides({generate_access_token: new_access_token}):
+    with provider_overrides({generate_access_token: new_access_token, settings: server_settings}):
         connection_details = await handle_client_response(
             request=RequestConnectionDetailsPostRequest(
                 serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(response))
@@ -458,14 +460,15 @@ async def test_handle_client_response_rejects_invalid_hmac_response() -> None:
         server_hmac_challenge=create_challenge(),
     )
 
-    with pytest.raises(VerificationError):
-        await handle_client_response(
-            request=RequestConnectionDetailsPostRequest(
-                serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(b"wrong"))
-            ),
-            pairing_context=pairing_ctx,
-            auth_ctx=AuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING),
-            hooks=HookRegistry(),
-            new_access_token=access_token(b"unused-token-unused-token-1234"),
-            cfg=config(),
-        )
+    with provider_overrides({settings: server_settings}):
+        with pytest.raises(VerificationError):
+            await handle_client_response(
+                request=RequestConnectionDetailsPostRequest(
+                    serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(b"wrong"))
+                ),
+                pairing_context=pairing_ctx,
+                auth_ctx=AuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING),
+                hooks=HookRegistry(),
+                new_access_token=access_token(b"unused-token-unused-token-1234"),
+                cfg=config(),
+            )

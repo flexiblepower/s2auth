@@ -102,7 +102,10 @@ def create_response(pairing_token: str,
                     domain_name: str | None,
                     fingerprint: bytes | None,
                     algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256) -> bytes:
-    digestmod = _get_hashing_algorithm(algorithm)
+    try:
+        digestmod = _get_hashing_algorithm(algorithm)
+    except ValueError as e:
+        raise VerificationError(str(e)) from e
     if deployment == Deployment.LAN:
         assert fingerprint is not None
         LOGGER.debug(f"Creating LAN HMAC response with fingerprint: fingerprint=CertificateHash(Sha256({list(fingerprint)}))")

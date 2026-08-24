@@ -53,7 +53,7 @@ def pairing_token() -> str:
 
 
 @pytest.fixture
-def hmac_salt() -> str:
+def domain_name() -> str:
     return "s2.example.com"
 
 
@@ -77,7 +77,7 @@ def _free_port() -> int:
 def reference_server(
     monkeypatch: pytest.MonkeyPatch,
     reference_settings: Settings,
-    hmac_salt: str,
+    domain_name: str,
 ) -> Iterator[str]:
     monkeypatch.setenv("PAIRING_NODE_ID", reference_settings.pairing_node_id)
     monkeypatch.setenv("SERVER_S2_NODE_ID", str(reference_settings.server_s2_node_id))
@@ -85,7 +85,7 @@ def reference_server(
     monkeypatch.setenv("CEM_TYPE", reference_settings.cem_type)
     monkeypatch.setenv("CEM_MODEL_NAME", reference_settings.cem_model_name)
     monkeypatch.setenv("CEM_BRAND", reference_settings.cem_brand)
-    monkeypatch.setenv("HMAC_SALT", hmac_salt)
+    monkeypatch.setenv("DOMAIN_NAME", domain_name)
 
     port = _free_port()
     config = uvicorn.Config(
@@ -172,7 +172,7 @@ def client_requests_connection_details(
     world: PairingWorld,
     reference_settings: Settings,
     pairing_token: str,
-    hmac_salt: str,
+    domain_name: str,
 ) -> None:
     assert world.request_pairing_response is not None
     server_challenge = HmacChallenge(
@@ -183,7 +183,9 @@ def client_requests_connection_details(
     hmac_response = create_response(
         pairing_token=pairing_token,
         challenge=server_challenge,
-        hmac_salt=hmac_salt,
+        deployment="WAN",
+        domain_name=domain_name,
+        fingerprint=None,
     )
     response = httpx.post(
         f"{world.base_url}/pairing/{reference_settings.supported_s2_connect_versions[0]}/requestConnectionDetails",
@@ -207,7 +209,7 @@ def client_requests_connection_details(
 def connection_initiation_endpoint_is_reference_router(world: PairingWorld) -> None:
     assert world.connection_details_response is not None
     assert (
-        world.connection_details_response["initiateConnectionUrl"]
+        world.connection_details_response["initiateSessionUrl"]
         == f"{world.base_url}/connection/"
     )
 

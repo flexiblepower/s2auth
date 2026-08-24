@@ -15,7 +15,7 @@ from s2auth.server.settings import settings
 async def test_config_provider_returns_default_config() -> None:
     cfg = await config()
 
-    assert cfg.hmac_salt == "s2.example.com"
+    assert cfg.domain_name == "s2.example.com"
 
 
 def test_settings_provider_reads_environment(monkeypatch: pytest.MonkeyPatch) -> None:

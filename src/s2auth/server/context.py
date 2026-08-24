@@ -1,3 +1,4 @@
+from base64 import b64decode
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -166,7 +167,7 @@ def pairing_attempt_id() -> PairingAttemptId:
     p_id = pairing_attempt_id_var.get()
     if p_id is None:
         raise ValueError("pairing_attempt_id not set in context")
-    return UUID(p_id.root.decode("utf-8"))
+    return UUID(b64decode(p_id.root).decode("utf-8"))
 
 
 @register_provider()

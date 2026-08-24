@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from s2auth.common.exceptions import PairingNotCompleteError
 from s2auth.common.model.s2_connect_common import NodeId
-from s2auth.common.model.s2_connect_connection_init import UnpairPostRequest
+from s2auth.common.model.s2_connect_session_init import UnpairPostRequest
 from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails,
     FinalizePairingPostRequest,

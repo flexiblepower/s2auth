@@ -40,7 +40,7 @@ def test_invalid_algorithm():
     invalid_algorithm = UnsupportedAlgorithm("invalid algorithm")
 
     with pytest.raises(
-        ValueError,
+        VerificationError,
         match="Hashing algorithm 'invalid algorithm' is not supported",
     ):
         verify_response(
@@ -162,7 +162,7 @@ def test_create_response_default_algorithm():
 
 
 def test_create_response_invalid_algorithm():
-    """Test that create_response raises ValueError for unsupported algorithm."""
+    """Test that create_response raises VerificationError for unsupported algorithm."""
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
 
@@ -170,7 +170,7 @@ def test_create_response_invalid_algorithm():
     invalid_algorithm = UnsupportedAlgorithm("MD5")
 
     with pytest.raises(
-        ValueError, match="Hashing algorithm .* is not supported"
+        VerificationError, match="Hashing algorithm .* is not supported"
     ):
         create_response(
             pairing_token,

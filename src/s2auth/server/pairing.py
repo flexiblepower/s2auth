@@ -179,7 +179,7 @@ async def request_pairing(
             pairing_token=pairing_context.pairing_token,
             challenge=request.clientHmacChallenge,
             deployment=server_settings.cem_deployment_type,
-            domain_name=cfg.hmac_salt,
+            domain_name=cfg.domain_name,
             fingerprint=None,
             algorithm=algorithm,
         )
@@ -250,7 +250,7 @@ async def handle_client_response(
         challenge=pairing_context.server_hmac_challenge,
         response=challenge_response,
         deployment=server_settings.cem_deployment_type,
-        domain_name=cfg.hmac_salt,
+        domain_name=cfg.domain_name,
         fingerprint=None,
     )
 

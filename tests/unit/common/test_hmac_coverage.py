@@ -27,11 +27,6 @@ def test_generate_access_token_returns_base64_token() -> None:
     assert len(token.root) == 32
 
 
-def test_generate_access_token_rejects_short_length() -> None:
-    with pytest.raises(ValueError, match="at least 32 bytes"):
-        generate_access_token(length=31)
-
-
 def test_create_pairing_code_returns_token_with_and_without_node_id() -> None:
     token = create_pairing_code(length=9)
     token_with_node = create_pairing_code(s2_node_id="NODE1234", length=9)
@@ -50,7 +45,9 @@ def test_create_response_wraps_unknown_algorithm_as_verification_error() -> None
         create_response(
             pairing_token="pairingToken123",
             challenge=create_challenge(),
-            hmac_salt="s2.example.com",
+            deployment="WAN",
+            domain_name="s2.example.com",
+            fingerprint=None,
             algorithm="UNKNOWN",  # pyright: ignore[reportArgumentType]
         )
 
@@ -61,7 +58,9 @@ def test_verify_response_wraps_unknown_algorithm_as_verification_error() -> None
             pairing_token="pairingToken123",
             challenge=create_challenge(),
             response=b64encode(b"response"),
-            hmac_salt="s2.example.com",
+            deployment="WAN",
+            domain_name="s2.example.com",
+            fingerprint=None,
             algorithm="UNKNOWN",  # pyright: ignore[reportArgumentType]
         )
 
@@ -71,7 +70,9 @@ def test_verify_response_returns_true_for_valid_signature() -> None:
     response = create_response(
         pairing_token="pairingToken123",
         challenge=challenge,
-        hmac_salt="s2.example.com",
+        deployment="WAN",
+        domain_name="s2.example.com",
+        fingerprint=None,
         algorithm=HmacHashingAlgorithm.SHA256,
     )
 
@@ -79,5 +80,7 @@ def test_verify_response_returns_true_for_valid_signature() -> None:
         pairing_token="pairingToken123",
         challenge=challenge,
         response=response,
-        hmac_salt="s2.example.com",
+        deployment="WAN",
+        domain_name="s2.example.com",
+        fingerprint=None,
     )

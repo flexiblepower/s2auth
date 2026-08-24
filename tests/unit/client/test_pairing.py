@@ -5,6 +5,7 @@ from pathlib import PosixPath
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
+from s2auth.common.exceptions import S2ConnectError
 
 import httpx
 import pytest
@@ -16,7 +17,6 @@ from s2auth.client.pairing import (add_header, confirmToken, finalize_pairing, p
                                    post_connection_details,
                                    request_connection_details,
                                    strip_pairing_url, unpair)
-from s2auth.common.exceptions import S2ConnectError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 create_response)
 from s2auth.common.model.s2_connect_common import (AccessToken, Deployment,
@@ -420,6 +420,6 @@ async def test_unpair(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
 
 
 async def test_unpair_missing_details_raises(dao: Dao) -> None:
-    with pytest.raises(S2PairingError) as excinfo:
+    with pytest.raises(S2ConnectError) as excinfo:
         await unpair(dao, "missing-node")
     assert "Connection details for pairing_s2_node_id 'missing-node' not found or incomplete." in str(excinfo.value)

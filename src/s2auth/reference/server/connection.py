@@ -3,10 +3,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header
 
 from s2auth.common.model.s2_connect_common import AccessToken
-from s2auth.common.model.s2_connect_connection_init import (
+from s2auth.common.model.s2_connect_session_init import (
     CommunicationDetailsErrorMessage,
-    InitiateConnectionPostRequest,
-    InitiateConnectionPostResponse,
+    InitiateSessionPostRequest,
+    InitiateSessionPostResponse,
 )
 from s2auth.reference.server.context import (
     set_client_node_id_from_body_variable,
@@ -53,7 +53,7 @@ async def post_confirm_access_token(
 
 @router.post(
     "/{s2_connect_version}/initiateConnection",
-    response_model=InitiateConnectionPostResponse,
+    response_model=InitiateSessionPostResponse,
     responses={"400": {"model": CommunicationDetailsErrorMessage}},
     tags=["Connection initiation"],
     dependencies=[Depends(set_client_node_id_from_body_variable)],
@@ -61,8 +61,8 @@ async def post_confirm_access_token(
 async def initiate_connection(
     s2_connect_version: str = Depends(check_s2_connect_version),
     access_token: Annotated[str, Header(alias="accessToken")] = "",
-    body: InitiateConnectionPostRequest = None,  # pyright: ignore[reportArgumentType]
-) -> InitiateConnectionPostResponse | CommunicationDetailsErrorMessage:
+    body: InitiateSessionPostRequest = None,  # pyright: ignore[reportArgumentType]
+) -> InitiateSessionPostResponse | CommunicationDetailsErrorMessage:
     """
     Initiate an S2 communication session
     """

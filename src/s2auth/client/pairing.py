@@ -39,7 +39,7 @@ def build_httpx_verify(verify_tls: bool, ca_cert_file: str | None) -> str | bool
     if ca_cert_file is None:
         return True
     if not Path(ca_cert_file).is_file():
-        raise S2PairingError(f"Certificate file '{ca_cert_file}' not found")
+        raise S2ConnectError(f"Certificate file '{ca_cert_file}' not found")
     return ca_cert_file
 
 def calculate_fingerprint_from_response_certificate(response: httpx.Response) -> bytes | None:
@@ -134,7 +134,7 @@ async def pair(pairing_uri: str,
     fingerprint: bytes | None = None
 
     if s2_deployment == Deployment.WAN and (domain_name is None or domain_name.strip() == ""):
-        raise S2PairingError("WAN deployment requires domain_name.")
+        raise S2ConnectError("WAN deployment requires domain_name.")
 
     if pairingS2NodeId is not None:
         pairing_s2_node_id, pairing_token = pairingS2NodeId, pairing_code
@@ -160,7 +160,7 @@ async def pair(pairing_uri: str,
             if pairing_s2_node_id.isalnum():
                 target_node_alias = NodeIdAlias(pairing_s2_node_id)
             else:
-                raise S2PairingError(
+                raise S2ConnectError(
                     "pairing_s2_node_id must be either a UUID (for nodeId) or an alphanumeric alias (for nodeIdAlias)."
                 )
 
@@ -194,7 +194,7 @@ async def pair(pairing_uri: str,
             if s2_deployment == Deployment.LAN and fingerprint is None:
                 fingerprint = calculate_fingerprint_from_response_certificate(response)
                 if fingerprint is None:
-                    raise S2PairingError(
+                    raise S2ConnectError(
                         "Could not determine LAN certificate fingerprint from /requestPairing TLS connection. "
                         "Provide certificate_file or enable TLS cert access in the HTTP transport."
                     )
@@ -303,7 +303,7 @@ async def request_connection_details(pairing_uri: str,
         )
         response_json = response.json()
         if not isinstance(response_json, dict):
-            raise S2PairingError("requestConnectionDetails returned invalid JSON payload")
+            raise S2ConnectError("requestConnectionDetails returned invalid JSON payload")
         return cast(dict[str, Any], response_json)
 
 
@@ -382,7 +382,7 @@ async def connect(storage: Dao,
 
     if not details or pairing_uri is None or access_token is None or verify_tls is None or ca_cert_file is None or client_s2_node_id is None \
         or supported_s2_message_versions is None or supported_communication_protocols is None or supported_hmac_hashing_algorithms is None:
-        raise S2PairingError(
+        raise S2ConnectError(
             f"Connection details for pairing_s2_node_id '{pairing_s2_node_id}' not found or incomplete."
         )
 
@@ -461,7 +461,7 @@ async def unpair(storage: Dao,
     ca_cert_file = details.get("ca_cert_file", None) if details else None
     client_s2_node_id = details.get("client_s2_node_id", None) if details else None
     if not details or pairing_uri is None or access_token is None or verify_tls is None or ca_cert_file is None and client_s2_node_id is not None:
-        raise S2PairingError(
+        raise S2ConnectError(
             f"Connection details for pairing_s2_node_id '{pairing_s2_node_id}' not found or incomplete."
         )
     unpair_request = {
