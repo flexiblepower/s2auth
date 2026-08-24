@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import socket
 import threading
 import time
@@ -17,6 +18,7 @@ from pytest_bdd import given, scenarios, then, when
 from s2auth.common.hmac import create_response
 from s2auth.common.model.s2_connect_common import CommunicationProtocol
 from s2auth.common.model.s2_connect_pairing import HmacChallenge
+from s2auth.server.pairing import initiate_pairing
 from s2auth.server.settings import Settings
 
 scenarios("features/reference_server_pairing_and_connection_initiation.feature")
@@ -127,14 +129,13 @@ def reference_server_is_running(
 
 
 @when("user alice begins pairing with a pairing token")
-def user_begins_pairing(world: PairingWorld, pairing_token: str) -> None:
-    response = httpx.post(
-        f"{world.base_url}/pairing/userBeginPairing",
-        auth=("alice", "alice"),
-        json=pairing_token,
-        timeout=5,
+def user_begins_pairing(client_node_id: UUID, pairing_token: str) -> None:
+    asyncio.run(
+        initiate_pairing(
+            client_node_id=client_node_id,
+            pairing_token=pairing_token,
+        )
     )
-    assert response.status_code == 200
 
 
 @when("the client requests pairing")

@@ -57,7 +57,7 @@ from s2auth.server.pairing import (
     request_pairing,
     unpair,
 )
-from s2auth.server.settings import Settings
+from s2auth.server.settings import Settings, settings
 
 
 PAIRING_TOKEN = "pairingToken123"
@@ -277,6 +277,45 @@ async def test_request_pairing_refuses_when_pairing_hook_returns_false() -> None
                 hooks=hooks,
                 cfg=config(),
             )
+
+
+async def test_request_pairing_initializes_context_when_missing() -> None:
+    test_client_node_id = uuid4()
+    request = pairing_request(test_client_node_id)
+    stored_auth_contexts: list[AuthenticationContext] = []
+    storage = S2InMemoryContextStorage()
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            settings: server_settings,
+        }
+    ):
+        response = await request_pairing(
+            request=request,
+            store_authentication_ctx=await store_authentication_context(
+                stored_auth_contexts
+            ),
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+
+    pairing_contexts = await storage.list_contexts(PairingAttemptContext)
+    assert len(pairing_contexts) == 1
+
+    pairing_ctx = pairing_contexts[0]
+    assert pairing_ctx.client_node_id == test_client_node_id
+    assert pairing_ctx.state == PairingState.INITIATED
+    assert pairing_ctx.algorithm == HmacHashingAlgorithm.SHA256
+    assert pairing_ctx.server_hmac_challenge == response.serverHmacChallenge
+    assert UUID(response.pairingAttemptId.root.decode("utf-8")) == pairing_ctx.pairing_attempt_id
+
+    assert len(stored_auth_contexts) == 1
+    assert stored_auth_contexts[0].client_node_id == test_client_node_id
+    assert stored_auth_contexts[0].state == ClientState.PAIRING
 
 
 async def test_unpair_removes_authentication_and_pairing_contexts() -> None:
