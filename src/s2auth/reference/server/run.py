@@ -1,5 +1,6 @@
 """Run the S2Auth FastAPI server with uvicorn."""
 
+from pathlib import Path
 import sys
 
 
@@ -17,6 +18,19 @@ def main() -> None:
     from s2auth.server.settings import settings as get_settings
 
     s = get_settings()
+    if not s.ssl_certfile or not s.ssl_keyfile:
+        raise RuntimeError(
+            "SSL is required: both SSL_CERTFILE and SSL_KEYFILE must be configured."
+        )
+
+    cert_path = Path(s.ssl_certfile)
+    key_path = Path(s.ssl_keyfile)
+    if not cert_path.exists() or not key_path.exists():
+        raise RuntimeError(
+            "SSL is required: certificate or key file does not exist "
+            f"(cert={cert_path}, key={key_path})."
+        )
+
     uvicorn.run(
         "s2auth.reference.server.main:app",
         host="0.0.0.0",

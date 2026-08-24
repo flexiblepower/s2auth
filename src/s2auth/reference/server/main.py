@@ -12,12 +12,12 @@ from s2auth.common.hmac import create_pairing_code
 from s2auth.reference.server.connection import router as connection_router
 from s2auth.reference.server.pairing import router as pairing_router
 from s2auth.reference.server.logging import setupLogging, LogLevel
+from s2auth.server.config import Config
 from s2auth.server import setup as setup_s2auth_server
 from s2auth.server.settings import settings as get_settings
 from s2auth.server.token_manager import set_pending_pairing_token
 
 log = logging.getLogger(__name__)
-
 
 def _keyboard_watcher(stop_event: threading.Event) -> None:
     """Background thread: press P (+ Enter) to generate a one-time pairing token."""
@@ -29,7 +29,7 @@ def _keyboard_watcher(stop_event: threading.Event) -> None:
                     token = create_pairing_code()
                     set_pending_pairing_token(token)
                     log.info("One-time pairing token generated: %s", token)
-                    log.info("Share this token with the client. It will be consumed after one use.")
+                    log.info("Press P + Enter to generate a new one-time pairing token for the next client.")
         except Exception:
             break
 
@@ -41,6 +41,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     setupLogging(default_log_level=LogLevel.DEBUG, logger_config={})
     setup_s2auth_server(additional_hook_modules=["s2auth.reference.server.hooks"])
     server_settings = get_settings()
+    cfg = Config()
+    log.info(
+        "Server startup config: DOMAIN_NAME=%s, PAIRING_NODE_ID=%s, SERVER_S2_NODE_ID=%s",
+        cfg.domain_name,
+        server_settings.pairing_node_id,
+        server_settings.server_s2_node_id,
+    )
     if server_settings.default_pairing_token:
         log.info("Default one time pairing token (from DEFAULT_PAIRING_TOKEN): %s", server_settings.default_pairing_token)
     log.info("Press P + Enter to generate a new one-time pairing token for the next client.")
