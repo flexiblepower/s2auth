@@ -76,8 +76,8 @@ async def test_initiate_connection_generates_pending_token_and_returns_negotiate
             server_node_id=NodeId(root=server_settings.server_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
-            supported_s2_versions=["v0.01-beta", "v0.02-beta"],
-            selected_s2_connect_version="v1.0-beta-2",
+            supported_s2_versions=["v1", "v0.02-beta"],
+            selected_s2_connect_version="v1",
             server_settings=server_settings,
             authentication_ctx=auth_ctx,
             hooks=HookRegistry(),
@@ -86,7 +86,7 @@ async def test_initiate_connection_generates_pending_token_and_returns_negotiate
     assert auth_ctx.next_access_token == next_token
     assert response.accessToken == next_token
     assert response.selectedCommunicationProtocol == CommunicationProtocol.WebSocket
-    assert response.selectedS2MessageVersion == "v0.02-beta"
+    assert response.selectedS2MessageVersion == "v1"
     assert response.serverEndpointDescription is not None
     assert response.serverEndpointDescription.deployment == Deployment.WAN
     assert response.serverNodeDescription is not None
@@ -106,7 +106,7 @@ async def test_initiate_connection_rejects_unsupported_s2_connect_version() -> N
             server_node_id=NodeId(root=server_settings.server_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
-            supported_s2_versions=["v0.02-beta"],
+            supported_s2_versions=["v1"],
             selected_s2_connect_version="v2.0",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
@@ -129,8 +129,8 @@ async def test_initiate_connection_requires_completed_pairing() -> None:
             server_node_id=NodeId(root=server_settings.server_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
-            supported_s2_versions=["v0.02-beta"],
-            selected_s2_connect_version="v1.0-beta-2",
+            supported_s2_versions=["v1"],
+            selected_s2_connect_version="v1",
             server_settings=server_settings,
             authentication_ctx=auth_ctx,
             new_access_token=access_token(b"next-token-next-token-next-token12"),
@@ -147,8 +147,8 @@ async def test_initiate_connection_rejects_invalid_access_token() -> None:
             server_node_id=NodeId(root=server_settings.server_s2_node_id),
             access_token=access_token(b"wrong-token-wrong-token-wrong123"),
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
-            supported_s2_versions=["v0.02-beta"],
-            selected_s2_connect_version="v1.0-beta-2",
+            supported_s2_versions=["v1"],
+            selected_s2_connect_version="v1",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
             new_access_token=access_token(b"next-token-next-token-next-token12"),
@@ -165,8 +165,8 @@ async def test_initiate_connection_rejects_wrong_server_node_id() -> None:
             server_node_id=NodeId(root=uuid4()),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
-            supported_s2_versions=["v0.02-beta"],
-            selected_s2_connect_version="v1.0-beta-2",
+            supported_s2_versions=["v1"],
+            selected_s2_connect_version="v1",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
             new_access_token=access_token(b"next-token-next-token-next-token12"),
@@ -184,7 +184,7 @@ async def test_initiate_connection_rejects_incompatible_s2_versions() -> None:
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
             supported_s2_versions=["v0.01-beta"],
-            selected_s2_connect_version="v1.0-beta-2",
+            selected_s2_connect_version="v1",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
             new_access_token=access_token(b"next-token-next-token-next-token12"),
@@ -202,8 +202,8 @@ async def test_initiate_connection_rejects_incompatible_protocols() -> None:
             server_node_id=NodeId(root=server_settings.server_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
-            supported_s2_versions=["v0.02-beta"],
-            selected_s2_connect_version="v1.0-beta-2",
+            supported_s2_versions=["v1"],
+            selected_s2_connect_version="v1",
             server_settings=server_settings,
             authentication_ctx=authentication_context(current_token),
             new_access_token=access_token(b"next-token-next-token-next-token12"),

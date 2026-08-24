@@ -82,9 +82,15 @@ async def set_client_node_id_from_headers(
 
 
 async def set_pairing_attempt_id_from_headers(
-    pairing_attempt_id: Annotated[str, Header(alias="pairingAttemptId")],
+    pairing_attempt_id: Annotated[str | None, Header(alias="pairingAttemptId")] = None,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> None:
-    """Set pairing attempt context from the pairingAttemptId header."""
+    """Set pairing attempt context from the pairingAttemptId header or Authorization: Bearer token."""
+    token: str | None = pairing_attempt_id
+    if token is None and authorization is not None and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ")
+    if token is None:
+        raise ValueError("pairingAttemptId header or Authorization: Bearer token is required")
     await set_pairing_attempt_id(
-        PairingAttemptId(root=pairing_attempt_id)
+        PairingAttemptId(root=token)
     )

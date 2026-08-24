@@ -56,7 +56,7 @@ from s2auth.server.settings import Settings, settings
 
 
 PAIRING_TOKEN = "pairingToken123"
-HMAC_SALT = "s2.example.com"
+DOMAIN_NAME = "s2.example.com"
 
 
 def access_token(value: bytes) -> AccessToken:
@@ -78,7 +78,7 @@ def server_settings() -> Settings:
 def config() -> Config:
     return Config(
         sqlalchemy_db_uri=SecretStr("sqlite+aiosqlite:///:memory:"),
-        domain_name=HMAC_SALT,
+        domain_name=DOMAIN_NAME,
     )
 
 
@@ -127,7 +127,7 @@ def pairing_request(client_node_id: UUID) -> RequestPairingPostRequest:
         clientEndpointDescription=EndpointDescription(deployment=Deployment.WAN),
         nodeIdAlias=NodeIdAlias(root="PAIR1234"),
         supportedCommunicationProtocols=[CommunicationProtocol.WebSocket],
-        supportedS2MessageVersions=["v0.02-beta"],
+        supportedS2MessageVersions=["v1"],
         supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
         clientHmacChallenge=create_challenge(),
     )
@@ -223,7 +223,7 @@ async def test_request_pairing_stores_authentication_context_and_returns_challen
         pairing_token=PAIRING_TOKEN,
         challenge=request.clientHmacChallenge,
         deployment=Deployment.WAN,
-        domain_name=HMAC_SALT,
+        domain_name=DOMAIN_NAME,
         fingerprint=None,
     )
     assert response.clientHmacChallengeResponse.root == expected_response
@@ -370,7 +370,7 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
         pairing_token=PAIRING_TOKEN,
         challenge=pairing_ctx.server_hmac_challenge,
         deployment=Deployment.WAN,
-        domain_name=HMAC_SALT,
+        domain_name=DOMAIN_NAME,
         fingerprint=None,
     )
 

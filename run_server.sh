@@ -1,4 +1,6 @@
 #!/bin/bash
 
 . .venv/bin/activate
-PYTHONPATH="src/" python3 -m s2auth.reference.server.run
+export PYTHONPATH="src/"
+
+python3 -m s2auth.reference.server.run

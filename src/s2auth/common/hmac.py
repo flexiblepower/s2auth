@@ -112,6 +112,9 @@ def create_response(pairing_token: str,
         return hmac_response_lan(pairing_token.encode('utf-8'), challenge.root, fingerprint, digestmod)
     else:
         assert domain_name is not None
+        LOGGER.debug(f"Creating WAN HMAC response with domain_name: {domain_name}")
+        response =  hmac_response_wan(pairing_token.encode('utf-8'), challenge.root, domain_name, digestmod)
+        LOGGER.debug(f"WAN HMAC response: {response}")
         return hmac_response_wan(pairing_token.encode('utf-8'), challenge.root, domain_name, digestmod)
 
 

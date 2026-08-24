@@ -14,11 +14,16 @@ def main() -> None:
         )
         sys.exit(1)
 
+    from s2auth.server.settings import settings as get_settings
+
+    s = get_settings()
     uvicorn.run(
         "s2auth.reference.server.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
+        ssl_certfile=s.ssl_certfile,
+        ssl_keyfile=s.ssl_keyfile,
     )
 
 

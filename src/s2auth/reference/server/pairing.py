@@ -1,8 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from s2auth.common.exceptions import PairingNotCompleteError
-from s2auth.common.model.s2_connect_common import NodeId
-from s2auth.common.model.s2_connect_session_init import UnpairPostRequest
+from s2auth.common.model.s2_connect_common import AccessToken, NodeId
+from s2auth.common.model.s2_connect_session_init import (
+    CommunicationDetailsErrorMessage,
+    InitiateSessionPostRequest,
+    InitiateSessionPostResponse,
+    UnpairPostRequest,
+)
 from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails,
     FinalizePairingPostRequest,
@@ -26,6 +33,7 @@ from s2auth.reference.server.versions import (
     check_s2_connect_version,
     get_supported_s2_connect_versions,
 )
+from s2auth.server.connection_initiation import initiateConnection
 from s2auth.server.pairing import (
     finalize_pairing as handle_finalize_pairing,
     handle_client_response,
@@ -41,8 +49,50 @@ router.get("/", response_model=list[str], tags=["Pairing process"])(
 
 
 @router.post(
+    "/{s2_connect_version}/initiateSession",
+    response_model=InitiateSessionPostResponse,
+    responses={"400": {"model": CommunicationDetailsErrorMessage}},
+    tags=["Connection initiation"],
+    dependencies=[Depends(set_client_node_id_from_body_variable)],
+)
+async def initiate_session(
+    s2_connect_version: str = Depends(check_s2_connect_version),
+    authorization: Annotated[str, Header(alias="Authorization")] = "",
+    body: InitiateSessionPostRequest = None,  # pyright: ignore[reportArgumentType]
+) -> InitiateSessionPostResponse | CommunicationDetailsErrorMessage:
+    """
+    Initiate an S2 communication session (called by client after pairing).
+    """
+    access_token_str = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else authorization
+    return await initiateConnection(
+        server_node_id=body.serverNodeId,
+        access_token=AccessToken(root=access_token_str.encode("utf-8")),
+        supported_communication_protocols=body.supportedCommunicationProtocols,
+        supported_s2_versions=body.supportedS2MessageVersions,
+        selected_s2_connect_version=s2_connect_version,
+    )
+
+
+@router.post(
+    "/{s2_connect_version}/confirmAccessToken",
+    response_model=None,
+    tags=["Connection initiation"],
+)
+async def confirm_access_token(
+    s2_connect_version: str = Depends(check_s2_connect_version),
+) -> None:
+    """
+    Client confirms that it has stored a new accessToken.
+    This endpoint just acknowledges the confirmation.
+    """
+    _ = s2_connect_version
+    pass
+
+
+@router.post(
     "/{s2_connect_version}/unpair",
     response_model=None,
+    status_code=204,
     tags=["Unpairing"],
     dependencies=[Depends(set_client_node_id_from_body_variable)],
 )
@@ -77,6 +127,7 @@ def cancel_prepare_pairing(
 @router.post(
     "/{s2_connect_version}/finalizePairing",
     response_model=None,
+    status_code=204,
     tags=["Pairing process"],
     dependencies=[Depends(set_pairing_attempt_id_from_headers)],
 )

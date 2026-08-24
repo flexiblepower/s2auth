@@ -18,14 +18,17 @@ class Settings(BaseSettings):
     supported_communication_protocols: list[CommunicationProtocol] = [
         CommunicationProtocol.WebSocket
     ]
-    supported_s2_versions: list[str] = ["v0.02-beta"]  # most recent first
-    supported_s2_connect_versions: list[str] = ["v1.0-beta-2"]  # most recent first
+    supported_s2_versions: list[str] = ["v1"]  # most recent first
+    supported_s2_connect_versions: list[str] = ["v1"]  # most recent first
     cem_s2_node_id: UUID4
     cem_type: str
     cem_model_name: str
     cem_brand: str
     cem_url: AnyUrl | None = None
     cem_deployment_type: Deployment = Deployment.WAN
+    default_pairing_token: str | None = None
+    ssl_certfile: str = ""
+    ssl_keyfile: str = ""
 
 
 @register_provider(singleton=True)

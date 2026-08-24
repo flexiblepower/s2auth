@@ -55,6 +55,7 @@ from s2auth.server.hooks import (
     pairing_attempt_request,
 )
 from s2auth.server.settings import Settings, settings
+from s2auth.server.token_manager import consume_pending_pairing_token
 import logging
 
 log = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ async def initiate_pairing(
     provide a pairing token explicitly or rely on the configured token provider.
     """
     log.info("Initiating pairing for client %s", client_node_id)
+    log.info("Generated pairing token for client %s: %s", client_node_id, pairing_token)
     pairing_attempt_id: PairingAttemptId = uuid4()
     # Encode UUID string as base64 bytes for S2PairingAttemptId (str)
     pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode("utf-8")).decode("utf-8")
@@ -152,7 +154,11 @@ async def request_pairing(
             "No pairing context known for client %s. Initializing one from requestPairing.",
             client_node_id,
         )
-        initiated_ctx = await initiate_pairing(client_node_id=client_node_id)
+        default_token = consume_pending_pairing_token() or server_settings.default_pairing_token or None
+        initiated_ctx = await initiate_pairing(
+            client_node_id=client_node_id,
+            pairing_token=default_token,  # type: ignore[arg-type]
+        )
         pairing_attempt_id = initiated_ctx.pairing_attempt_id
 
     if pairing_attempt_id is None:
