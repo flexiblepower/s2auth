@@ -89,7 +89,7 @@ async def test_pairing_attempt_id_provider_with_contextvar_set() -> None:
     setup()
 
     token = pairing_attempt_id_var.set(
-        S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode("utf-8")))
+        S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode("utf-8")).decode("utf-8"))
     )
     try:
         assert get_pairing_attempt_id() == test_pairing_id
@@ -209,7 +209,7 @@ async def test_pairing_attempt_context_provider_returns_stored_context() -> None
     setup()
 
     token = pairing_attempt_id_var.set(
-        S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode("utf-8")))
+        S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode("utf-8")).decode("utf-8"))
     )
     try:
         with provider_overrides({context_storage_singleton: get_test_storage}):
@@ -240,7 +240,7 @@ async def test_pairing_attempt_context_provider_raises_keyerror_for_unknown_id()
     setup()
 
     token = pairing_attempt_id_var.set(
-        S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode("utf-8")))
+        S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode("utf-8")).decode("utf-8"))
     )
     try:
         with provider_overrides({context_storage_singleton: test_context_storage}):
@@ -534,7 +534,7 @@ async def test_authentication_context_by_pairing_attempt_context_returns_context
     setup()
 
     token = pairing_attempt_id_var.set(
-        S2PairingAttemptId(root=b64encode(str(pairing_id).encode("utf-8")))
+        S2PairingAttemptId(root=b64encode(str(pairing_id).encode("utf-8")).decode("utf-8"))
     )
     try:
         with provider_overrides({context_storage_singleton: test_context_storage}):
@@ -577,7 +577,7 @@ async def test_authentication_context_by_pairing_attempt_context_requires_client
     setup()
 
     token = pairing_attempt_id_var.set(
-        S2PairingAttemptId(root=b64encode(str(pairing_id).encode("utf-8")))
+        S2PairingAttemptId(root=b64encode(str(pairing_id).encode("utf-8")).decode("utf-8"))
     )
     try:
         with provider_overrides({context_storage_singleton: test_context_storage}):
@@ -622,7 +622,7 @@ async def test_authentication_context_by_pairing_attempt_context_raises_for_miss
     setup()
 
     token = pairing_attempt_id_var.set(
-        S2PairingAttemptId(root=b64encode(str(pairing_id).encode("utf-8")))
+        S2PairingAttemptId(root=b64encode(str(pairing_id).encode("utf-8")).decode("utf-8"))
     )
     try:
         with provider_overrides({context_storage_singleton: test_context_storage}):

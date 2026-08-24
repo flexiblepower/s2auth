@@ -86,5 +86,5 @@ async def set_pairing_attempt_id_from_headers(
 ) -> None:
     """Set pairing attempt context from the pairingAttemptId header."""
     await set_pairing_attempt_id(
-        PairingAttemptId(root=pairing_attempt_id.encode("utf-8"))
+        PairingAttemptId(root=pairing_attempt_id)
     )
