@@ -17,7 +17,7 @@ class ConnectionDetail(Base):
     client_s2_node_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     pairing_server_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     verify_tls: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-    ca_cert_file: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ssl_certfile: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     initiate_session_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     access_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     supported_s2_message_versions: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
