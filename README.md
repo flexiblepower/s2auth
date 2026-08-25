@@ -12,18 +12,30 @@ ci/setup_dev_environment.sh
 # Use as a library
 The package exposes a public client API, public protocol model re-exports, and HMAC helpers.
 
+The CLI in this repository is a thin adapter around the same library API.
+
 Pairing client API:
 
 ```python
+import asyncio
+
 from s2auth.client import ClientSettings, PairingClient, strip_pairing_url
 
-settings = ClientSettings()
-client = PairingClient.from_settings(settings)
+async def run_pairing_flow() -> None:
+  settings = ClientSettings()
+  client = PairingClient.from_settings(settings)
 
-# async usage:
-# pairing_result = await client.pair()
-# connected = await client.connect(pairing_s2_node_id="...")
-# unpaired = await client.unpair(pairing_s2_node_id="...")
+  pairing_result = await client.pair()
+  print(pairing_result.pairing_s2_node_id)
+
+  connected = await client.connect(pairing_s2_node_id=pairing_result.pairing_s2_node_id)
+  print(connected)
+
+  unpaired = await client.unpair(pairing_s2_node_id=pairing_result.pairing_s2_node_id)
+  print(unpaired)
+
+
+asyncio.run(run_pairing_flow())
 ```
 
 Storage abstraction:

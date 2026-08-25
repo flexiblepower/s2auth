@@ -5,7 +5,7 @@ from pytest import MonkeyPatch
 from pytest_mock.plugin import MockerFixture
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import PairingClient
+from s2auth.client.pairing import PairingClient, build_pairing_settings, detect_deployment
 from s2auth.client.settings import ClientSettings
 from s2auth.common.model.s2_connect_common import Deployment, Role
 
@@ -151,3 +151,44 @@ async def test_pairing_client_connect_with_custom_store(mocker: MockerFixture) -
 
     assert await client.connect() is True
     low_level_connect.assert_awaited_once_with(storage=store, pairing_s2_node_id="custom-node")
+
+
+def test_detect_deployment_prefers_domain() -> None:
+    deployment, reason = detect_deployment(
+        pairing_url="https://localhost.local:8000/v1",
+        domain_name="s2connect.example.com",
+        certificate_file="./tests/localhost.chain.pem",
+    )
+
+    assert deployment == Deployment.WAN
+    assert reason == "domain provided"
+
+
+def test_build_pairing_settings_auto_detects_wan_domain() -> None:
+    settings = _make_settings(
+        supported_s2_versions=["v1"],
+    )
+
+    runtime_settings, warnings = build_pairing_settings(
+        settings,
+        server_url="https://example.com/v1",
+        pairing_token="token-123",
+        pairing_s2_node_id="pair-node",
+        client_s2_node_id="550e8400-e29b-41d4-a716-446655440000",
+        role="RM",
+        deployment=None,
+        domain_name=None,
+        verify_tls=True,
+        ssl_certfile=None,
+        supported_s2_message_versions=None,
+        communication_protocols=None,
+        supported_hmac_hashing_algorithms=None,
+        brand="ExampleHeatCo",
+        client_device_type="Heatpump",
+        client_model_name="SmartHeatPump X200",
+    )
+
+    assert runtime_settings.client_deployment == Deployment.WAN
+    assert runtime_settings.domain_name == "example.com"
+    assert any("Auto-detected deployment=WAN" in warning for warning in warnings)
+    assert any("Auto-detected domain='example.com'" in warning for warning in warnings)

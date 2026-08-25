@@ -9,7 +9,14 @@ from uuid import UUID, uuid4
 from s2auth.client.connection_store import ConnectionStore
 from s2auth.client.dao import Dao
 from s2auth.client.settings import ClientSettings
-from s2auth.common.model.s2_connect_common import Deployment, NodeDescription, NodeId
+from s2auth.common.model.s2_connect_common import (
+    CommunicationProtocol,
+    Deployment,
+    NodeDescription,
+    NodeId,
+    Role,
+)
+from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
 
 
 async def low_level_pair(
@@ -76,6 +83,110 @@ def strip_pairing_url(url_str: str) -> str:
             url_str = url_str[: -len(suffix)]
             break
     return url_str.rstrip("/")
+
+
+def detect_deployment(
+    pairing_url: str,
+    domain_name: str | None,
+    certificate_file: str | None,
+) -> tuple[Deployment, str]:
+    """Infer deployment mode from domain/certificate/host heuristics."""
+
+    if domain_name:
+        return Deployment.WAN, "domain provided"
+    if certificate_file:
+        return Deployment.LAN, "certificate_file provided"
+
+    hostname = (urlparse(pairing_url).hostname or "").lower()
+    if hostname in {"", "localhost"} or hostname.endswith(".local"):
+        return Deployment.LAN, f"host '{hostname or '<empty>'}' looked local"
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            return Deployment.LAN, f"host '{hostname}' is private/local IP"
+        return Deployment.WAN, f"host '{hostname}' is public IP"
+    except ValueError:
+        # Non-IP hostname: treat as WAN by default.
+        return Deployment.WAN, f"host '{hostname}' looked public"
+
+
+def build_pairing_settings(
+    base_settings: ClientSettings,
+    *,
+    server_url: str,
+    pairing_token: str | None,
+    pairing_s2_node_id: str | None,
+    client_s2_node_id: str,
+    role: str,
+    deployment: str | None,
+    domain_name: str | None,
+    verify_tls: bool,
+    ssl_certfile: str | None,
+    supported_s2_message_versions: list[str] | None,
+    communication_protocols: list[str] | None,
+    supported_hmac_hashing_algorithms: list[str] | None,
+    brand: str,
+    client_device_type: str,
+    client_model_name: str,
+) -> tuple[ClientSettings, list[str]]:
+    """Resolve effective pairing settings from defaults plus overrides."""
+
+    warnings: list[str] = []
+
+    effective_supported_s2_versions = supported_s2_message_versions or base_settings.supported_s2_versions
+    effective_communication_protocols = communication_protocols or [
+        protocol.value for protocol in base_settings.supported_communication_protocols
+    ]
+    effective_supported_hmac_hashing_algorithms = supported_hmac_hashing_algorithms or [
+        algorithm.value for algorithm in base_settings.supported_hmac_hashing_algorithms
+    ]
+
+    normalized_server_url = strip_pairing_url(server_url)
+    effective_domain = domain_name
+
+    if deployment is None:
+        effective_deployment, reason = detect_deployment(
+            normalized_server_url,
+            effective_domain,
+            ssl_certfile,
+        )
+        warnings.append(f"Auto-detected deployment={effective_deployment.value} ({reason})")
+        if reason.startswith("host '"):
+            warnings.append(
+                "Deployment was inferred heuristically from server_url host; set --deployment explicitly to override."
+            )
+    else:
+        effective_deployment = Deployment(deployment.upper())
+
+    if effective_deployment == Deployment.WAN and effective_domain is None:
+        effective_domain = urlparse(server_url).hostname
+        if effective_domain is None:
+            raise ValueError("Could not auto-detect domain from --server_url; set --domain explicitly for WAN deployment.")
+        warnings.append(f"Auto-detected domain='{effective_domain}' from server_url")
+
+    runtime_settings = base_settings.model_copy(
+        update={
+            "server_url": server_url,
+            "pairing_token": pairing_token,
+            "pairing_s2_node_id": pairing_s2_node_id,
+            "client_s2_node_id": client_s2_node_id,
+            "client_role": Role(role),
+            "client_deployment": effective_deployment,
+            "domain_name": effective_domain,
+            "verify_tls": verify_tls,
+            "ssl_certfile": ssl_certfile,
+            "supported_s2_versions": effective_supported_s2_versions,
+            "supported_communication_protocols": list(map(CommunicationProtocol, effective_communication_protocols)),
+            "supported_hmac_hashing_algorithms": list(
+                map(HmacHashingAlgorithm, effective_supported_hmac_hashing_algorithms)
+            ),
+            "cleint_brand": brand,
+            "client_device_type": client_device_type,
+            "client_model_name": client_model_name,
+        }
+    )
+    return runtime_settings, warnings
 
 
 @dataclass(frozen=True)
@@ -175,7 +286,7 @@ class PairingClient:
         domain_name = self.settings.domain_name
 
         if deployment is None:
-            deployment = self._detect_deployment(pairing_uri, domain_name, self.settings.ssl_certfile)
+            deployment, _ = detect_deployment(pairing_uri, domain_name, self.settings.ssl_certfile)
 
         deployment_value = deployment.value.upper()
 
@@ -183,27 +294,3 @@ class PairingClient:
             domain_name = urlparse(pairing_uri).hostname
 
         return deployment_value, domain_name
-
-    @staticmethod
-    def _detect_deployment(
-        pairing_uri: str,
-        domain_name: str | None,
-        certificate_file: str | None,
-    ) -> Deployment:
-        if domain_name:
-            return Deployment.WAN
-        if certificate_file:
-            return Deployment.LAN
-
-        hostname = (urlparse(pairing_uri).hostname or "").lower()
-        if hostname in {"", "localhost"} or hostname.endswith(".local"):
-            return Deployment.LAN
-
-        try:
-            ip = ipaddress.ip_address(hostname)
-        except ValueError:
-            return Deployment.WAN
-
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
-            return Deployment.LAN
-        return Deployment.WAN

@@ -2,16 +2,12 @@
 """
 import argparse
 import asyncio
-import ipaddress
 import logging
-from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import PairingClient, strip_pairing_url
+from s2auth.client.pairing import PairingClient, build_pairing_settings
 from s2auth.client.settings import ClientSettings
-from s2auth.common.model.s2_connect_common import CommunicationProtocol, Deployment, Role
-from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
 
 LOGGER = logging.getLogger(__name__)
 
@@ -66,29 +62,6 @@ async def _run_unpair_mode(
     client = PairingClient.from_settings(settings, storage=dao)
     assert await client.unpair(pairing_s2_node_id=pairing_s2_node_id)
 
-def _detect_deployment(
-    pairing_url: str,
-    domain_name: str | None,
-    certificate_file: str | None,
-) -> tuple[str, str]:
-    if domain_name:
-        return "WAN", "domain provided"
-    if certificate_file:
-        return "LAN", "certificate_file provided"
-
-    hostname = (urlparse(pairing_url).hostname or "").lower()
-    if hostname in {"", "localhost"} or hostname.endswith(".local"):
-        return "LAN", f"host '{hostname or '<empty>'}' looked local"
-
-    try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
-            return "LAN", f"host '{hostname}' is private/local IP"
-        return "WAN", f"host '{hostname}' is public IP"
-    except ValueError:
-        # Non-IP hostname: treat as WAN by default.
-        return "WAN", f"host '{hostname}' looked public"
-
 async def _run_pairing_mode(
     args: argparse.Namespace,
     settings: ClientSettings,
@@ -97,49 +70,28 @@ async def _run_pairing_mode(
     clientS2NodeId: UUID,
     storage_key: str,
 ) -> None:
-    args.supported_s2_message_versions = args.supported_s2_message_versions or settings.supported_s2_versions
-    args.communication_protocols = args.communication_protocols or [
-        protocol.value for protocol in settings.supported_communication_protocols
-    ]
-    args.supported_hmac_hashing_algorithms = args.supported_hmac_hashing_algorithms or [
-        algorithm.value for algorithm in settings.supported_hmac_hashing_algorithms
-    ]
-
-    server_url: str = strip_pairing_url(args.server_url)
-    if args.deployment is None:
-        args.deployment, reason = _detect_deployment(server_url, args.domain, args.certificate_file)
-        LOGGER.warning(f"Auto-detected deployment={args.deployment} ({reason})")
-        if reason.startswith("host '"):
-            LOGGER.warning("Deployment was inferred heuristically from server_url host; set --deployment explicitly to override.")
-
-    if args.deployment.upper() == "WAN" and args.domain is None:
-        server_url_str: str = args.server_url
-        args.domain = urlparse(server_url_str).hostname
-        if args.domain is None:
-            raise ValueError("Could not auto-detect domain from --server_url; set --domain explicitly for WAN deployment.")
-        LOGGER.warning(f"Auto-detected domain='{args.domain}' from server_url")
-
     LOGGER.info(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
 
-    runtime_settings = settings.model_copy(
-        update={
-            "server_url": args.server_url,
-            "pairing_token": args.pairing_token,
-            "pairing_s2_node_id": pairing_s2_node_id,
-            "client_s2_node_id": str(clientS2NodeId),
-            "client_role": Role(args.s2_role),
-            "client_deployment": Deployment(args.deployment.upper()),
-            "domain_name": args.domain,
-            "verify_tls": not args.skip_cert_verify,
-            "ssl_certfile": args.certificate_file,
-            "supported_s2_versions": args.supported_s2_message_versions,
-            "supported_communication_protocols": list(map(CommunicationProtocol, args.communication_protocols)),
-            "supported_hmac_hashing_algorithms": list(map(HmacHashingAlgorithm, args.supported_hmac_hashing_algorithms)),
-            "cleint_brand": args.brand,
-            "client_device_type": args.type,
-            "client_model_name": args.model_name,
-        }
+    runtime_settings, warnings = build_pairing_settings(
+        settings,
+        server_url=args.server_url,
+        pairing_token=args.pairing_token,
+        pairing_s2_node_id=pairing_s2_node_id,
+        client_s2_node_id=str(clientS2NodeId),
+        role=args.s2_role,
+        deployment=args.deployment,
+        domain_name=args.domain,
+        verify_tls=not args.skip_cert_verify,
+        ssl_certfile=args.certificate_file,
+        supported_s2_message_versions=args.supported_s2_message_versions,
+        communication_protocols=args.communication_protocols,
+        supported_hmac_hashing_algorithms=args.supported_hmac_hashing_algorithms,
+        brand=args.brand,
+        client_device_type=args.type,
+        client_model_name=args.model_name,
     )
+    for warning in warnings:
+        LOGGER.warning(warning)
 
     client = PairingClient.from_settings(runtime_settings, storage=dao)
     result = await client.pair()
