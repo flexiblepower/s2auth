@@ -56,11 +56,6 @@ class InMemoryStore:
         return self.data.pop(s2_node_id, None) is not None
 
 
-@pytest.fixture(autouse=True)
-def mock_calculate_fingerprint(mocker: MockerFixture) -> MagicMock:
-    return mocker.patch("s2auth.client.pairing_core.calculate_fingerprint_from_response_certificate", return_value=b"")
-
-
 def encode_base64_text(text: str) -> str:
     return b64encode(text.encode('ascii')).decode('ascii')
 
@@ -454,7 +449,7 @@ async def test_connect_with_custom_store(mock_AsyncClient: tuple[MagicMock, Magi
             "pairing_server_url": "http://s2server.example.com/v1",
             "access_token": "token-value",
             "verify_tls": True,
-            "ssl_certfile": "./tests/localhost.chain.pem",
+            "ssl_certfile": None,
             "supported_s2_message_versions": ["v0.0.2-beta"],
             "supported_communication_protocols": ["WebSocket"],
             "supported_hmac_hashing_algorithms": ["SHA256"],
@@ -478,7 +473,7 @@ async def test_unpair_with_custom_store(mock_AsyncClient: tuple[MagicMock, Magic
             "pairing_server_url": "http://s2server.example.com/v1",
             "access_token": "token-value",
             "verify_tls": True,
-            "ssl_certfile": "./tests/localhost.chain.pem",
+            "ssl_certfile": None,
         },
     )
 

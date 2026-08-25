@@ -3,19 +3,22 @@ import hashlib
 import hmac
 import random
 import secrets
+import ssl
 import string
+import httpx
 from base64 import b64encode
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, Any, OrderedDict
 
 from pydantic import StringConstraints
 
-from s2auth.common.dependencies import register_provider
+from wepositive_di import register_provider
 from s2auth.common.exceptions import (IncompatibleHmacHashingAlgorithms,
                                       VerificationError)
 from s2auth.common.model.s2_connect_pairing import (HmacChallenge,
                                                     HmacHashingAlgorithm)
-from s2auth.common.model.s2_connect_common import Deployment
+from s2auth.common.model.s2_connect_common import AccessToken, Deployment
 
 
 CHARS = string.ascii_lowercase + string.ascii_uppercase + string.digits
@@ -69,6 +72,12 @@ def create_challenge(length: int = 128) -> HmacChallenge:
     return HmacChallenge(root=b64encode(challenge_value))
 
 
+@register_provider()
+def generate_access_token() -> AccessToken:
+    """Generate a cryptographically secure random access token."""
+    return AccessToken(root=b64encode(secrets.token_bytes(32)))
+
+
 def get_supported_algorithms() -> list[HmacHashingAlgorithm]:
     """Get a list of supported HMAC algorithms."""
     return list(_ALGORITHM_MAP.keys())
@@ -90,20 +99,89 @@ def select_algorithm(
     return [alg for alg in supported_algorithms if alg in common][-1]
 
 
+def calculate_certificate_fingerprint(cert_der: bytes) -> bytes:
+    """Return the SHA-256 fingerprint for a DER-encoded certificate."""
+    return hashlib.sha256(cert_der).digest()
+
+
+def _leaf_certificate_bytes(certificate_bytes: bytes) -> bytes:
+    """Return leaf certificate bytes from a cert file payload.
+
+    For PEM chain files this extracts and converts the first certificate block
+    (the leaf) to DER bytes. For non-PEM inputs, bytes are returned unchanged.
+    """
+    pem_begin = b"-----BEGIN CERTIFICATE-----"
+    pem_end = b"-----END CERTIFICATE-----"
+
+    begin_index = certificate_bytes.find(pem_begin)
+    if begin_index == -1:
+        return certificate_bytes
+
+    end_index = certificate_bytes.find(pem_end, begin_index)
+    if end_index == -1:
+        raise ValueError("Malformed PEM certificate file: missing END CERTIFICATE marker.")
+    end_index += len(pem_end)
+
+    leaf_pem_bytes = certificate_bytes[begin_index:end_index]
+    try:
+        leaf_pem_text = leaf_pem_bytes.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Malformed PEM certificate file: non-ASCII certificate block.") from exc
+
+    return ssl.PEM_cert_to_DER_cert(leaf_pem_text)
+
+
+def calculate_certificate_fingerprint_from_certificate_file(
+    certificate_file: str | Path,
+) -> bytes:
+    """Read a certificate file and return the SHA-256 fingerprint of the leaf certificate."""
+    cert_bytes = Path(certificate_file).read_bytes()
+    return calculate_certificate_fingerprint(_leaf_certificate_bytes(cert_bytes))
+
+
+def calculate_fingerprint_from_response_certificate(response: httpx.Response) -> bytes | None:
+    network_stream = response.extensions.get("network_stream")
+    if network_stream is None:
+        return None
+
+    get_extra_info = getattr(network_stream, "get_extra_info", None)
+    if not callable(get_extra_info):
+        return None
+
+    ssl_object = get_extra_info("ssl_object")
+    if ssl_object is None:
+        return None
+
+    get_peer_cert = getattr(ssl_object, "getpeercert", None)
+    if not callable(get_peer_cert):
+        return None
+
+    cert_der = get_peer_cert(binary_form=True)
+    if not isinstance(cert_der, (bytes, bytearray)) or not cert_der:
+        return None
+
+    return calculate_certificate_fingerprint(bytes(cert_der))
+
 def create_response(pairing_token: str,
                     challenge: HmacChallenge,
                     deployment: str | Deployment,
                     domain_name: str | None,
                     fingerprint: bytes | None,
                     algorithm: HmacHashingAlgorithm = HmacHashingAlgorithm.SHA256) -> bytes:
-    digestmod = _get_hashing_algorithm(algorithm)
+    try:
+        digestmod = _get_hashing_algorithm(algorithm)
+    except ValueError as e:
+        raise VerificationError(str(e)) from e
     if deployment == Deployment.LAN:
         assert fingerprint is not None
         LOGGER.debug(f"Creating LAN HMAC response with fingerprint: fingerprint=CertificateHash(Sha256({list(fingerprint)}))")
         return hmac_response_lan(pairing_token.encode('utf-8'), challenge.root, fingerprint, digestmod)
     else:
         assert domain_name is not None
-        return hmac_response_wan(pairing_token.encode('utf-8'), challenge.root, domain_name, digestmod)
+        LOGGER.debug(f"Creating WAN HMAC response with domain_name: {domain_name}")
+        response =  hmac_response_wan(pairing_token.encode('utf-8'), challenge.root, domain_name, digestmod)
+        LOGGER.debug(f"WAN HMAC response: {response}")
+        return response
 
 
 def hmac_response_lan(pairing_token: bytes,

@@ -90,7 +90,7 @@ def merge_specs(base_path: Path) -> dict[str, Any]:
     return merged_spec
 
 
-spec = merge_specs(Path(__file__).parent)
+spec = merge_specs(Path(__file__).parent / "s2-connect")
 
 # Create FastAPI app
 app = FastAPI(

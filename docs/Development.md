@@ -1,0 +1,216 @@
+# Setup dev environment
+Requires: pyenv with python 3.10 installed on the system.
+Shell scripts are linux compatible.
+
+```bash
+ci/setup_dev_environment.sh
+```
+
+# Install as regular python package
+* `pip install .` or from pypi should just work
+
+# Call the client
+The pairing client is exposed as the Python module `s2auth.client.main`.
+
+From a development checkout, run it by:
+- first creating and activating a virtual environment: `python -m venv .venv` and `source .venv/bin/activate`
+- installing all dependancies `ci/install_dependancies.sh` (you may need to run `ci/setup_dev_environment` if poetry is not yet installed)
+- then calling `poetry run python -client --help`
+
+There is also a helper script in the repository:
+
+Typical example:
+
+```bash
+poetry run client \
+  --server_url https://localhost:8005/v1 \
+  --domain s2.example.com \
+  --pairing_token your-pairing-token \
+  --skip_cert_verify \
+  --deployment WAN \
+  --pairing_s2_node_id ninechars
+  --s2_role RM
+```
+
+Required input:
+- Provide exactly one of `--domain` or `--fingerprint`.
+- Provide a `--pairing_token` to start the pairing flow.
+
+Useful optional arguments:
+- `--server_url` defaults to `http://localhost`.
+- `--client_S2_nodeId` and `--server_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
+- `--pairing_s2_node_id` can be used when the pairing code must include a target S2 node ID.
+- `--skip_cert_verify` disables certificate verification for local or test setups.
+- `-v` or `--verbose` enables debug logging.
+
+# Run the FastAPI server
+```bash
+poetry run server
+```
+
+This starts the development server with auto-reload enabled at `http://0.0.0.0:8000`.
+
+The API documentation is available at:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+**Note**: Requires the `server` optional dependencies. Install with:
+```bash
+# For development (with Poetry)
+poetry install --extras server
+
+# Or install from PyPI
+pip install s2auth[server]
+```
+
+## Server configuration
+
+The server has two settings sources, both backed by Pydantic `BaseSettings` and both loaded from `.env` and `.env.docker` in the project root:
+
+- `Config` in `src/s2auth/server/config.py` covers runtime infrastructure such as the database and HMAC secret material.
+- `Settings` in `src/s2auth/server/settings.py` covers pairing identity metadata and the default values returned by server hooks.
+
+In short, `Config` controls how the server connects and verifies data, while `Settings` controls what identity and endpoint information the server advertises during pairing.
+
+### Config
+
+`Config` is consumed by the server database and pairing logic.
+
+Available values:
+- `SQLALCHEMY_DB_URI` - PostgreSQL database URI used by the server. Default: `postgresql://postgres:postgres@localhost/s2auth`
+- `HMAC_SALT` - Salt used when generating and verifying HMAC values. Default: `s2.example.com`
+
+Example `.env` file:
+```env
+SQLALCHEMY_DB_URI=postgresql://postgres:postgres@localhost/s2auth
+HMAC_SALT=s2.example.com
+```
+
+### Settings
+
+`Settings` is injected with `Depends[settings]` and is used by the pairing flow and the default hook implementations.
+
+Available values:
+- `PAIRING_NODE_ID` - node ID used while creating pairing attempts. Must be 8 to 12 characters.
+- `SERVER_S2_NODE_ID` - UUID for the server S2 node identity.
+- `CEM_S2_NODE_ID` - UUID for the CEM node identity returned during pairing.
+- `CEM_TYPE` - device type reported in the server node description.
+- `CEM_MODEL_NAME` - model name reported in the server node description.
+- `CEM_BRAND` - brand reported in the server node description.
+- `CEM_URL` - optional server endpoint returned by the default hook.
+
+Example `.env` file:
+```env
+PAIRING_NODE_ID=pairnode1
+SERVER_S2_NODE_ID=00000000-0000-0000-0000-000000000001
+CEM_S2_NODE_ID=00000000-0000-0000-0000-000000000002
+CEM_TYPE=server
+CEM_MODEL_NAME=default
+CEM_BRAND=s2auth
+CEM_URL=http://localhost:8000
+```
+
+# Readding OpenAPI specs through swagger docs
+```bash
+./serve_specs.sh
+```
+
+# Run Developer tooling
+```bash
+ci/lint.sh
+ci/test_unit.sh
+ci/typecheck.sh
+```
+
+## Run end-to-end tests
+
+The reference-server e2e test starts the FastAPI application with Uvicorn and drives the flow over HTTP with `httpx`.
+
+```bash
+poetry run pytest tests/e2e/test_reference_server_pairing_and_connection_initiation.py
+```
+
+The scenario covers:
+
+1. `userBeginPairing`
+2. `requestPairing`
+3. `requestConnectionDetails`
+4. `finalizePairing`
+5. `/connection/{version}/initiateConnection`
+
+The test uses `pytest-bdd`; the feature file is `tests/e2e/features/reference_server_pairing_and_connection_initiation.feature`.
+
+# Run python
+* `poetry run python`
+
+_or_
+
+* `poetry shell`
+* `python`
+
+# Update dependencies
+* `poetry add <dependency>`
+
+or for a dev dependency
+
+* `poetry add -G dev <dependency>`
+
+or for the server optional dependencies
+
+* `poetry add --optional=server <dependency>`
+
+# View installed dependencies
+```bash
+# List all installed packages
+poetry show
+
+# Show dependency tree
+poetry show --tree
+
+# Show specific package details
+poetry show <package-name>
+```
+
+
+# What to do on pre-commit errors
+
+* If the error is auto fixed, you can just `git add` the changed files, and commit again.
+* If they are ruff errors, see https://docs.astral.sh/ruff/rules/ for the rule explanation
+* If they are pyright errors, fix your typing
+* If they are pytest errors, fix your code or the tests.
+* Last case resort to skip the checks:
+  * `git commit --no-verify`
+  * `git push --no-verify`
+
+
+# Generate openapi client and server
+```bash
+ci/generate_s2_auth.sh
+```
+Relevant code is under `src/s2auth/gen_protocol/{client,server}/{connection_init,pairing}`
+Code here is not moved automatically so moving the generated code to a usable location is manual for now.
+
+# Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+- **[Server Dependency Injection](server/dependency_injection.md)** - Notes on this project’s use of `wepositive-di`
+- **[Server Pairing Code Generation](server/pairing_token_override.md)** - How to customize pairing code generation
+
+Install the documentation dependencies with Poetry:
+
+```bash
+poetry install --with docs
+```
+
+Build the documentation:
+
+```bash
+poetry run mkdocs build --strict
+```
+
+Serve the documentation locally:
+
+```bash
+poetry run mkdocs serve
+```

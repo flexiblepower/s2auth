@@ -1,14 +1,21 @@
 import hashlib
 import hmac
+from pathlib import Path
+import ssl
 import string
 from base64 import b64encode
+from unittest.mock import Mock
 
+import httpx
 import pytest
 from pydantic import TypeAdapter
 
 from s2auth.common.exceptions import (IncompatibleHmacHashingAlgorithms,
                                       VerificationError)
-from s2auth.common.hmac import (PairingToken, create_challenge,
+from s2auth.common.hmac import (PairingToken, calculate_certificate_fingerprint,
+                                calculate_certificate_fingerprint_from_certificate_file,
+                                calculate_fingerprint_from_response_certificate,
+                                create_challenge,
                                 create_pairing_code, create_response,
                                 get_supported_algorithms, select_algorithm,
                                 verify_response)
@@ -40,7 +47,7 @@ def test_invalid_algorithm():
     invalid_algorithm = UnsupportedAlgorithm("invalid algorithm")
 
     with pytest.raises(
-        ValueError,
+        VerificationError,
         match="Hashing algorithm 'invalid algorithm' is not supported",
     ):
         verify_response(
@@ -162,7 +169,7 @@ def test_create_response_default_algorithm():
 
 
 def test_create_response_invalid_algorithm():
-    """Test that create_response raises ValueError for unsupported algorithm."""
+    """Test that create_response raises VerificationError for unsupported algorithm."""
     pairing_token = "mypairingtoken"
     challenge = create_challenge()
 
@@ -170,7 +177,7 @@ def test_create_response_invalid_algorithm():
     invalid_algorithm = UnsupportedAlgorithm("MD5")
 
     with pytest.raises(
-        ValueError, match="Hashing algorithm .* is not supported"
+        VerificationError, match="Hashing algorithm .* is not supported"
     ):
         create_response(
             pairing_token,
@@ -266,6 +273,50 @@ def test_create_response_deterministic():
     assert response1 == response2
     assert response3 == response4
     assert response1 != response3
+
+
+def test_calculate_fingerprint_from_response_certificate() -> None:
+    cert_der = b"fake-der-certificate"
+    ssl_object = Mock()
+    ssl_object.getpeercert.return_value = cert_der
+
+    network_stream = Mock()
+    network_stream.get_extra_info.return_value = ssl_object
+
+    response = httpx.Response(
+        status_code=200,
+        request=httpx.Request("POST", "https://example.com/requestPairing"),
+        extensions={"network_stream": network_stream},
+    )
+
+    fingerprint = calculate_fingerprint_from_response_certificate(response)
+
+    assert fingerprint == hashlib.sha256(cert_der).digest()
+
+
+def test_calculate_fingerprint_from_response_certificate_without_network_stream() -> None:
+    response = httpx.Response(
+        status_code=200,
+        request=httpx.Request("POST", "https://example.com/requestPairing"),
+    )
+
+    assert calculate_fingerprint_from_response_certificate(response) is None
+
+
+def test_calculate_certificate_fingerprint_from_certificate_file() -> None:
+    certificate_file = Path(__file__).resolve().parents[2] / "localhost.chain.pem"
+    certificate_text = certificate_file.read_text(encoding="ascii")
+    end_marker = "-----END CERTIFICATE-----"
+    leaf_pem = certificate_text.split(end_marker, 1)[0] + end_marker
+    expected_fingerprint = calculate_certificate_fingerprint(
+        ssl.PEM_cert_to_DER_cert(leaf_pem)
+    )
+
+    fingerprint = calculate_certificate_fingerprint_from_certificate_file(
+        certificate_file
+    )
+
+    assert fingerprint == expected_fingerprint
 
 
 def test_select_algorithm_with_matching_algorithm():

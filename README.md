@@ -1,3 +1,9 @@
+# s2-python-auth
+
+Python helpers for S2 Connect pairing, authentication, and connection initiation.
+
+This package implements client and server building blocks for the S2 communication-layer flows described in the official S2 specification: <https://docs.s2standard.org/docs/communication-layer/discovery-pairing-authentication/>.
+
 # Setup dev environment
 Requires: pyenv with Python 3.10 installed on the system.
 Shell scripts are Linux-compatible.
@@ -165,6 +171,10 @@ From a development checkout, run it by:
 
 There is also a helper script in the repository:
 
+```bash
+./run_client.sh
+```
+
 Client workflow:
 1. Run pairing first (`client ...`) to store connection details for a target `--pairing_s2_node_id`.
 2. After pairing is complete, run connect mode to initiate the S2 session and fetch communication details.
@@ -220,7 +230,7 @@ LAN override example:
 ```bash
 client \
   --server_url https://localhost:8005/v1 \
-  --certificate_file tests/localhost.chain.pem \
+  --deployment LAN \
   --pairing_token test \
   --pairing_s2_node_id ninechars \
   --s2_role RM \
@@ -231,13 +241,19 @@ Required input:
 - Provide a `PAIRING_TOKEN` in `.env` or pass `--pairing_token` to start the pairing flow.
 - `CLIENT_DEPLOYMENT` in `.env` or `--deployment` on the CLI is optional.
 - For WAN deployments, provide `DOMAIN_NAME` in `.env` or pass `--domain`, or let the client auto-detect the domain from `--server_url`.
-- For LAN deployments, provide `SSL_CERTFILE` in `.env` or pass `--certificate_file` if you want to verify against a specific local certificate bundle.
+- For LAN deployments, a local certificate file is optional. The client computes the fingerprint from the TLS peer certificate in the pairing response.
+- Set `SSL_CERTFILE` in `.env` or pass `--certificate_file` only when you want to use an explicit CA/certificate bundle for TLS verification.
+
+LAN security note:
+- In LAN mode, pairing HMAC is bound to the certificate of the TLS peer seen by the client.
+- This is a security feature: if a TLS-terminating proxy presents a different certificate, HMAC verification can fail with a signature mismatch.
+- For LAN pairing behind intermediaries, prefer TLS passthrough so the client sees the endpoint certificate directly.
 
 Useful optional arguments:
 - `--server_url` defaults to the value from `SERVER_URL`, or `http://localhost` if not configured.
 - `--client_S2_nodeId` and `--pairing_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
 - `--pairing_s2_node_id` defaults to `PAIRING_S2_NODE_ID` when set and can be overridden on the CLI.
-- `--certificate_file` points to a CA/certificate bundle file for TLS verification in local or test setups.
+- `--certificate_file` points to a CA/certificate bundle file for TLS verification in local or test setups (optional).
 - `--skip_cert_verify` disables certificate verification for local or test setups.
 - `-v` or `--verbose` enables debug logging.
 
@@ -255,6 +271,7 @@ Auto-detection behavior:
 
 Test certificate:
 - For local testing, a test certificate bundle is available at `tests/localhost.chain.pem`.
+- This file is optional for LAN pairing fingerprinting and mainly useful when you want to force TLS verification against a specific local bundle.
 - This file is intended for development and test scenarios only.
 
 ## 2. Connect after pairing:
@@ -280,6 +297,63 @@ client \
 **Please note:** `--connect` and `--unpair` are dedicated modes and only accept `--pairing_s2_node_id` (or `--pairing_S2_nodeId`) plus optional `--verbose`.
 
 # Run the FastAPI server
+
+The supported server entry point is the `server` console script defined in
+`pyproject.toml` under `[project.scripts]`.
+
+### 1. Install dependencies
+
+```bash
+poetry install --all-extras
+```
+
+### 2. Create a `.env` file
+
+An example file is provided at `.env.example` — copy it and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+The server reads its configuration from a `.env` file in the project root. All fields below are required:
+
+```dotenv
+PAIRING_NODE_ID=PAIR1234          # 8–12 character pairing node identifier
+SERVER_S2_NODE_ID=<uuid>          # UUID for the server-side S2 node
+CEM_S2_NODE_ID=<uuid>             # UUID for the CEM S2 node
+CEM_TYPE=CEM
+CEM_MODEL_NAME=My CEM
+CEM_BRAND=MyBrand
+HMAC_SALT=<your-domain-or-secret> # Salt used for HMAC verification
+```
+
+Optional fields:
+
+```dotenv
+CEM_URL=https://your-cem-host/connection/   # Exposed connection endpoint URL
+DEFAULT_PAIRING_TOKEN=yourtoken             # One-time startup pairing token; expires after PAIRING_TOKEN_TTL_SECONDS or first use
+PAIRING_TOKEN_TTL_SECONDS=300               # Pairing token validity window (default: 5 minutes)
+```
+
+Pairing token behavior:
+- Pairing tokens are one-time use tokens.
+- A token is consumed by the next successful new pairing attempt and is then no longer valid.
+- Pairing tokens expire after `PAIRING_TOKEN_TTL_SECONDS` (default: 300 seconds / 5 minutes).
+- `DEFAULT_PAIRING_TOKEN` is the optional startup token. It is also one-time and TTL-bound.
+- If a one-time token has already expired, the server rejects pairing with an authentication error instead of silently accepting.
+- If you want to start without a fixed startup token, set this in `.env`:
+
+```dotenv
+DEFAULT_PAIRING_TOKEN=
+```
+
+When `DEFAULT_PAIRING_TOKEN` is empty, the server uses a generated pairing token flow.
+You can still press `P + Enter` in the server console to override the next one-time token manually.
+
+### 3. Start the server
+
+After installation, run the configured console script directly:
+
 ```bash
 server
 ```
@@ -360,3 +434,24 @@ ci/generate_s2_auth.sh
 ```
 Relevant code is under `src/s2auth/gen_protocol/{client,server}/{connection_init,pairing}`
 Code here is not moved automatically so moving the generated code to a usable location is manual for now.
+
+# Documentation
+
+Comprehensive documentation is available in the `docs/` directory. To browse it locally:
+
+```bash
+poetry run mkdocs serve
+```
+
+Start with:
+- `docs/index.md` for the project overview
+- `docs/server/index.md` for server integration
+- `docs/client/index.md` for client usage
+- `docs/api/` for API reference pages
+- `docs/Development.md` for development setup and maintenance notes
+
+Key reference docs:
+- **[Dependency Override Guide](docs/dependency_overrides.md)** - How to override dependencies in the DI system (4 methods: decorator, setup(), function call, context manager)
+- **[Context Storage Override](docs/context_storage_override.md)** - Specific guide for overriding context storage with Redis or other backends
+- **[Pairing Token Override](docs/pairing_token_override.md)** - How to customize pairing token generation (static tokens for testing, custom lengths, external sources)
+- **[Dependency Injection Deployment Models](docs/dependency_injection_deployment_models.md)** - How the DI system works in different deployment scenarios (async, threaded, hybrid)
