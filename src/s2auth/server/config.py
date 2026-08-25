@@ -10,7 +10,7 @@ class Config(BaseSettings):
     sqlalchemy_db_uri: SecretStr = SecretStr(
         "postgresql://postgres:postgres@localhost/s2auth"
     )
-    domain_name: str = "s2.example.com"
+    domain_name: str = "s2connect.example.com"
 
 
 @register_provider()
