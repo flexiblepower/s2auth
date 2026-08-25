@@ -31,16 +31,16 @@ from s2auth.common.model.s2_connect_pairing import (
 LOGGER = logging.getLogger(__name__)
 
 
-def build_httpx_verify(verify_tls: bool, ca_cert_file: str | None) -> str | bool:
+def build_httpx_verify(verify_tls: bool, ssl_certfile: str | None) -> str | bool:
     if not verify_tls:
         return False
-    if isinstance(ca_cert_file, str) and ca_cert_file.strip() == "":
+    if isinstance(ssl_certfile, str) and ssl_certfile.strip() == "":
         return True
-    if ca_cert_file is None:
+    if ssl_certfile is None:
         return True
-    if not Path(ca_cert_file).is_file():
-        raise S2PairingError(f"Certificate file '{ca_cert_file}' not found")
-    return ca_cert_file
+    if not Path(ssl_certfile).is_file():
+        raise S2PairingError(f"Certificate file '{ssl_certfile}' not found")
+    return ssl_certfile
 
 def calculate_fingerprint_from_response_certificate(response: httpx.Response) -> bytes | None:
     network_stream = response.extensions.get("network_stream")
@@ -97,7 +97,7 @@ async def pair(pairing_uri: str,
                domain_name: str | None,
                pairingS2NodeId: Optional[str] = None,
                verify_tls: bool = True,
-               ca_cert_file: str | None = None) -> bool:
+               ssl_certfile: str | None = None) -> bool:
     """
     Preform the initial pairing
     Attributes:
@@ -114,7 +114,7 @@ async def pair(pairing_uri: str,
         of the S2 node this client wants to pair to a node on the server
         domain_name the domain name to use in a wan deployment
         verify_tls: should ssl certificates be verified
-        ca_cert_file: optional CA/certificate bundle path used for TLS verification
+        ssl_certfile: optional CA/certificate bundle path used for TLS verification
     """
     # Create client HMAC challenge that the server needs to solve
     # Create /requestPairing request body object
@@ -124,7 +124,7 @@ async def pair(pairing_uri: str,
     # Depending on the client/server role in the connection initiation of other S2 node either requestConnectionDetails or postConnectionDetails
     # In any case, store the connection details in the database.
 
-    httpx_verify = build_httpx_verify(verify_tls, ca_cert_file)
+    httpx_verify = build_httpx_verify(verify_tls, ssl_certfile)
 
     # If no id given use id from client
     s2_role: Role = Role(role)
@@ -230,7 +230,7 @@ async def pair(pairing_uri: str,
                 "supported_communication_protocols": supported_communication_protocols,
                 "supported_hmac_hashing_algorithms": supportedHmacHashingAlgorithms,
                 "verify_tls": verify_tls,
-                "ca_cert_file": ca_cert_file,
+                "ssl_certfile": ssl_certfile,
             }
             if s2_role == Role.RM:
                 rm_connection_details = await request_connection_details(
@@ -373,20 +373,20 @@ async def connect(storage: Dao,
     pairing_uri = details.get("pairing_server_url", None) if details else None
     access_token = details.get("access_token", None) if details else None
     verify_tls = details.get("verify_tls", None) if details else None
-    ca_cert_file = details.get("ca_cert_file", None) if details else None
+    ssl_certfile = details.get("ssl_certfile", None) if details else None
     client_s2_node_id = details.get("client_s2_node_id", None) if details else None
 
     supported_s2_message_versions = details.get("supported_s2_message_versions", None) if details else None
     supported_communication_protocols = details.get("supported_communication_protocols", None) if details else None
     supported_hmac_hashing_algorithms = details.get("supported_hmac_hashing_algorithms", None) if details else None
 
-    if not details or pairing_uri is None or access_token is None or verify_tls is None or ca_cert_file is None or client_s2_node_id is None \
+    if not details or pairing_uri is None or access_token is None or verify_tls is None or ssl_certfile is None or client_s2_node_id is None \
         or supported_s2_message_versions is None or supported_communication_protocols is None or supported_hmac_hashing_algorithms is None:
         raise S2PairingError(
             f"Connection details for pairing_s2_node_id '{pairing_s2_node_id}' not found or incomplete."
         )
 
-    httpx_verify = build_httpx_verify(verify_tls, ca_cert_file)
+    httpx_verify = build_httpx_verify(verify_tls, ssl_certfile)
     async with httpx.AsyncClient(verify=httpx_verify, event_hooks=HTTPX_HOOKS) as client:
         init_payload: InitiateSessionPostRequest = InitiateSessionPostRequest(
             clientNodeId=NodeId(UUID(client_s2_node_id)),
@@ -458,9 +458,9 @@ async def unpair(storage: Dao,
     pairing_uri = details.get("pairing_server_url", None) if details else None
     access_token = details.get("access_token", None) if details else None
     verify_tls = details.get("verify_tls", None) if details else None
-    ca_cert_file = details.get("ca_cert_file", None) if details else None
+    ssl_certfile = details.get("ssl_certfile", None) if details else None
     client_s2_node_id = details.get("client_s2_node_id", None) if details else None
-    if not details or pairing_uri is None or access_token is None or verify_tls is None or ca_cert_file is None and client_s2_node_id is not None:
+    if not details or pairing_uri is None or access_token is None or verify_tls is None or ssl_certfile is None and client_s2_node_id is not None:
         raise S2PairingError(
             f"Connection details for pairing_s2_node_id '{pairing_s2_node_id}' not found or incomplete."
         )
@@ -469,7 +469,7 @@ async def unpair(storage: Dao,
         "serverNodeId": pairing_s2_node_id,
     }
 
-    httpx_verify = build_httpx_verify(bool(verify_tls), ca_cert_file)
+    httpx_verify = build_httpx_verify(bool(verify_tls), ssl_certfile)
     async with httpx.AsyncClient(verify=httpx_verify, event_hooks=HTTPX_HOOKS) as client:
         headers = add_header(token=access_token)
         response = await client.post(f'{pairing_uri}/unpair',

@@ -24,9 +24,38 @@ Client workflow:
 2. After pairing is complete, run connect mode to initiate the S2 session and fetch communication details.
 3. If needed, run unpair mode to terminate the pairing.
 
+Client configuration is loaded from `.env` by `s2auth.client.settings.ClientSettings`.
+The CLI reads those values first and then lets you override them with command-line arguments.
+
+Relevant client settings in `.env` are:
+- `SERVER_URL`
+- `PAIRING_TOKEN`
+- `PAIRING_S2_NODE_ID`
+- `CLIENT_S2_NODE_ID`
+- `CLIENT_ROLE`
+- `CLIENT_DEPLOYMENT`
+- `DOMAIN_NAME`
+- `VERIFY_TLS`
+- `SSL_CERTFILE`
+- `STORAGE_DB_URL`
+- `SUPPORTED_S2_VERSIONS`
+- `SUPPORTED_COMMUNICATION_PROTOCOLS`
+- `SUPPORTED_HMAC_HASHING_ALGORITHMS`
+- `CLEINT_BRAND`
+- `CLIENT_DEVICE_TYPE`
+- `CLIENT_MODEL_NAME`
+
 
 ## 1. Run pairing
-Typical WAN example:
+If you have configured `.env`, the simplest invocation is:
+
+```bash
+poetry run client
+```
+
+The examples below keep the same behavior but explicitly override values from `.env` on the command line.
+
+WAN override example:
 
 ```bash
 poetry run client \
@@ -40,7 +69,7 @@ poetry run client \
   --verbose
 ```
 
-Typical LAN example:
+LAN override example:
 
 ```bash
 poetry run client \
@@ -53,26 +82,29 @@ poetry run client \
 ```
 
 Required input:
-- Provide a `--pairing_token` to start the pairing flow.
-- For WAN deployments, provide `--domain` or let the client auto-detect it from `--server_url`.
-- For LAN deployments, provide `--certificate_file` if you want to verify against a specific local certificate bundle.
+- Provide a `PAIRING_TOKEN` in `.env` or pass `--pairing_token` to start the pairing flow.
+- `CLIENT_DEPLOYMENT` in `.env` or `--deployment` on the CLI is optional.
+- For WAN deployments, provide `DOMAIN_NAME` in `.env` or pass `--domain`, or let the client auto-detect the domain from `--server_url`.
+- For LAN deployments, provide `SSL_CERTFILE` in `.env` or pass `--certificate_file` if you want to verify against a specific local certificate bundle.
 
 Useful optional arguments:
-- `--server_url` defaults to `http://localhost`.
+- `--server_url` defaults to the value from `SERVER_URL`, or `http://localhost` if not configured.
 - `--client_S2_nodeId` and `--server_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
-- `--pairing_s2_node_id` can be used when the pairing code must include a target S2 node ID.
+- `--pairing_s2_node_id` defaults to `PAIRING_S2_NODE_ID` when set and can be overridden on the CLI.
 - `--certificate_file` points to a CA/certificate bundle file for TLS verification in local or test setups.
 - `--skip_cert_verify` disables certificate verification for local or test setups.
 - `-v` or `--verbose` enables debug logging.
 
 Auto-detection behavior:
-- If `--deployment` is not set, the client tries to auto-detect it.
-- `--domain` set: deployment is treated as `WAN`.
-- `--certificate_file` set: deployment is treated as `LAN`.
-- Otherwise the client inspects `--server_url`.
+- `CLIENT_DEPLOYMENT` or `--deployment` takes priority when set and disables deployment auto-detection.
+- If deployment is not set, the client infers it from the other effective settings.
+- `DOMAIN_NAME` or `--domain` set: deployment is treated as `WAN`.
+- `SSL_CERTFILE` or `--certificate_file` set: deployment is treated as `LAN`.
+- If both domain and certificate settings are provided while deployment is unset, the client treats the connection as `WAN` because domain is checked first.
+- Otherwise the client inspects `SERVER_URL` or `--server_url`.
 - `localhost`, `.local`, and private/local IP addresses are treated as `LAN`.
 - Public hostnames or public IP addresses are treated as `WAN`.
-- When deployment is auto-detected as `WAN` and `--domain` is not set, the client also auto-detects the domain from the hostname in `--server_url`.
+- When deployment is auto-detected as `WAN` and no domain is set, the client also auto-detects the domain from the hostname in `SERVER_URL` or `--server_url`.
 - The client logs a warning whenever deployment or domain is auto-detected.
 
 Test certificate:

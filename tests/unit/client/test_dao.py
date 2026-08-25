@@ -14,7 +14,7 @@ def test_load_connection_details_roundtrip(tmp_path: PosixPath) -> None:
             "client_s2_node_id": "client_s2_node_id",
             "pairing_server_url": "https://pairing.example.com/v1",
             "verify_tls": True,
-            "ca_cert_file": "path/to/ca_cert.pem",
+            "ssl_certfile": "path/to/ca_cert.pem",
             "initiate_session_url": "https://test.example.com",
             "access_token": "AHsUZCP0B+uXe6k/Pjm9aFKNWouRjWdnoD2DhIi2844=",
             "supported_s2_message_versions": ["v0.0.2-beta"],
@@ -34,7 +34,7 @@ def test_load_connection_details_roundtrip(tmp_path: PosixPath) -> None:
     assert details["s2_node_id"] == s2_node_id
     assert details["pairing_server_url"] == "https://pairing.example.com/v1"
     assert details["verify_tls"] is True
-    assert details["ca_cert_file"] == "path/to/ca_cert.pem"
+    assert details["ssl_certfile"] == "path/to/ca_cert.pem"
     assert details["initiate_session_url"] == "https://test.example.com"
     assert details["access_token"] == "AHsUZCP0B+uXe6k/Pjm9aFKNWouRjWdnoD2DhIi2844="
     assert details["supported_s2_message_versions"] == ["v0.0.2-beta"]

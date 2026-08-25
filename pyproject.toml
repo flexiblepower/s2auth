@@ -37,7 +37,7 @@ classifiers = [
 
 [project.scripts]
 server = "s2auth.server.run:main"
-client = "s2auth.client.main:main"
+client = "s2auth.reference.client.main:main"
 
 
 [project.optional-dependencies]
