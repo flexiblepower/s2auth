@@ -9,7 +9,54 @@ ci/setup_dev_environment.sh
 # Install as regular python package
 * `pip install .` or from pypi should just work
 
-# Call the client
+# Use as a library
+The package exposes a public client API, public protocol model re-exports, and HMAC helpers.
+
+Pairing client API:
+
+```python
+from s2auth.client import ClientSettings, PairingClient, strip_pairing_url
+
+settings = ClientSettings()
+client = PairingClient.from_settings(settings)
+
+# async usage:
+# pairing_result = await client.pair()
+# connected = await client.connect(pairing_s2_node_id="...")
+# unpaired = await client.unpair(pairing_s2_node_id="...")
+```
+
+Common protocol models:
+
+```python
+from s2auth.common.model import Deployment, Role, HmacHashingAlgorithm
+```
+
+You can also import generated model submodules directly from `s2auth.common.model`
+to access all generated symbols, including names that may appear in multiple specs
+(for example different `ErrorMessage` enums):
+
+```python
+from s2auth.common.model import s2_connect_common, s2_connect_pairing, s2_connect_session_init
+
+pairing_error = s2_connect_pairing.ErrorMessage
+session_error = s2_connect_session_init.ErrorMessage
+```
+
+HMAC helpers:
+
+```python
+from s2auth.common import (
+  create_pairing_code,
+  create_challenge,
+  create_response,
+  verify_response,
+  get_supported_algorithms,
+  select_algorithm,
+)
+```
+
+# Call the client CLI
 The pairing client is exposed as the Python module `s2auth.client.main`.
 
 From a development checkout, run it by:

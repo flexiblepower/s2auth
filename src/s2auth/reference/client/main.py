@@ -8,9 +8,9 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import connect, pair, strip_pairing_url, unpair
+from s2auth.client.pairing import PairingClient, strip_pairing_url
 from s2auth.client.settings import ClientSettings
-from s2auth.common.model.s2_connect_common import NodeDescription, NodeId
+from s2auth.common.model.s2_connect_common import CommunicationProtocol, Deployment, Role
 from s2auth.common.model.s2_connect_pairing import HmacHashingAlgorithm
 
 LOGGER = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ def _format_default(value: object) -> str:
 async def _run_connect_mode(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
+    settings: ClientSettings,
     dao: Dao,
     pairing_s2_node_id: str | None,
     storage_key: str,
@@ -35,7 +36,8 @@ async def _run_connect_mode(
     if not pairing_s2_node_id:
         parser.error("--connect expects --pairing_s2_node_id (or --pairing_S2_nodeId)")
 
-    assert await connect(storage=dao, pairing_s2_node_id=pairing_s2_node_id)
+    client = PairingClient.from_settings(settings, storage=dao)
+    assert await client.connect(pairing_s2_node_id=pairing_s2_node_id)
     connection_details = dao.load_connection_details(storage_key)
     assert connection_details is not None, f"Connection details for pairing_s2_node_id '{storage_key}' not found after connect."
 
@@ -49,6 +51,7 @@ async def _run_connect_mode(
 async def _run_unpair_mode(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
+    settings: ClientSettings,
     dao: Dao,
     pairing_s2_node_id: str | None,
 ) -> None:
@@ -60,7 +63,8 @@ async def _run_unpair_mode(
     if not pairing_s2_node_id:
         parser.error("--unpair expects --pairing_s2_node_id (or --pairing_S2_nodeId)")
 
-    assert await unpair(storage=dao, pairing_s2_node_id=pairing_s2_node_id)
+    client = PairingClient.from_settings(settings, storage=dao)
+    assert await client.unpair(pairing_s2_node_id=pairing_s2_node_id)
 
 def _detect_deployment(
     pairing_url: str,
@@ -117,31 +121,35 @@ async def _run_pairing_mode(
 
     LOGGER.info(f"Starting pairing client with clientS2NodeId: {clientS2NodeId}")
 
-    s2_client_description: NodeDescription = NodeDescription(id=NodeId(clientS2NodeId),
-                                                             brand=args.brand,
-                                                             type=args.type,
-                                                             modelName=args.model_name,
-                                                             role=args.s2_role)
+    runtime_settings = settings.model_copy(
+        update={
+            "server_url": args.server_url,
+            "pairing_token": args.pairing_token,
+            "pairing_s2_node_id": pairing_s2_node_id,
+            "client_s2_node_id": str(clientS2NodeId),
+            "client_role": Role(args.s2_role),
+            "client_deployment": Deployment(args.deployment.upper()),
+            "domain_name": args.domain,
+            "verify_tls": not args.skip_cert_verify,
+            "ssl_certfile": args.certificate_file,
+            "supported_s2_versions": args.supported_s2_message_versions,
+            "supported_communication_protocols": list(map(CommunicationProtocol, args.communication_protocols)),
+            "supported_hmac_hashing_algorithms": list(map(HmacHashingAlgorithm, args.supported_hmac_hashing_algorithms)),
+            "cleint_brand": args.brand,
+            "client_device_type": args.type,
+            "client_model_name": args.model_name,
+        }
+    )
 
-    pairing_code: str | None = args.pairing_token
-    assert await pair(pairing_uri=server_url,
-                      pairing_code=pairing_code,
-                      storage=dao,
-                      role=args.s2_role,
-                      deployment=args.deployment.upper(),
-                      supported_s2_message_versions=args.supported_s2_message_versions,
-                      supported_communication_protocols=args.communication_protocols,
-                      supportedHmacHashingAlgorithms=list(map(HmacHashingAlgorithm, args.supported_hmac_hashing_algorithms)),
-                      s2_client_description=s2_client_description,
-                      domain_name=args.domain,
-                      pairingS2NodeId=pairing_s2_node_id,
-                      verify_tls=not args.skip_cert_verify,
-                      ssl_certfile=args.certificate_file)
+    client = PairingClient.from_settings(runtime_settings, storage=dao)
+    result = await client.pair()
 
-    connection_details = dao.load_connection_details(storage_key)
+    connection_details = result.connection_details
+    if connection_details is None:
+        connection_details = dao.load_connection_details(storage_key)
     assert connection_details is not None, f"Connection details for pairing_s2_node_id '{storage_key}' not found after pairing."
     LOGGER.info("--- Pairing info: ---")
-    LOGGER.info(f"pairing_s2_node_id: {pairing_s2_node_id}")
+    LOGGER.info(f"pairing_s2_node_id: {result.pairing_s2_node_id}")
     LOGGER.info(f"client_s2_node_id: {connection_details.get('client_s2_node_id', None)}")
     LOGGER.info(f"initiate_session_url: {connection_details.get('initiate_session_url', None)}")
     LOGGER.info(f"access_token: {connection_details.get('access_token', None)}")
@@ -272,11 +280,11 @@ async def _run_client():
     storage_key = pairing_s2_node_id if pairing_s2_node_id else str(clientS2NodeId)
 
     if args.connect:
-        await _run_connect_mode(parser, args, dao, pairing_s2_node_id, storage_key)
+        await _run_connect_mode(parser, args, settings, dao, pairing_s2_node_id, storage_key)
         return
 
     if args.unpair:
-        await _run_unpair_mode(parser, args, dao, pairing_s2_node_id)
+        await _run_unpair_mode(parser, args, settings, dao, pairing_s2_node_id)
         return
 
     await _run_pairing_mode(args, settings, dao, pairing_s2_node_id, clientS2NodeId, storage_key)

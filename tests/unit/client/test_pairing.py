@@ -12,10 +12,12 @@ from pydantic import AnyUrl, TypeAdapter
 from pytest_mock.plugin import MockerFixture
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import (add_header, confirmToken, finalize_pairing, pair,
-                                   post_connection_details,
-                                   request_connection_details,
-                                   strip_pairing_url, unpair)
+from s2auth.client.pairing import strip_pairing_url
+from s2auth.client.pairing_core import (add_header, confirmToken,
+                                        finalize_pairing, pair,
+                                        post_connection_details,
+                                        request_connection_details,
+                                        unpair)
 from s2auth.common.exceptions import S2PairingError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 create_response)
@@ -39,7 +41,7 @@ WS_TOKEN = create_pairing_code()
 
 @pytest.fixture(autouse=True)
 def mock_calculate_fingerprint(mocker: MockerFixture) -> MagicMock:
-    return mocker.patch("s2auth.client.pairing.calculate_fingerprint_from_response_certificate", return_value=b"")
+    return mocker.patch("s2auth.client.pairing_core.calculate_fingerprint_from_response_certificate", return_value=b"")
 
 
 def encode_base64_text(text: str) -> str:
@@ -128,7 +130,7 @@ def mock_AsyncClient_404(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
 
     # Patch where your code constructs the client
     mocked_ctor = mocker.patch(
-        "s2auth.client.pairing.httpx.AsyncClient",
+        "s2auth.client.pairing_core.httpx.AsyncClient",
         return_value=mock_client,
         autospec=True,
     )
@@ -237,7 +239,7 @@ def mock_AsyncClient(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
 
     # Patch where your code constructs the client
     mocked_ctor = mocker.patch(
-        "s2auth.client.pairing.httpx.AsyncClient",
+        "s2auth.client.pairing_core.httpx.AsyncClient",
         return_value=mock_client,
         autospec=True,
     )
@@ -278,7 +280,7 @@ async def test_paiting_rm(dao: Dao,
                           mocker: MockerFixture,
                           mock_AsyncClient: tuple[MagicMock, MagicMock],
                           s2_client_description: NodeDescription) -> None:
-    import s2auth.client.pairing as pairing
+    import s2auth.client.pairing_core as pairing
 
     request_connection_details_spy = mocker.spy(pairing, "request_connection_details")
     finalize_pairing_spy = mocker.spy(pairing, "finalize_pairing")
@@ -342,7 +344,7 @@ async def test_pairing_uuid_node_id_is_sent_as_node_id(
 
 
 async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tuple[MagicMock, MagicMock], s2_client_description: NodeDescription) -> None:
-    import s2auth.client.pairing as pairing
+    import s2auth.client.pairing_core as pairing
 
     request_connection_details_spy = mocker.spy(pairing, "request_connection_details")
     finalize_pairing_spy = mocker.spy(pairing, "finalize_pairing")

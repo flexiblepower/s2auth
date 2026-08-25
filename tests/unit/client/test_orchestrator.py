@@ -5,7 +5,7 @@ from pytest import MonkeyPatch
 from pytest_mock.plugin import MockerFixture
 
 from s2auth.client.dao import Dao
-from s2auth.client.orchestrator import PairingClient
+from s2auth.client.pairing import PairingClient
 from s2auth.client.settings import ClientSettings
 from s2auth.common.model.s2_connect_common import Deployment, Role
 
@@ -40,7 +40,7 @@ async def test_pairing_client_pair_delegates_to_low_level(mocker: MockerFixture)
     dao = Dao("sqlite://")
 
     low_level_pair = mocker.patch(
-        "s2auth.client.orchestrator.low_level_pair",
+        "s2auth.client.pairing.low_level_pair",
         new=AsyncMock(return_value=True),
     )
 
@@ -65,7 +65,25 @@ async def test_pairing_client_connect_uses_default_pairing_id(mocker: MockerFixt
     dao = Dao("sqlite://")
 
     low_level_connect = mocker.patch(
-        "s2auth.client.orchestrator.low_level_connect",
+        "s2auth.client.pairing.low_level_connect",
+        new=AsyncMock(return_value=True),
+    )
+
+    client = PairingClient.from_settings(settings, storage=dao)
+
+    assert await client.connect() is True
+    low_level_connect.assert_awaited_once_with(storage=dao, pairing_s2_node_id="node-123")
+
+
+async def test_pairing_client_connect_does_not_require_uuid_client_id(mocker: MockerFixture) -> None:
+    settings = _make_settings(
+        client_s2_node_id="not-a-uuid",
+        pairing_s2_node_id="node-123",
+    )
+    dao = Dao("sqlite://")
+
+    low_level_connect = mocker.patch(
+        "s2auth.client.pairing.low_level_connect",
         new=AsyncMock(return_value=True),
     )
 
