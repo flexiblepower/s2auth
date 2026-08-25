@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import timezone, datetime
 from typing import Annotated
 from pydantic import Field
 from pydantic import AnyUrl, StringConstraints
@@ -9,6 +9,7 @@ from wepositive_di import register_provider
 
 from s2auth.common.model.s2_connect_common import CommunicationProtocol, Deployment
 
+UTC = timezone.utc
 
 SERVER_PROCESS_STARTED_AT = datetime.now(UTC)
 
