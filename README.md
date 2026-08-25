@@ -291,6 +291,9 @@ client \
 
 # Run the FastAPI server
 
+The supported server entry point is the `server` console script defined in
+`pyproject.toml` under `[project.scripts]`.
+
 ### 1. Install dependencies
 
 ```bash
@@ -324,6 +327,8 @@ CEM_URL=https://your-cem-host/connection/   # Exposed connection endpoint URL
 ```
 
 ### 3. Start the server
+
+After installation, run the configured console script directly:
 
 ```bash
 server
