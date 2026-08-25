@@ -57,5 +57,4 @@ class EndpointGetParametersQuery(BaseModel):
     offset: Annotated[int | None, Field(ge=0)] = None
 
 
-del _module
 del _reexports
