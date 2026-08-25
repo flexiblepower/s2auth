@@ -2,6 +2,7 @@ from base64 import b64decode
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from datetime import datetime
 from enum import Enum
 from typing import Awaitable, Callable, TypeVar, cast
 from uuid import UUID
@@ -128,6 +129,7 @@ class PairingAttemptContext(BaseModel):
     pairing_attempt_id: PairingAttemptId
     pairing_node_id: NodeIdAlias
     pairing_token: PairingToken
+    pairing_token_expires_at: datetime | None = None
     algorithm: HmacHashingAlgorithm | None = None
     server_hmac_challenge: HmacChallenge | None = None
 

@@ -1,8 +1,9 @@
 from typing import Annotated
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from s2auth.common.exceptions import PairingNotCompleteError
+from s2auth.common.exceptions import AccessError, PairingNotCompleteError, VerificationError
 from s2auth.common.model.s2_connect_common import AccessToken, NodeId
 from s2auth.common.model.s2_connect_session_init import (
     CommunicationDetailsErrorMessage,
@@ -41,6 +42,7 @@ from s2auth.server.pairing import (
 )
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 router.get("/", response_model=list[str], tags=["Pairing process"])(
@@ -194,7 +196,14 @@ async def request_connection_details(
     Request connection information from the server. This is only used if the PairingServer is also the CommunicationServer.
     """
     _ = s2_connect_version
-    return await handle_client_response(body)
+    try:
+        return await handle_client_response(body)
+    except (AccessError, VerificationError) as exc:
+        log.warning(
+            "requestConnectionDetails rejected: %s",
+            exc.message,
+        )
+        raise HTTPException(status_code=401, detail=exc.message) from exc
 
 
 @router.post(
@@ -215,7 +224,11 @@ async def request_pairing(
     Initiate the pairing process.
     """
     _ = s2_connect_version
-    return await handle_request_pairing(body)
+    try:
+        return await handle_request_pairing(body)
+    except AccessError as exc:
+        log.warning("requestPairing rejected: %s", exc.message)
+        raise HTTPException(status_code=401, detail=exc.message) from exc
 
 
 @router.post(

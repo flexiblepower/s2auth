@@ -15,7 +15,10 @@ from s2auth.reference.server.pairing import router as pairing_router
 from s2auth.server.config import Config
 from s2auth.server import setup as setup_s2auth_server
 from s2auth.server.settings import Settings, settings as get_settings
-from s2auth.server.token_manager import set_pending_pairing_token
+from s2auth.server.token_manager import (
+    prime_default_pairing_token,
+    set_pending_pairing_token,
+)
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +34,7 @@ def _primary_s2_connect_version(server_settings: Settings) -> str:
         return "v1"
     return supported_versions[0]
 
-def _keyboard_watcher(stop_event: threading.Event) -> None:
+def _keyboard_watcher(stop_event: threading.Event, pairing_token_ttl_seconds: int) -> None:
     """Background thread: press P (+ Enter) to generate a one-time pairing token."""
     while not stop_event.is_set():
         try:
@@ -39,9 +42,10 @@ def _keyboard_watcher(stop_event: threading.Event) -> None:
                 line = sys.stdin.readline()
                 if line.strip().lower() == "p":
                     token = create_pairing_code()
-                    set_pending_pairing_token(token)
-                    log.info("One-time pairing token generated: %s", token)
-                    log.info("Press P + Enter to generate a new one-time pairing token for the next client.")
+                    set_pending_pairing_token(
+                        token,
+                        ttl_seconds=pairing_token_ttl_seconds,
+                    )
         except Exception:
             break
 
@@ -53,6 +57,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     setupLogging(default_log_level=LogLevel.DEBUG, logger_config={})
     setup_s2auth_server(additional_hook_modules=["s2auth.reference.server.hooks"])
     server_settings = get_settings()
+    # Prime startup default token so TTL starts at server startup, not first request.
+    prime_default_pairing_token(server_settings)
     cfg = Config()
     log.info(
         "Server startup config: DOMAIN_NAME=%s, PAIRING_NODE_ID=%s, SERVER_S2_NODE_ID=%s",
@@ -73,11 +79,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         base_url,
         s2_connect_version,
     )
-    if server_settings.default_pairing_token:
-        log.info("Default one time pairing token (from DEFAULT_PAIRING_TOKEN): %s", server_settings.default_pairing_token)
-    log.info("Press P + Enter to generate a new one-time pairing token for the next client.")
+
     stop_event = threading.Event()
-    watcher = threading.Thread(target=_keyboard_watcher, args=(stop_event,), daemon=True)
+    watcher = threading.Thread(
+        target=_keyboard_watcher,
+        args=(stop_event, server_settings.pairing_token_ttl_seconds),
+        daemon=True,
+    )
     watcher.start()
     yield
     stop_event.set()

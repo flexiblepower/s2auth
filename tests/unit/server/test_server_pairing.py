@@ -2,6 +2,7 @@
 
 from base64 import b64decode, b64encode
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -59,6 +60,8 @@ from s2auth.server.pairing import (
     unpair,
 )
 from s2auth.server.settings import Settings, settings
+from s2auth.server.token_manager import consume_pending_pairing_token, set_pending_pairing_token
+from s2auth.server.token_manager import prime_default_pairing_token
 
 
 PAIRING_TOKEN = "pairingToken123"
@@ -78,6 +81,21 @@ def server_settings() -> Settings:
         cem_model_name="TestModel",
         pairing_node_id="PAIR1234",
         cem_url=AnyUrl("https://cem.example.com/connection/"),
+        pairing_token_ttl_seconds=300,
+    )
+
+
+def server_settings_with_default_pairing_token() -> Settings:
+    return Settings(
+        server_s2_node_id=uuid4(),
+        cem_s2_node_id=uuid4(),
+        cem_brand="TestBrand",
+        cem_type="TestType",
+        cem_model_name="TestModel",
+        pairing_node_id="PAIR1234",
+        cem_url=AnyUrl("https://cem.example.com/connection/"),
+        default_pairing_token=PAIRING_TOKEN,
+        pairing_token_ttl_seconds=300,
     )
 
 
@@ -91,6 +109,7 @@ def server_settings_lan() -> Settings:
         pairing_node_id="PAIR1234",
         cem_url=AnyUrl("https://cem.example.com/connection/"),
         cem_deployment_type=Deployment.LAN,
+        pairing_token_ttl_seconds=300,
         ssl_certfile="tests/localhost.chain.pem",
     )
 
@@ -177,6 +196,7 @@ async def store_authentication_context(
 async def test_initiate_pairing_stores_context_and_sets_pairing_id() -> None:
     stored_contexts: list[PairingAttemptContext] = []
     test_client_node_id = uuid4()
+    started_at = datetime.now(UTC)
 
     ctx = await initiate_pairing(
         store_pairing_ctx=await store_pairing_context(stored_contexts),
@@ -190,6 +210,10 @@ async def test_initiate_pairing_stores_context_and_sets_pairing_id() -> None:
     assert ctx.pairing_token == PAIRING_TOKEN
     assert ctx.client_node_id == test_client_node_id
     assert ctx.state is None
+    assert ctx.pairing_token_expires_at is not None
+    expected_expires_at = started_at + timedelta(minutes=5)
+    assert ctx.pairing_token_expires_at >= expected_expires_at - timedelta(seconds=1)
+    assert ctx.pairing_token_expires_at <= expected_expires_at + timedelta(seconds=1)
 
 
 async def test_request_pairing_stores_authentication_context_and_returns_challenge_response() -> None:
@@ -331,6 +355,154 @@ async def test_request_pairing_initializes_context_when_missing() -> None:
     assert len(stored_auth_contexts) == 1
     assert stored_auth_contexts[0].client_node_id == test_client_node_id
     assert stored_auth_contexts[0].state == ClientState.PAIRING
+
+
+async def test_default_pairing_token_is_consumed_once() -> None:
+    storage = S2InMemoryContextStorage()
+    stored_auth_contexts: list[AuthenticationContext] = []
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    settings_instance = server_settings_with_default_pairing_token()
+
+    def test_settings_provider() -> Settings:
+        return settings_instance
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            settings: test_settings_provider,
+        }
+    ):
+        await request_pairing(
+            request=pairing_request(uuid4()),
+            store_authentication_ctx=await store_authentication_context(
+                stored_auth_contexts
+            ),
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+        await request_pairing(
+            request=pairing_request(uuid4()),
+            store_authentication_ctx=await store_authentication_context(
+                stored_auth_contexts
+            ),
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+
+    pairing_contexts = await storage.list_contexts(PairingAttemptContext)
+    pairing_tokens = [ctx.pairing_token for ctx in pairing_contexts]
+    assert pairing_tokens.count(PAIRING_TOKEN) == 1
+
+
+async def test_empty_default_pairing_token_falls_back_to_generated_token() -> None:
+    storage = S2InMemoryContextStorage()
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    settings_instance = server_settings_with_default_pairing_token()
+    settings_instance.default_pairing_token = ""
+
+    def test_settings_provider() -> Settings:
+        return settings_instance
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            settings: test_settings_provider,
+        }
+    ):
+        await request_pairing(
+            request=pairing_request(uuid4()),
+            store_authentication_ctx=await store_authentication_context([]),
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+
+    pairing_contexts = await storage.list_contexts(PairingAttemptContext)
+    assert len(pairing_contexts) == 1
+    assert pairing_contexts[0].pairing_token != ""
+    assert pairing_contexts[0].pairing_token != PAIRING_TOKEN
+
+
+async def test_default_pairing_token_expires_from_startup_time() -> None:
+    storage = S2InMemoryContextStorage()
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    settings_instance = server_settings_with_default_pairing_token()
+    settings_instance.default_pairing_token_created_at = datetime.now(UTC) - timedelta(
+        minutes=10
+    )
+
+    def test_settings_provider() -> Settings:
+        return settings_instance
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            settings: test_settings_provider,
+        }
+    ):
+        with pytest.raises(AccessError, match="Pairing token has expired"):
+            await request_pairing(
+                request=pairing_request(uuid4()),
+                store_authentication_ctx=await store_authentication_context([]),
+                hooks=hook_registry(),
+                cfg=config(),
+            )
+
+    pairing_contexts = await storage.list_contexts(PairingAttemptContext)
+    assert len(pairing_contexts) == 0
+
+
+async def test_request_pairing_rejects_expired_pending_pairing_token() -> None:
+    storage = S2InMemoryContextStorage()
+
+    # Ensure clean global token-manager state for this test.
+    consume_pending_pairing_token()
+    set_pending_pairing_token("expired-pending-token", ttl_seconds=0)
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            settings: server_settings,
+        }
+    ):
+        with pytest.raises(AccessError, match="Pairing token has expired"):
+            await request_pairing(
+                request=pairing_request(uuid4()),
+                store_authentication_ctx=await store_authentication_context([]),
+                hooks=hook_registry(),
+                cfg=config(),
+            )
+
+    pairing_contexts = await storage.list_contexts(PairingAttemptContext)
+    assert len(pairing_contexts) == 0
+
+
+def test_prime_default_pairing_token_moves_token_to_pending_bucket() -> None:
+    consume_pending_pairing_token()
+    settings_instance = server_settings_with_default_pairing_token()
+
+    prime_default_pairing_token(settings_instance)
+
+    assert settings_instance.default_pairing_token is None
+    assert consume_pending_pairing_token() == PAIRING_TOKEN
+
+
+def test_default_pairing_token_created_at_is_stable_across_settings_instances() -> None:
+    first = server_settings_with_default_pairing_token()
+    second = server_settings_with_default_pairing_token()
+
+    assert first.default_pairing_token_created_at == second.default_pairing_token_created_at
 
 
 async def test_request_pairing_uses_request_deployment_when_server_default_is_lan() -> None:
@@ -719,3 +891,30 @@ async def test_handle_client_response_rejects_invalid_hmac_response() -> None:
                 new_access_token=access_token(b"unused-token-unused-token-1234"),
                 cfg=config(),
             )
+
+
+async def test_handle_client_response_rejects_expired_pairing_token() -> None:
+    pairing_ctx = PairingAttemptContext(
+        pairing_attempt_id=uuid4(),
+        pairing_node_id=NodeIdAlias(root="PAIR1234"),
+        pairing_token=PAIRING_TOKEN,
+        pairing_token_expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        state=PairingState.INITIATED,
+        algorithm=HmacHashingAlgorithm.SHA256,
+        server_hmac_challenge=create_challenge(),
+    )
+
+    with provider_overrides({settings: server_settings}):
+        with pytest.raises(AccessError, match="Pairing token has expired"):
+            await handle_client_response(
+                request=RequestConnectionDetailsPostRequest(
+                    serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(b"unused"))
+                ),
+                pairing_context=pairing_ctx,
+                auth_ctx=AuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING),
+                hooks=HookRegistry(),
+                new_access_token=access_token(b"unused-token-unused-token-1234"),
+                cfg=config(),
+            )
+
+    assert pairing_ctx.state == PairingState.FAILED

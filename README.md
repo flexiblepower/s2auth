@@ -331,7 +331,24 @@ Optional fields:
 
 ```dotenv
 CEM_URL=https://your-cem-host/connection/   # Exposed connection endpoint URL
+DEFAULT_PAIRING_TOKEN=yourtoken             # One-time startup pairing token; expires after PAIRING_TOKEN_TTL_SECONDS or first use
+PAIRING_TOKEN_TTL_SECONDS=300               # Pairing token validity window (default: 5 minutes)
 ```
+
+Pairing token behavior:
+- Pairing tokens are one-time use tokens.
+- A token is consumed by the next successful new pairing attempt and is then no longer valid.
+- Pairing tokens expire after `PAIRING_TOKEN_TTL_SECONDS` (default: 300 seconds / 5 minutes).
+- `DEFAULT_PAIRING_TOKEN` is the optional startup token. It is also one-time and TTL-bound.
+- If a one-time token has already expired, the server rejects pairing with an authentication error instead of silently accepting.
+- If you want to start without a fixed startup token, set this in `.env`:
+
+```dotenv
+DEFAULT_PAIRING_TOKEN=
+```
+
+When `DEFAULT_PAIRING_TOKEN` is empty, the server uses a generated pairing token flow.
+You can still press `P + Enter` in the server console to override the next one-time token manually.
 
 ### 3. Start the server
 

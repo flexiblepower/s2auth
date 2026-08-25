@@ -1,6 +1,7 @@
 """Pairing functionality for the S2 server."""
 
 from base64 import b64encode
+from datetime import UTC, datetime, timedelta
 from typing import Awaitable, Callable
 from uuid import uuid4
 from s2auth.common.exceptions import AccessError, PairingNotCompleteError
@@ -56,10 +57,24 @@ from s2auth.server.hooks import (
     pairing_attempt_request,
 )
 from s2auth.server.settings import Settings, settings
-from s2auth.server.token_manager import consume_pending_pairing_token
+from s2auth.server.token_manager import (
+    ExpiredOneTimePairingTokenError,
+    resolve_pairing_token,
+)
 import logging
 
 log = logging.getLogger(__name__)
+
+
+def _pairing_token_expiry(ttl_seconds: int) -> datetime:
+    return datetime.now(UTC) + timedelta(seconds=ttl_seconds)
+
+
+def _is_pairing_token_expired(pairing_context: PairingAttemptContext) -> bool:
+    expires_at = pairing_context.pairing_token_expires_at
+    if expires_at is None:
+        return False
+    return datetime.now(UTC) >= expires_at
 
 
 def _effective_deployment(
@@ -112,6 +127,9 @@ async def initiate_pairing(
         pairing_token=pairing_token,
         pairing_node_id=NodeIdAlias(root=pairing_node_id),
         client_node_id=client_node_id,
+        pairing_token_expires_at=_pairing_token_expiry(
+            server_settings.pairing_token_ttl_seconds
+        ),
     )
     await store_pairing_ctx(ctx)
     return ctx
@@ -147,6 +165,7 @@ async def request_pairing(
     hooks: HookRegistry = Depends[hook_registry],
     cfg: Config = Depends[config],
     server_settings: Settings = Depends[settings],
+    generated_pairing_token: PairingToken = Depends[create_pairing_code],
 ) -> RequestPairingPostResponse:
     """Initiate a new pairing attempt.
 
@@ -170,6 +189,15 @@ async def request_pairing(
     pairing_attempt_id: PairingAttemptId | None = None
     for ctx in await storage.list_contexts(PairingAttemptContext):
         if ctx.client_node_id == client_node_id:
+            if _is_pairing_token_expired(ctx):
+                log.info(
+                    "Pairing token expired for client %s. Re-initializing pairing context.",
+                    client_node_id,
+                )
+                await storage.delete_context(
+                    PairingAttemptContext, ctx.pairing_attempt_id
+                )
+                continue
             pairing_attempt_id = ctx.pairing_attempt_id
             break
 
@@ -178,16 +206,19 @@ async def request_pairing(
             "No pairing context known for client %s. Initializing one from requestPairing.",
             client_node_id,
         )
-        default_token = (
-            consume_pending_pairing_token() or server_settings.default_pairing_token
-        )
-        if default_token is None:
-            initiated_ctx = await initiate_pairing(client_node_id=client_node_id)
-        else:
-            initiated_ctx = await initiate_pairing(
-                client_node_id=client_node_id,
-                pairing_token=default_token,
+        try:
+            pairing_token = resolve_pairing_token(
+                server_settings=server_settings,
+                generated_token=generated_pairing_token,
             )
+        except ExpiredOneTimePairingTokenError as exc:
+            raise AccessError(
+                "Pairing token has expired. Generate a new one-time pairing token and retry."
+            ) from exc
+        initiated_ctx = await initiate_pairing(
+            client_node_id=client_node_id,
+            pairing_token=pairing_token,
+        )
         pairing_attempt_id = initiated_ctx.pairing_attempt_id
 
     if pairing_attempt_id is None:
@@ -281,6 +312,9 @@ async def handle_client_response(
     challenge_response = request.serverHmacChallengeResponse.root
     assert pairing_context.algorithm is not None, "No algorithm selected."
     assert pairing_context.server_hmac_challenge is not None, "No known hmac challenge."
+    if _is_pairing_token_expired(pairing_context):
+        pairing_context.state = PairingState.FAILED
+        raise AccessError("Pairing token has expired.")
     deployment = _effective_deployment(auth_ctx, server_settings)
     fingerprint = _effective_fingerprint(deployment, cfg, server_settings)
     verify_response(

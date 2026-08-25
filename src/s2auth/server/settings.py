@@ -1,4 +1,6 @@
+from datetime import UTC, datetime
 from typing import Annotated
+from pydantic import Field
 from pydantic import AnyUrl, StringConstraints
 from pydantic.types import UUID4
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -6,6 +8,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from wepositive_di import register_provider
 
 from s2auth.common.model.s2_connect_common import CommunicationProtocol, Deployment
+
+
+SERVER_PROCESS_STARTED_AT = datetime.now(UTC)
 
 
 class Settings(BaseSettings):
@@ -26,7 +31,13 @@ class Settings(BaseSettings):
     cem_brand: str
     cem_url: AnyUrl | None = None
     cem_deployment_type: Deployment = Deployment.WAN
+    # If unset/empty, pairing starts with generated one-time tokens.
     default_pairing_token: str | None = None
+    default_pairing_token_created_at: datetime = Field(
+        default=SERVER_PROCESS_STARTED_AT,
+        exclude=True,
+    )
+    pairing_token_ttl_seconds: int = Field(default=300, gt=0)
     ssl_certfile: str = ""
     ssl_keyfile: str = ""
 
