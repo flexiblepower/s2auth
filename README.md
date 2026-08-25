@@ -1,13 +1,13 @@
 # Setup dev environment
-Requires: pyenv with python 3.10 installed on the system.
-Shell scripts are linux compatible.
+Requires: pyenv with Python 3.10 installed on the system.
+Shell scripts are Linux-compatible.
 
 ```bash
 ci/setup_dev_environment.sh
 ```
 
 # Install as regular python package
-* `pip install .` or from pypi should just work
+* `pip install .` should just work
 
 # Use as a library
 The package exposes a public client API, public protocol model re-exports, and HMAC helpers.
@@ -19,7 +19,7 @@ Pairing client API:
 ```python
 import asyncio
 
-from s2auth.client import ClientSettings, PairingClient, strip_pairing_url
+from s2auth.client import ClientSettings, PairingClient
 
 async def run_pairing_flow() -> None:
   settings = ClientSettings()
@@ -28,15 +28,67 @@ async def run_pairing_flow() -> None:
   pairing_result = await client.pair()
   print(pairing_result.pairing_s2_node_id)
 
-  connected = await client.connect(pairing_s2_node_id=pairing_result.pairing_s2_node_id)
-  print(connected)
+  connect_result = await client.connect(pairing_s2_node_id=pairing_result.pairing_s2_node_id)
+  print(connect_result.success)
 
-  unpaired = await client.unpair(pairing_s2_node_id=pairing_result.pairing_s2_node_id)
-  print(unpaired)
+  unpair_result = await client.unpair(pairing_s2_node_id=pairing_result.pairing_s2_node_id)
+  print(unpair_result.success)
 
 
 asyncio.run(run_pairing_flow())
 ```
+
+`pair()` returns `PairingResult`, `connect()` returns `ConnectResult`, and `unpair()` returns `UnpairResult`.
+
+Hooks:
+
+```python
+import logging
+
+from s2auth.client import ClientSettings, PairingClient, PairingClientHooks
+
+LOGGER = logging.getLogger(__name__)
+
+
+def on_start(operation: str, pairing_s2_node_id: str | None) -> None:
+  LOGGER.info(f"start operation={operation} pairing_s2_node_id={pairing_s2_node_id}")
+
+
+def on_success(operation: str, result: object) -> None:
+  LOGGER.info(f"success operation={operation} result_type={type(result).__name__}")
+
+
+def on_error(operation: str, error: Exception) -> None:
+  LOGGER.error(f"error operation={operation} error={error}")
+
+
+async def on_http_request(request) -> None:
+  LOGGER.debug(f"HTTP request {request.method} {request.url}")
+
+
+async def on_http_response(response) -> None:
+  LOGGER.debug(f"HTTP response {response.status_code} {response.request.url}")
+
+
+settings = ClientSettings()
+hooks = PairingClientHooks(
+  on_operation_start=on_start,
+  on_operation_success=on_success,
+  on_operation_error=on_error,
+  http_request=on_http_request,
+  http_response=on_http_response,
+)
+client = PairingClient.from_settings(settings, hooks=hooks)
+```
+
+HTTP hook behavior contract:
+
+- If you do not provide custom HTTP hooks, the library uses built-in request/response debug hooks.
+- If you provide `http_request` and/or `http_response`, your hooks fully replace the built-in hooks.
+- The library does not merge, wrap, or interfere with custom HTTP hooks.
+- If you replace the defaults and still want HTTP debug output, add that logging in your own hooks.
+- Default hooks log at DEBUG level only; you only see them when logging is configured to DEBUG.
+- Keep DEBUG logging off in production, because request/response debug logs may include sensitive values such as tokens.
 
 Storage abstraction:
 
@@ -108,13 +160,13 @@ The pairing client is exposed as the Python module `s2auth.client.main`.
 
 From a development checkout, run it by:
 - first creating and activating a virtual environment: `python -m venv .venv` and `source .venv/bin/activate`
-- installing all dependancies `ci/install_dependancies.sh` (you may need to run `ci/setup_dev_environment` if poetry is not yet installed)
-- then calling `poetry run python -client --help`
+- installing all dependencies: `ci/install_dependencies.sh` (you may need to run `ci/setup_dev_environment.sh` if poetry is not yet installed)
+- then calling `client --help`
 
 There is also a helper script in the repository:
 
 Client workflow:
-1. Run pairing first (`poetry run client ...`) to store connection details for a target `--pairing_s2_node_id`.
+1. Run pairing first (`client ...`) to store connection details for a target `--pairing_s2_node_id`.
 2. After pairing is complete, run connect mode to initiate the S2 session and fetch communication details.
 3. If needed, run unpair mode to terminate the pairing.
 
@@ -144,7 +196,7 @@ Relevant client settings in `.env` are:
 If you have configured `.env`, the simplest invocation is:
 
 ```bash
-poetry run client
+client
 ```
 
 The examples below keep the same behavior but explicitly override values from `.env` on the command line.
@@ -152,7 +204,7 @@ The examples below keep the same behavior but explicitly override values from `.
 WAN override example:
 
 ```bash
-poetry run client \
+client \
   --server_url https://localhost:8005/v1 \
   --domain s2connect.example.com \
   --pairing_token test \
@@ -166,7 +218,7 @@ poetry run client \
 LAN override example:
 
 ```bash
-poetry run client \
+client \
   --server_url https://localhost:8005/v1 \
   --certificate_file tests/localhost.chain.pem \
   --pairing_token test \
@@ -183,7 +235,7 @@ Required input:
 
 Useful optional arguments:
 - `--server_url` defaults to the value from `SERVER_URL`, or `http://localhost` if not configured.
-- `--client_S2_nodeId` and `--server_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
+- `--client_S2_nodeId` and `--pairing_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
 - `--pairing_s2_node_id` defaults to `PAIRING_S2_NODE_ID` when set and can be overridden on the CLI.
 - `--certificate_file` points to a CA/certificate bundle file for TLS verification in local or test setups.
 - `--skip_cert_verify` disables certificate verification for local or test setups.
@@ -208,7 +260,7 @@ Test certificate:
 ## 2. Connect after pairing:
 
 ```bash
-poetry run client \
+client \
   --connect \
   --pairing_s2_node_id <pairing-node-id> \
   --verbose
@@ -219,7 +271,7 @@ poetry run client \
 ## 3. Unpair after pairing:
 
 ```bash
-poetry run client \
+client \
   --unpair \
   --pairing_s2_node_id <pairing-node-id> \
   --verbose
@@ -229,7 +281,7 @@ poetry run client \
 
 # Run the FastAPI server
 ```bash
-poetry run server
+server
 ```
 
 This starts the development server with auto-reload enabled at `http://0.0.0.0:8000`.
@@ -260,7 +312,7 @@ ci/typecheck.sh
 ```
 
 # Run python
-* `poetry run python`
+* `python` (with your virtual environment activated)
 
 _or_
 

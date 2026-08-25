@@ -5,7 +5,7 @@ from pytest import MonkeyPatch
 from pytest_mock.plugin import MockerFixture
 
 from s2auth.client.dao import Dao
-from s2auth.client.pairing import PairingClient, build_pairing_settings, detect_deployment
+from s2auth.client.pairing import PairingClient, PairingClientHooks, build_pairing_settings, detect_deployment
 from s2auth.client.settings import ClientSettings
 from s2auth.common.model.s2_connect_common import Deployment, Role
 
@@ -54,7 +54,7 @@ async def test_pairing_client_pair_delegates_to_low_level(mocker: MockerFixture)
     dao = Dao("sqlite://")
 
     low_level_pair = mocker.patch(
-        "s2auth.client.pairing.low_level_pair",
+        "s2auth.client.pairing.pairing_core.perform_pairing",
         new=AsyncMock(return_value=True),
     )
 
@@ -79,13 +79,15 @@ async def test_pairing_client_connect_uses_default_pairing_id(mocker: MockerFixt
     dao = Dao("sqlite://")
 
     low_level_connect = mocker.patch(
-        "s2auth.client.pairing.low_level_connect",
+        "s2auth.client.pairing.pairing_core.connect",
         new=AsyncMock(return_value=True),
     )
 
     client = PairingClient.from_settings(settings, storage=dao)
 
-    assert await client.connect() is True
+    result = await client.connect()
+    assert result.success is True
+    assert result.pairing_s2_node_id == "node-123"
     low_level_connect.assert_awaited_once_with(storage=dao, pairing_s2_node_id="node-123")
 
 
@@ -97,13 +99,15 @@ async def test_pairing_client_connect_does_not_require_uuid_client_id(mocker: Mo
     dao = Dao("sqlite://")
 
     low_level_connect = mocker.patch(
-        "s2auth.client.pairing.low_level_connect",
+        "s2auth.client.pairing.pairing_core.connect",
         new=AsyncMock(return_value=True),
     )
 
     client = PairingClient.from_settings(settings, storage=dao)
 
-    assert await client.connect() is True
+    result = await client.connect()
+    assert result.success is True
+    assert result.pairing_s2_node_id == "node-123"
     low_level_connect.assert_awaited_once_with(storage=dao, pairing_s2_node_id="node-123")
 
 
@@ -120,7 +124,7 @@ async def test_pairing_client_pair_with_custom_store(mocker: MockerFixture) -> N
     store.store_connection_details("custom-node", {"access_token": "token-123"})
 
     low_level_pair = mocker.patch(
-        "s2auth.client.pairing.low_level_pair",
+        "s2auth.client.pairing.pairing_core.perform_pairing",
         new=AsyncMock(return_value=True),
     )
 
@@ -143,14 +147,79 @@ async def test_pairing_client_connect_with_custom_store(mocker: MockerFixture) -
     store = InMemoryStore()
 
     low_level_connect = mocker.patch(
-        "s2auth.client.pairing.low_level_connect",
+        "s2auth.client.pairing.pairing_core.connect",
         new=AsyncMock(return_value=True),
     )
 
     client = PairingClient.from_settings(settings, storage=store)
 
-    assert await client.connect() is True
+    result = await client.connect()
+    assert result.success is True
+    assert result.pairing_s2_node_id == "custom-node"
     low_level_connect.assert_awaited_once_with(storage=store, pairing_s2_node_id="custom-node")
+
+
+async def test_pairing_client_operation_hooks_are_called(mocker: MockerFixture) -> None:
+    settings = _make_settings(
+        pairing_s2_node_id="custom-node",
+    )
+    store = InMemoryStore()
+    low_level_connect = mocker.patch(
+        "s2auth.client.pairing.pairing_core.connect",
+        new=AsyncMock(return_value=True),
+    )
+
+    starts: list[tuple[str, str | None]] = []
+    successes: list[tuple[str, str]] = []
+    errors: list[str] = []
+    hooks = PairingClientHooks(
+        on_operation_start=lambda operation, pairing_s2_node_id: starts.append((operation, pairing_s2_node_id)),
+        on_operation_success=lambda operation, _result: successes.append((operation, "ok")),
+        on_operation_error=lambda operation, _error: errors.append(operation),
+    )
+
+    client = PairingClient.from_settings(settings, storage=store, hooks=hooks)
+
+    result = await client.connect()
+
+    assert result.success is True
+    low_level_connect.assert_awaited_once_with(storage=store, pairing_s2_node_id="custom-node")
+    assert starts == [("connect", "custom-node")]
+    assert successes == [("connect", "ok")]
+    assert errors == []
+
+
+async def test_pairing_client_http_hooks_override_default_debug_hooks(mocker: MockerFixture) -> None:
+    settings = _make_settings(
+        pairing_s2_node_id="custom-node",
+    )
+    store = InMemoryStore()
+    low_level_connect = mocker.patch(
+        "s2auth.client.pairing.pairing_core.connect",
+        new=AsyncMock(return_value=True),
+    )
+
+    async def on_request(_request: Any) -> None:
+        return None
+
+    async def on_response(_response: Any) -> None:
+        return None
+
+    hooks = PairingClientHooks(
+        http_request=on_request,
+        http_response=on_response,
+    )
+
+    client = PairingClient.from_settings(settings, storage=store, hooks=hooks)
+
+    await client.connect()
+
+    call = low_level_connect.await_args
+    assert call is not None
+    event_hooks = call.kwargs.get("http_event_hooks")
+    assert isinstance(event_hooks, dict)
+    assert event_hooks["request"] == [on_request]
+    assert event_hooks["response"] == [on_response]
 
 
 def test_detect_deployment_prefers_domain() -> None:

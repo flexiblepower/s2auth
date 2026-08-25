@@ -15,7 +15,7 @@ from s2auth.client.dao import Dao
 from s2auth.client.pairing import strip_pairing_url
 from s2auth.client.pairing_core import (add_header, confirmToken,
                                         connect,
-                                        finalize_pairing, pair,
+                                        finalize_pairing, perform_pairing,
                                         post_connection_details,
                                         request_connection_details,
                                         unpair)
@@ -105,7 +105,7 @@ def gen_s2_pairing_response(pairing_request: RequestPairingPostRequest) -> Reque
 async def test_paiting_wrong_url(dao: Dao, s2_client_description: NodeDescription) -> None:
     # testing calling url that does not exist
     with pytest.raises(S2PairingError) as excinfo:
-        assert await pair(pairing_uri='http://s2server.example.com/v1',
+        assert await perform_pairing(pairing_uri='http://s2server.example.com/v1',
                           pairing_code=PAIRING_CODE,
                           storage=dao,
                           role="RM",
@@ -156,7 +156,7 @@ def mock_AsyncClient_404(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
 
 async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, MagicMock], s2_client_description: NodeDescription) -> None:
     with pytest.raises(S2PairingError) as excinfo:
-        assert await pair(pairing_uri='http://s2server.example.com/v1',
+        assert await perform_pairing(pairing_uri='http://s2server.example.com/v1',
                           pairing_code=PAIRING_TOKEN,
                           storage=dao,
                           role="RM",
@@ -303,7 +303,7 @@ async def test_paiting_rm(dao: Dao,
     finalize_pairing_spy = mocker.spy(pairing, "finalize_pairing")
     post_connection_details_spy = mocker.spy(pairing, "post_connection_details")
 
-    assert await pair(pairing_uri='http://s2server.example.com/v1',
+    assert await perform_pairing(pairing_uri='http://s2server.example.com/v1',
                       pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="RM",
@@ -333,7 +333,7 @@ async def test_pairing_uuid_node_id_is_sent_as_node_id(
     uuid_node_id = "233b6a7d-c630-4fbf-a6ff-7a35d0f6d62d"
     _, mock_client = mock_AsyncClient
 
-    assert await pair(
+    assert await perform_pairing(
         pairing_uri='http://s2server.example.com/v1',
         pairing_code=PAIRING_TOKEN,
         storage=dao,
@@ -367,7 +367,7 @@ async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tu
     finalize_pairing_spy = mocker.spy(pairing, "finalize_pairing")
     post_connection_details_spy = mocker.spy(pairing, "post_connection_details")
 
-    assert await pair(pairing_uri='http://s2server.example.com/v1',
+    assert await perform_pairing(pairing_uri='http://s2server.example.com/v1',
                       pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="CEM",
@@ -387,7 +387,7 @@ async def test_get_pairing_token_str(dao: Dao,
                                      mocker: MockerFixture,
                                      mock_AsyncClient: tuple[MagicMock, MagicMock],
                                      s2_client_description: NodeDescription) -> None:
-    assert await pair(pairing_uri='http://s2server.example.com/v1',
+    assert await perform_pairing(pairing_uri='http://s2server.example.com/v1',
                       pairing_code=PAIRING_TOKEN,
                       storage=dao,
                       role="RM",
