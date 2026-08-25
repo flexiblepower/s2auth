@@ -230,7 +230,7 @@ LAN override example:
 ```bash
 client \
   --server_url https://localhost:8005/v1 \
-  --certificate_file tests/localhost.chain.pem \
+  --deployment LAN \
   --pairing_token test \
   --pairing_s2_node_id ninechars \
   --s2_role RM \
@@ -241,13 +241,19 @@ Required input:
 - Provide a `PAIRING_TOKEN` in `.env` or pass `--pairing_token` to start the pairing flow.
 - `CLIENT_DEPLOYMENT` in `.env` or `--deployment` on the CLI is optional.
 - For WAN deployments, provide `DOMAIN_NAME` in `.env` or pass `--domain`, or let the client auto-detect the domain from `--server_url`.
-- For LAN deployments, provide `SSL_CERTFILE` in `.env` or pass `--certificate_file` if you want to verify against a specific local certificate bundle.
+- For LAN deployments, a local certificate file is optional. The client computes the fingerprint from the TLS peer certificate in the pairing response.
+- Set `SSL_CERTFILE` in `.env` or pass `--certificate_file` only when you want to use an explicit CA/certificate bundle for TLS verification.
+
+LAN security note:
+- In LAN mode, pairing HMAC is bound to the certificate of the TLS peer seen by the client.
+- This is a security feature: if a TLS-terminating proxy presents a different certificate, HMAC verification can fail with a signature mismatch.
+- For LAN pairing behind intermediaries, prefer TLS passthrough so the client sees the endpoint certificate directly.
 
 Useful optional arguments:
 - `--server_url` defaults to the value from `SERVER_URL`, or `http://localhost` if not configured.
 - `--client_S2_nodeId` and `--pairing_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
 - `--pairing_s2_node_id` defaults to `PAIRING_S2_NODE_ID` when set and can be overridden on the CLI.
-- `--certificate_file` points to a CA/certificate bundle file for TLS verification in local or test setups.
+- `--certificate_file` points to a CA/certificate bundle file for TLS verification in local or test setups (optional).
 - `--skip_cert_verify` disables certificate verification for local or test setups.
 - `-v` or `--verbose` enables debug logging.
 
@@ -265,6 +271,7 @@ Auto-detection behavior:
 
 Test certificate:
 - For local testing, a test certificate bundle is available at `tests/localhost.chain.pem`.
+- This file is optional for LAN pairing fingerprinting and mainly useful when you want to force TLS verification against a specific local bundle.
 - This file is intended for development and test scenarios only.
 
 ## 2. Connect after pairing:
