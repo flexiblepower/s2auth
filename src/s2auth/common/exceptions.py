@@ -21,6 +21,9 @@ class S2ConnectError(Exception, ABC):
         super().__init__(message)
         self.message = message
 
+class S2PairingError(S2ConnectError):
+    """Base exception for S2 pairing errors"""
+    pass
 
 class S2ConnectErrorWithDetails(S2ConnectError, ABC):
     """Base exception for S2 Connect errors

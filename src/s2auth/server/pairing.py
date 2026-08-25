@@ -154,11 +154,16 @@ async def request_pairing(
             "No pairing context known for client %s. Initializing one from requestPairing.",
             client_node_id,
         )
-        default_token = consume_pending_pairing_token() or server_settings.default_pairing_token or None
-        initiated_ctx = await initiate_pairing(
-            client_node_id=client_node_id,
-            pairing_token=default_token,  # type: ignore[arg-type]
+        default_token = (
+            consume_pending_pairing_token() or server_settings.default_pairing_token
         )
+        if default_token is None:
+            initiated_ctx = await initiate_pairing(client_node_id=client_node_id)
+        else:
+            initiated_ctx = await initiate_pairing(
+                client_node_id=client_node_id,
+                pairing_token=default_token,
+            )
         pairing_attempt_id = initiated_ctx.pairing_attempt_id
 
     if pairing_attempt_id is None:
