@@ -14,11 +14,12 @@ import pytest
 import uvicorn
 from pydantic import AnyUrl
 from pytest_bdd import given, scenarios, then, when
+from wepositive_di import override_provider
 
 from s2auth.common.hmac import create_response
 from s2auth.common.model.s2_connect_common import CommunicationProtocol, Deployment
 from s2auth.common.model.s2_connect_pairing import HmacChallenge
-from s2auth.server.settings import Settings
+from s2auth.server.settings import Settings, settings as settings_provider
 
 scenarios("features/reference_server_pairing_and_connection_initiation.feature")
 
@@ -44,6 +45,7 @@ def reference_settings() -> Settings:
         cem_brand="Reference",
         cem_url=AnyUrl("http://127.0.0.1/connection/"),
         cem_deployment_type=Deployment.WAN,
+        default_pairing_token="testtoken",
     )
 
 
@@ -106,6 +108,11 @@ def reference_server(
         ssl_certfile="tests/localhost.chain.pem",
         ssl_keyfile="tests/localhost.key",
     )
+    def test_settings_provider() -> Settings:
+        return reference_settings
+
+    override_provider(settings_provider, test_settings_provider)
+
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()

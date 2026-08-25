@@ -1,7 +1,6 @@
 """Utilities for performing the pairing process of S2 as a client.
 """
 
-import hashlib
 import json
 import logging
 from base64 import b64encode
@@ -14,7 +13,7 @@ import httpx
 from s2auth.client.connection_store import ConnectionStore
 from s2auth.common.exceptions import S2PairingError, VerificationError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
-                                create_response, verify_response)
+                                create_response, verify_response, calculate_fingerprint_from_response_certificate)
 from s2auth.common.model.s2_connect_common import (CommunicationProtocol,
                                                    Deployment,
                                                    EndpointDescription,
@@ -45,29 +44,6 @@ def build_httpx_verify(verify_tls: bool, ssl_certfile: str | None) -> str | bool
         raise S2PairingError(f"Certificate file '{ssl_certfile}' not found")
     return ssl_certfile
 
-def calculate_fingerprint_from_response_certificate(response: httpx.Response) -> bytes | None:
-    network_stream = response.extensions.get("network_stream")
-    if network_stream is None:
-        return None
-
-    get_extra_info = getattr(network_stream, "get_extra_info", None)
-    if not callable(get_extra_info):
-        return None
-
-    ssl_object = get_extra_info("ssl_object")
-    if ssl_object is None:
-        return None
-
-    get_peer_cert = getattr(ssl_object, "getpeercert", None)
-    if not callable(get_peer_cert):
-        return None
-
-    cert_der = get_peer_cert(binary_form=True)
-    if not isinstance(cert_der, (bytes, bytearray)) or not cert_der:
-        return None
-
-    return hashlib.sha256(bytes(cert_der)).digest()
-
 
 async def _log_request(request: httpx.Request) -> None:
     if not LOGGER.isEnabledFor(logging.DEBUG):
@@ -77,6 +53,7 @@ async def _log_request(request: httpx.Request) -> None:
     LOGGER.debug(f"Method: {request.method}")
     LOGGER.debug(f"Headers: {request.headers}")
     LOGGER.debug(f"Content: {request.content}")
+
 
 async def _log_response(response: httpx.Response) -> None:
     if not LOGGER.isEnabledFor(logging.DEBUG):
@@ -407,7 +384,7 @@ async def connect(storage: ConnectionStore,
     supported_communication_protocols = details.get("supported_communication_protocols", None) if details else None
     supported_hmac_hashing_algorithms = details.get("supported_hmac_hashing_algorithms", None) if details else None
 
-    if not details or pairing_uri is None or access_token is None or verify_tls is None or ssl_certfile is None or client_s2_node_id is None \
+    if not details or pairing_uri is None or access_token is None or verify_tls is None or client_s2_node_id is None \
         or supported_s2_message_versions is None or supported_communication_protocols is None or supported_hmac_hashing_algorithms is None:
         raise S2PairingError(
             f"Connection details for pairing_s2_node_id '{pairing_s2_node_id}' not found or incomplete."
@@ -495,7 +472,7 @@ async def unpair(storage: ConnectionStore,
     verify_tls = details.get("verify_tls", None) if details else None
     ssl_certfile = details.get("ssl_certfile", None) if details else None
     client_s2_node_id = details.get("client_s2_node_id", None) if details else None
-    if not details or pairing_uri is None or access_token is None or verify_tls is None or ssl_certfile is None and client_s2_node_id is not None:
+    if not details or pairing_uri is None or access_token is None or verify_tls is None:
         raise S2PairingError(
             f"Connection details for pairing_s2_node_id '{pairing_s2_node_id}' not found or incomplete."
         )

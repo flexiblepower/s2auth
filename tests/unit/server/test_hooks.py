@@ -110,6 +110,7 @@ async def test_server_description_hooks_default():
         cem_type="TestType",
         cem_model_name="TestModel",
         pairing_node_id="pairing123",
+        cem_deployment_type=Deployment.WAN,
     )
 
     registry = HookRegistry()

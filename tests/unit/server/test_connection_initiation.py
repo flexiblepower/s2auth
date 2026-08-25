@@ -36,7 +36,9 @@ def access_token(value: bytes) -> AccessToken:
     return AccessToken(root=b64encode(value))
 
 
-def make_settings() -> Settings:
+def make_settings(
+    deployment: Deployment = Deployment.WAN,
+) -> Settings:
     return Settings(
         server_s2_node_id=uuid4(),
         cem_s2_node_id=uuid4(),
@@ -44,6 +46,7 @@ def make_settings() -> Settings:
         cem_type="TestType",
         cem_model_name="TestModel",
         pairing_node_id="pairing123",
+        cem_deployment_type=deployment,
     )
 
 
@@ -60,7 +63,7 @@ async def test_initiate_connection_generates_pending_token_and_returns_negotiate
 ):
     current_token = access_token(b"current-token-current-token-1234")
     next_token = access_token(b"next-token-next-token-next-token12")
-    server_settings = make_settings()
+    server_settings = make_settings(deployment=Deployment.WAN)
     auth_ctx = authentication_context(current_token)
 
     def test_settings_provider() -> Settings:

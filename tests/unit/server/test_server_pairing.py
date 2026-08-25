@@ -10,7 +10,12 @@ from wepositive_di import provider_overrides
 from wepositive_di.context import ContextStorage, context_storage_singleton
 
 from s2auth.common.exceptions import AccessError, PairingNotCompleteError, VerificationError
-from s2auth.common.hmac import create_challenge, create_response, generate_access_token
+from s2auth.common.hmac import (
+    calculate_certificate_fingerprint_from_certificate_file,
+    create_challenge,
+    create_response,
+    generate_access_token,
+)
 from s2auth.common.model.s2_connect_common import (
     AccessToken,
     CommunicationProtocol,
@@ -45,6 +50,7 @@ from s2auth.server.hooks import (
     get_server_node_description,
     pairing_attempt_request,
 )
+import s2auth.server.pairing as pairing_module
 from s2auth.server.pairing import (
     finalize_pairing,
     handle_client_response,
@@ -72,6 +78,20 @@ def server_settings() -> Settings:
         cem_model_name="TestModel",
         pairing_node_id="PAIR1234",
         cem_url=AnyUrl("https://cem.example.com/connection/"),
+    )
+
+
+def server_settings_lan() -> Settings:
+    return Settings(
+        server_s2_node_id=uuid4(),
+        cem_s2_node_id=uuid4(),
+        cem_brand="TestBrand",
+        cem_type="TestType",
+        cem_model_name="TestModel",
+        pairing_node_id="PAIR1234",
+        cem_url=AnyUrl("https://cem.example.com/connection/"),
+        cem_deployment_type=Deployment.LAN,
+        ssl_certfile="tests/localhost.chain.pem",
     )
 
 
@@ -121,10 +141,13 @@ def hook_registry() -> HookRegistry:
     return hooks
 
 
-def pairing_request(client_node_id: UUID) -> RequestPairingPostRequest:
+def pairing_request(
+    client_node_id: UUID,
+    deployment: Deployment = Deployment.WAN,
+) -> RequestPairingPostRequest:
     return RequestPairingPostRequest(
         clientNodeDescription=client_node_description(client_node_id),
-        clientEndpointDescription=EndpointDescription(deployment=Deployment.WAN),
+        clientEndpointDescription=EndpointDescription(deployment=deployment),
         nodeIdAlias=NodeIdAlias(root="PAIR1234"),
         supportedCommunicationProtocols=[CommunicationProtocol.WebSocket],
         supportedS2MessageVersions=["v1"],
@@ -310,6 +333,171 @@ async def test_request_pairing_initializes_context_when_missing() -> None:
     assert stored_auth_contexts[0].state == ClientState.PAIRING
 
 
+async def test_request_pairing_uses_request_deployment_when_server_default_is_lan() -> None:
+    test_client_node_id = uuid4()
+    request = pairing_request(test_client_node_id)
+    stored_auth_contexts: list[AuthenticationContext] = []
+    storage = S2InMemoryContextStorage()
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            settings: server_settings_lan,
+        }
+    ):
+        response = await request_pairing(
+            request=request,
+            store_authentication_ctx=await store_authentication_context(
+                stored_auth_contexts
+            ),
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+
+    assert response.serverHmacChallenge is not None
+    assert len(stored_auth_contexts) == 1
+
+
+async def test_request_pairing_forced_lan_provides_fingerprint() -> None:
+    # forcing LAN pairing should compute a fingerprint from the configured certificate file
+    test_client_node_id = uuid4()
+    request = pairing_request(test_client_node_id, deployment=Deployment.LAN)
+    stored_auth_contexts: list[AuthenticationContext] = []
+    storage = S2InMemoryContextStorage()
+    pairing_attempt_id = uuid4()
+    await storage.store_context(
+        PairingAttemptContext,
+        pairing_attempt_id,
+        PairingAttemptContext(
+            pairing_attempt_id=pairing_attempt_id,
+            client_node_id=test_client_node_id,
+            pairing_node_id=NodeIdAlias(root="PAIR1234"),
+            pairing_token=PAIRING_TOKEN,
+        ),
+    )
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            settings: server_settings_lan,
+        }
+    ):
+        response = await request_pairing(
+            request=request,
+            store_authentication_ctx=await store_authentication_context(
+                stored_auth_contexts
+            ),
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+
+    assert response.serverHmacChallenge is not None
+    assert len(stored_auth_contexts) == 1
+
+
+@pytest.mark.parametrize("deployment", [Deployment.WAN, Deployment.LAN])
+async def test_request_pairing_uses_request_deployment_for_hmac(
+    deployment: Deployment,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    test_client_node_id = uuid4()
+    request = pairing_request(test_client_node_id, deployment=deployment)
+    stored_auth_contexts: list[AuthenticationContext] = []
+    storage = S2InMemoryContextStorage()
+    pairing_attempt_id = uuid4()
+    await storage.store_context(
+        PairingAttemptContext,
+        pairing_attempt_id,
+        PairingAttemptContext(
+            pairing_attempt_id=pairing_attempt_id,
+            client_node_id=test_client_node_id,
+            pairing_node_id=NodeIdAlias(root="PAIR1234"),
+            pairing_token=PAIRING_TOKEN,
+        ),
+    )
+    seen: dict[str, Deployment] = {}
+
+    def test_context_storage() -> ContextStorage:
+        return storage
+
+    def fake_create_response(*args: object, **kwargs: object) -> bytes:
+        seen["deployment"] = kwargs["deployment"]  # type: ignore[index]
+        return b"client-response"
+
+    monkeypatch.setattr(pairing_module, "create_response", fake_create_response)
+
+    with provider_overrides(
+        {
+            context_storage_singleton: test_context_storage,
+            settings: server_settings_lan,
+        }
+    ):
+        response = await request_pairing(
+            request=request,
+            store_authentication_ctx=await store_authentication_context(
+                stored_auth_contexts
+            ),
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+
+    assert response.clientHmacChallengeResponse.root == b"client-response"
+    assert seen["deployment"] == deployment
+
+
+@pytest.mark.parametrize("deployment", [Deployment.WAN, Deployment.LAN])
+async def test_handle_client_response_uses_auth_context_deployment_for_hmac_verification(
+    deployment: Deployment,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access_token_value = access_token(b"server-access-token-server-token")
+    pairing_ctx = PairingAttemptContext(
+        pairing_attempt_id=uuid4(),
+        pairing_node_id=NodeIdAlias(root="PAIR1234"),
+        pairing_token=PAIRING_TOKEN,
+        state=PairingState.INITIATED,
+        algorithm=HmacHashingAlgorithm.SHA256,
+        server_hmac_challenge=create_challenge(),
+    )
+    auth_ctx = AuthenticationContext(
+        client_node_id=uuid4(),
+        state=ClientState.PAIRING,
+        s2_endpoint_description=EndpointDescription(deployment=deployment),
+    )
+    seen: dict[str, Deployment] = {}
+
+    def new_access_token() -> AccessToken:
+        return access_token_value
+
+    def fake_verify_response(*args: object, **kwargs: object) -> bool:
+        seen["deployment"] = kwargs["deployment"]  # type: ignore[index]
+        return True
+
+    monkeypatch.setattr(pairing_module, "verify_response", fake_verify_response)
+
+    with provider_overrides(
+        {generate_access_token: new_access_token, settings: server_settings_lan}
+    ):
+        connection_details = await handle_client_response(
+            request=RequestConnectionDetailsPostRequest(
+                serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(b"response"))
+            ),
+            pairing_context=pairing_ctx,
+            auth_ctx=auth_ctx,
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+
+    assert connection_details.accessToken == access_token_value
+    assert seen["deployment"] == deployment
+
+
 async def test_unpair_removes_authentication_and_pairing_contexts() -> None:
     storage = S2InMemoryContextStorage()
     test_client_node_id = uuid4()
@@ -354,7 +542,7 @@ async def test_unpair_removes_authentication_and_pairing_contexts() -> None:
         await storage.get_context_snapshot(PairingAttemptContext, pairing_attempt_id)
 
 
-async def test_handle_client_response_verifies_hmac_and_returns_connection_details() -> None:
+async def test_handle_client_response_verifies_hmac_and_returns_connection_details_wan() -> None:
     access_token_value = access_token(b"server-access-token-server-token")
     pairing_ctx = PairingAttemptContext(
         pairing_attempt_id=uuid4(),
@@ -364,7 +552,11 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
         algorithm=HmacHashingAlgorithm.SHA256,
         server_hmac_challenge=create_challenge(),
     )
-    auth_ctx = AuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING)
+    auth_ctx = AuthenticationContext(
+        client_node_id=uuid4(),
+        state=ClientState.PAIRING,
+        s2_endpoint_description=EndpointDescription(deployment=Deployment.WAN),
+    )
     assert pairing_ctx.server_hmac_challenge is not None
     response = create_response(
         pairing_token=PAIRING_TOKEN,
@@ -378,6 +570,61 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
         return access_token_value
 
     with provider_overrides({generate_access_token: new_access_token, settings: server_settings}):
+        connection_details = await handle_client_response(
+            request=RequestConnectionDetailsPostRequest(
+                serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(response))
+            ),
+            pairing_context=pairing_ctx,
+            auth_ctx=auth_ctx,
+            hooks=hook_registry(),
+            cfg=config(),
+        )
+
+    assert connection_details.accessToken == access_token_value
+    assert str(connection_details.initiateSessionUrl) == "https://cem.example.com/connection/"
+    assert auth_ctx.current_access_token == access_token_value
+    assert auth_ctx.next_access_token is None
+    assert auth_ctx.state == ClientState.PAIRING
+    assert pairing_ctx.state == PairingState.COMPLETED
+
+
+async def test_handle_client_response_verifies_hmac_and_returns_connection_details_lan() -> None:
+    access_token_value = access_token(b"server-access-token-server-token")
+    pairing_ctx = PairingAttemptContext(
+        pairing_attempt_id=uuid4(),
+        pairing_node_id=NodeIdAlias(root="PAIR1234"),
+        pairing_token=PAIRING_TOKEN,
+        state=PairingState.INITIATED,
+        algorithm=HmacHashingAlgorithm.SHA256,
+        server_hmac_challenge=create_challenge(),
+    )
+    auth_ctx = AuthenticationContext(
+        client_node_id=uuid4(),
+        state=ClientState.PAIRING,
+        s2_endpoint_description=EndpointDescription(deployment=Deployment.LAN),
+    )
+    server_cfg = server_settings_lan()
+    assert pairing_ctx.server_hmac_challenge is not None
+    fingerprint = calculate_certificate_fingerprint_from_certificate_file(
+        server_cfg.ssl_certfile
+    )
+    response = create_response(
+        pairing_token=PAIRING_TOKEN,
+        challenge=pairing_ctx.server_hmac_challenge,
+        deployment=Deployment.LAN,
+        domain_name=DOMAIN_NAME,
+        fingerprint=fingerprint,
+    )
+
+    def new_access_token() -> AccessToken:
+        return access_token_value
+
+    def test_settings_provider() -> Settings:
+        return server_cfg
+
+    with provider_overrides(
+        {generate_access_token: new_access_token, settings: test_settings_provider}
+    ):
         connection_details = await handle_client_response(
             request=RequestConnectionDetailsPostRequest(
                 serverHmacChallengeResponse=HmacChallengeResponse(root=b64encode(response))

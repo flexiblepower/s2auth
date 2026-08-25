@@ -14,7 +14,7 @@ from s2auth.common.model.s2_connect_pairing import (
     RequestPairingPostRequest,
     RequestPairingPostResponse,
 )
-from s2auth.common.model.s2_connect_common import AccessToken, NodeId
+from s2auth.common.model.s2_connect_common import AccessToken, Deployment, NodeId
 from wepositive_di import Depends, inject
 from wepositive_di.context import ContextStorage, context_storage_singleton
 from s2auth.server.context import (
@@ -38,6 +38,7 @@ from s2auth.server.context import (
 )
 from s2auth.common.hmac import (
     PairingToken,
+    calculate_certificate_fingerprint_from_certificate_file,
     create_challenge,
     create_response,
     create_pairing_code,
@@ -59,6 +60,29 @@ from s2auth.server.token_manager import consume_pending_pairing_token
 import logging
 
 log = logging.getLogger(__name__)
+
+
+def _effective_deployment(
+    auth_ctx: AuthenticationContext,
+    server_settings: Settings,
+) -> Deployment:
+    endpoint = auth_ctx.s2_endpoint_description
+    if endpoint is not None and endpoint.deployment is not None:
+        return endpoint.deployment
+    return server_settings.cem_deployment_type
+
+def _effective_fingerprint(
+    deployment: Deployment,
+    cfg: Config,
+    server_settings: Settings,
+) -> bytes | None:
+    if deployment != Deployment.LAN:
+        return None
+    if not server_settings.ssl_certfile:
+        return None
+    return calculate_certificate_fingerprint_from_certificate_file(
+        server_settings.ssl_certfile
+    )
 
 
 @inject
@@ -185,13 +209,15 @@ async def request_pairing(
 
         algorithm = select_algorithm(request.supportedHmacHashingAlgorithms)
         pairing_context.algorithm = algorithm
+        deployment = _effective_deployment(auth_ctx, server_settings)
+        fingerprint = _effective_fingerprint(deployment, cfg, server_settings)
 
         client_response = create_response(
             pairing_token=pairing_context.pairing_token,
             challenge=request.clientHmacChallenge,
-            deployment=server_settings.cem_deployment_type,
+            deployment=deployment,
             domain_name=cfg.domain_name,
-            fingerprint=None,
+            fingerprint=fingerprint,
             algorithm=algorithm,
         )
         pairing_context.state = PairingState.INITIATED
@@ -255,14 +281,16 @@ async def handle_client_response(
     challenge_response = request.serverHmacChallengeResponse.root
     assert pairing_context.algorithm is not None, "No algorithm selected."
     assert pairing_context.server_hmac_challenge is not None, "No known hmac challenge."
+    deployment = _effective_deployment(auth_ctx, server_settings)
+    fingerprint = _effective_fingerprint(deployment, cfg, server_settings)
     verify_response(
         pairing_token=pairing_context.pairing_token,
         algorithm=pairing_context.algorithm,
         challenge=pairing_context.server_hmac_challenge,
         response=challenge_response,
-        deployment=server_settings.cem_deployment_type,
+        deployment=deployment,
         domain_name=cfg.domain_name,
-        fingerprint=None,
+        fingerprint=fingerprint,
     )
 
     endpoint_hook = hooks.get(get_server_connection_initiation_endpoint)

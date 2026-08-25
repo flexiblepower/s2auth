@@ -14,11 +14,15 @@ import pytest
 import uvicorn
 from pydantic import AnyUrl
 from pytest_bdd import given, scenarios, then, when
+from wepositive_di import override_provider
 
-from s2auth.common.hmac import create_response
+from s2auth.common.hmac import (
+    calculate_certificate_fingerprint_from_certificate_file,
+    create_response,
+)
 from s2auth.common.model.s2_connect_common import CommunicationProtocol, Deployment
 from s2auth.common.model.s2_connect_pairing import HmacChallenge
-from s2auth.server.settings import Settings
+from s2auth.server.settings import Settings, settings as settings_provider
 
 scenarios("features/reference_server_pairing_and_connection_initiation.feature")
 
@@ -43,7 +47,9 @@ def reference_settings() -> Settings:
         cem_model_name="Reference CEM",
         cem_brand="Reference",
         cem_url=AnyUrl("http://127.0.0.1/connection/"),
-        cem_deployment_type=Deployment.WAN,
+        cem_deployment_type=Deployment.LAN,
+        default_pairing_token="testtoken",
+        ssl_certfile="tests/localhost.chain.pem",
     )
 
 
@@ -68,6 +74,13 @@ def world() -> PairingWorld:
     return PairingWorld()
 
 
+@pytest.fixture
+def certificate_fingerprint() -> bytes:
+    return calculate_certificate_fingerprint_from_certificate_file(
+        "tests/localhost.chain.pem"
+    )
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -86,13 +99,12 @@ def reference_server(
     monkeypatch.setenv("CEM_TYPE", reference_settings.cem_type)
     monkeypatch.setenv("CEM_MODEL_NAME", reference_settings.cem_model_name)
     monkeypatch.setenv("CEM_BRAND", reference_settings.cem_brand)
-    monkeypatch.setenv("CEM_DEPLOYMENT_TYPE", "WAN")
+    monkeypatch.setenv("CEM_DEPLOYMENT_TYPE", "LAN")
     monkeypatch.setenv("DOMAIN_NAME", domain_name)
     monkeypatch.setenv("SUPPORTED_S2_VERSIONS", str(reference_settings.supported_s2_versions).replace("'", '"'))
     monkeypatch.setenv("SUPPORTED_S2_CONNECT_VERSIONS", str(reference_settings.supported_s2_connect_versions).replace("'", '"'))
 
     port = _free_port()
-    # Also set SSL cert paths for the server to use
     monkeypatch.setenv("SSL_CERTFILE", "tests/localhost.chain.pem")
     monkeypatch.setenv("SSL_KEYFILE", "tests/localhost.key")
     monkeypatch.setenv("DEFAULT_PAIRING_TOKEN", "testtoken")
@@ -106,15 +118,18 @@ def reference_server(
         ssl_certfile="tests/localhost.chain.pem",
         ssl_keyfile="tests/localhost.key",
     )
+    def test_settings_provider() -> Settings:
+        return reference_settings
+
+    override_provider(settings_provider, test_settings_provider)
+
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
     base_url = f"https://127.0.0.1:{port}"
-    deadline = time.monotonic() + 15  # Increased timeout
-    # Give server time to start
+    deadline = time.monotonic() + 15
     time.sleep(0.5)
-    # Create an SSL context that doesn't verify certificates
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
@@ -145,7 +160,6 @@ def reference_server_is_running(
     world.base_url = reference_server
 
 
-
 @when("the client requests pairing")
 def client_requests_pairing(
     world: PairingWorld,
@@ -162,7 +176,7 @@ def client_requests_pairing(
                 "type": "HeatPump",
                 "modelName": "HP-1",
             },
-            "clientEndpointDescription": {"deployment": "WAN"},
+            "clientEndpointDescription": {"deployment": "LAN"},
             "nodeIdAlias": reference_settings.pairing_node_id,
             "supportedCommunicationProtocols": ["WebSocket"],
             "supportedS2MessageVersions": [reference_settings.supported_s2_versions[0]],
@@ -182,6 +196,7 @@ def client_requests_connection_details(
     reference_settings: Settings,
     pairing_token: str,
     domain_name: str,
+    certificate_fingerprint: bytes,
 ) -> None:
     assert world.request_pairing_response is not None
     server_challenge = HmacChallenge(
@@ -192,9 +207,9 @@ def client_requests_connection_details(
     hmac_response = create_response(
         pairing_token=pairing_token,
         challenge=server_challenge,
-        deployment=Deployment.WAN,
+        deployment=Deployment.LAN,
         domain_name=domain_name,
-        fingerprint=None,
+        fingerprint=certificate_fingerprint,
     )
     response = httpx.post(
         f"{world.base_url}/pairing/{reference_settings.supported_s2_connect_versions[0]}/requestConnectionDetails",
@@ -218,7 +233,6 @@ def client_requests_connection_details(
 @then("the connection initiation endpoint is the reference connection router URL")
 def connection_initiation_endpoint_is_reference_router(world: PairingWorld) -> None:
     assert world.connection_details_response is not None
-    # Verify connection details response contains expected fields
     assert "accessToken" in world.connection_details_response
 
 
@@ -279,7 +293,7 @@ def connection_initiation_response_contains_negotiated_details(
     assert response["selectedCommunicationProtocol"] == "WebSocket"
     assert response["selectedS2MessageVersion"] == reference_settings.supported_s2_versions[0]
     assert response["accessToken"]
-    assert endpoint_description["deployment"] == "WAN"
+    assert endpoint_description["deployment"] == "LAN"
     assert node_description["id"] == str(reference_settings.cem_s2_node_id)
     assert node_description["brand"] == reference_settings.cem_brand
     assert node_description["role"] == "CEM"
