@@ -1,9 +1,11 @@
 """One-time pairing token manager for interactive server use."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import timezone, datetime, timedelta
 from typing import TYPE_CHECKING
 import threading
 import logging
+
+UTC = timezone.utc
 
 if TYPE_CHECKING:
     from s2auth.server.settings import Settings

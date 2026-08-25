@@ -2,7 +2,7 @@
 
 from base64 import b64decode, b64encode
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import timezone, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -63,7 +63,7 @@ from s2auth.server.settings import Settings, settings
 from s2auth.server.token_manager import consume_pending_pairing_token, set_pending_pairing_token
 from s2auth.server.token_manager import prime_default_pairing_token
 
-
+UTC = timezone.utc
 PAIRING_TOKEN = "pairingToken123"
 DOMAIN_NAME = "s2.example.com"
 
