@@ -1,7 +1,7 @@
 """Pairing functionality for the S2 server."""
 
 from base64 import b64encode
-from datetime import UTC, datetime, timedelta
+from datetime import timezone, datetime, timedelta
 from typing import Awaitable, Callable
 from uuid import uuid4
 from s2auth.common.exceptions import AccessError, PairingNotCompleteError
@@ -63,6 +63,7 @@ from s2auth.server.token_manager import (
 )
 import logging
 
+UTC = timezone.utc
 log = logging.getLogger(__name__)
 
 
