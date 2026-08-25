@@ -2,17 +2,60 @@ from __future__ import annotations
 
 import ipaddress
 from dataclasses import dataclass
+from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
+from s2auth.client.connection_store import ConnectionStore
 from s2auth.client.dao import Dao
-from s2auth.client.pairing_core import (
-    connect as low_level_connect,
-    pair as low_level_pair,
-    unpair as low_level_unpair,
-)
 from s2auth.client.settings import ClientSettings
 from s2auth.common.model.s2_connect_common import Deployment, NodeDescription, NodeId
+
+
+async def low_level_pair(
+    pairing_uri: str,
+    pairing_code: str | None,
+    storage: ConnectionStore,
+    role: str,
+    deployment: str,
+    supported_s2_message_versions: list[str],
+    supported_communication_protocols: list[str],
+    supportedHmacHashingAlgorithms: list[str],
+    s2_client_description: NodeDescription,
+    domain_name: str | None,
+    pairingS2NodeId: Optional[str] = None,
+    verify_tls: bool = True,
+    ssl_certfile: str | None = None,
+) -> bool:
+    from s2auth.client.pairing_core import pair
+
+    return await pair(
+        pairing_uri=pairing_uri,
+        pairing_code=pairing_code,
+        storage=storage,
+        role=role,
+        deployment=deployment,
+        supported_s2_message_versions=supported_s2_message_versions,
+        supported_communication_protocols=supported_communication_protocols,
+        supportedHmacHashingAlgorithms=supportedHmacHashingAlgorithms,
+        s2_client_description=s2_client_description,
+        domain_name=domain_name,
+        pairingS2NodeId=pairingS2NodeId,
+        verify_tls=verify_tls,
+        ssl_certfile=ssl_certfile,
+    )
+
+
+async def low_level_connect(storage: ConnectionStore, pairing_s2_node_id: str) -> bool:
+    from s2auth.client.pairing_core import connect
+
+    return await connect(storage=storage, pairing_s2_node_id=pairing_s2_node_id)
+
+
+async def low_level_unpair(storage: ConnectionStore, pairing_s2_node_id: str) -> bool:
+    from s2auth.client.pairing_core import unpair
+
+    return await unpair(storage=storage, pairing_s2_node_id=pairing_s2_node_id)
 
 
 def strip_pairing_url(url_str: str) -> str:
@@ -46,14 +89,14 @@ class PairingResult:
 class PairingClient:
     """High-level orchestration wrapper around existing pairing functions."""
 
-    def __init__(self, settings: ClientSettings, storage: Dao | None = None) -> None:
+    def __init__(self, settings: ClientSettings, storage: ConnectionStore | None = None) -> None:
         self.settings = settings
         self.storage = storage if storage is not None else Dao(settings.storage_db_url)
         # Keep a generated fallback id for non-pairing flows where client id is not required.
         self._client_node_id = uuid4()
 
     @classmethod
-    def from_settings(cls, settings: ClientSettings, storage: Dao | None = None) -> "PairingClient":
+    def from_settings(cls, settings: ClientSettings, storage: ConnectionStore | None = None) -> "PairingClient":
         return cls(settings=settings, storage=storage)
 
     async def pair(self) -> PairingResult:

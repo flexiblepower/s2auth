@@ -11,7 +11,7 @@ from uuid import UUID
 
 import httpx
 
-from s2auth.client.dao import Dao
+from s2auth.client.connection_store import ConnectionStore
 from s2auth.common.exceptions import S2PairingError, VerificationError
 from s2auth.common.hmac import (create_challenge, create_pairing_code,
                                 create_response, verify_response)
@@ -87,7 +87,7 @@ event_hooks=HTTPX_HOOKS
 
 async def pair(pairing_uri: str,
                pairing_code: str | None,
-               storage: Dao,
+               storage: ConnectionStore,
                role: str,
                deployment: str,
                supported_s2_message_versions: List[str],
@@ -361,7 +361,7 @@ async def finalize_pairing(pairing_uri: str,
         return response
 
 
-async def connect(storage: Dao,
+async def connect(storage: ConnectionStore,
                  pairing_s2_node_id: str) -> bool:
     """
     Sent command to terminate the pairing
@@ -445,7 +445,7 @@ async def confirmToken(pairing_uri: str,
         return response
 
 
-async def unpair(storage: Dao,
+async def unpair(storage: ConnectionStore,
                  pairing_s2_node_id: str) -> bool:
     """
     Sent command to terminate the pairing

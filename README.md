@@ -26,6 +26,41 @@ client = PairingClient.from_settings(settings)
 # unpaired = await client.unpair(pairing_s2_node_id="...")
 ```
 
+Storage abstraction:
+
+`PairingClient` is typed against the `ConnectionStore` interface. If you do not
+provide a store, it uses the built-in `Dao` by default.
+
+```python
+from s2auth.client import ClientSettings, ConnectionStore, PairingClient
+from s2auth.client.dao import Dao
+from typing import Any
+
+settings = ClientSettings()
+
+# Default storage (Dao)
+client_default = PairingClient.from_settings(settings)
+
+# Explicit Dao
+client_with_dao = PairingClient.from_settings(settings, storage=Dao(settings.storage_db_url))
+
+# Custom storage implementation can satisfy ConnectionStore
+class MyCustomStorage:
+  def __init__(self) -> None:
+    self._data: dict[str, dict[str, Any]] = {}
+
+  def store_connection_details(self, s2_node_id: str, details: dict[str, Any]) -> None:
+    self._data[s2_node_id] = details
+
+  def load_connection_details(self, s2_node_id: str) -> dict[str, Any] | None:
+    return self._data.get(s2_node_id)
+
+  def remove_connection_details(self, s2_node_id: str) -> bool:
+    return self._data.pop(s2_node_id, None) is not None
+
+client_with_custom_store = PairingClient.from_settings(settings, storage=MyCustomStorage())
+```
+
 Common protocol models:
 
 ```python
@@ -33,7 +68,7 @@ from s2auth.common.model import Deployment, Role, HmacHashingAlgorithm
 ```
 
 You can also import generated model submodules directly from `s2auth.common.model`
-to access all generated symbols, including names that may appear in multiple specs
+to access all symbols in the spec, including names that may appear in multiple specs
 (for example different `ErrorMessage` enums):
 
 ```python
