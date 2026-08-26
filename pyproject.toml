@@ -9,7 +9,11 @@ name = "s2auth"
 version = "0.1.0a0"
 authors = [
     {name = "Flexiblepower", email = "info@info.nl"},
+	{name = "Maurice Hendrix", email = "maurice.hendrix@tno.nl"},
     {name = "Dolf Andringa", email = "dolf@wepositive.energy"},
+	{name = "Jorrit Nutma", email = "jorrit.nutma@tno.nl"},
+	{name = "Sebastiaan la Fleue", email = "info@lfse.nl"},
+	
 ]
 description = "S2 Protocol Python Wrapper"
 readme = "README.md"
