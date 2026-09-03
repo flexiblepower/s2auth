@@ -385,6 +385,66 @@ ci/test_unit.sh
 ci/typecheck.sh
 ```
 
+# Release to PyPI
+
+This project uses dynamic versioning from Git tags. Create a tag like `v0.1.1` on the
+release commit; that tag becomes the published package version.
+
+## 1. Prepare and verify
+
+```bash
+git fetch --tags --force
+git status
+
+poetry run pyright
+poetry run ruff check .
+poetry run pytest
+```
+
+## 2. Tag the release
+
+```bash
+git tag -a v0.1.1 -m "Release v0.1.1"
+git push origin v0.1.1
+```
+
+## 3. Build artifacts
+
+```bash
+rm -rf dist
+poetry build
+ls -1 dist
+```
+
+## 4. Validate package metadata
+
+```bash
+python -m pip install --upgrade twine
+python -m twine check dist/*
+```
+
+## 5. Publish (recommended: TestPyPI first)
+
+```bash
+export TWINE_USERNAME=__token__
+export TWINE_PASSWORD=<your-pypi-token>
+
+# TestPyPI
+python -m twine upload --repository testpypi dist/*
+
+# PyPI
+python -m twine upload dist/*
+```
+
+## 6. Verify the published version
+
+```bash
+python -m pip install s2auth==0.1.1
+python -m pip show s2auth
+```
+
+Always prefer `python -m pip` over `pip` so the command uses the intended interpreter.
+
 # Run python
 * `python` (with your virtual environment activated)
 
