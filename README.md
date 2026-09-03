@@ -514,6 +514,19 @@ Comprehensive documentation is available in the `docs/` directory. To browse it 
 poetry run mkdocs serve
 ```
 
+## Automatic docs generation
+
+Documentation is automatically built and deployed to GitHub Pages through the
+workflow in `.github/workflows/static.yml`.
+
+- Trigger: every push to `main`
+- Manual run: GitHub Actions `Run workflow` (workflow_dispatch)
+- Build command: `poetry run mkdocs build --strict`
+- Published artifact: `docs_html/` (from `mkdocs.yml` `site_dir`)
+
+If the workflow fails, check the `Build MkDocs site` step first for strict-mode
+warnings/errors and unresolved API doc imports.
+
 Start with:
 - `docs/index.md` for the project overview
 - `docs/server/index.md` for server integration
