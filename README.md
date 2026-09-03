@@ -1,5 +1,17 @@
-# s2-python-auth
-
+# S2 Pairing Protocol Python Wrapper
+<div align="center">
+    <a href="https://s2standard.org"><img src="./Logo-S2.svg" width="200" height="200" /></a>
+    <div>
+        <a href="https://pypi.org/project/s2auth/"><img src="https://img.shields.io/pypi/v/s2auth" /></a>
+        <a href="https://pypi.org/project/s2auth/"><img src="https://img.shields.io/pypi/pyversions/s2auth" /></a>
+    </div>
+    <div>
+        <a href="./LICENSE.md"><img src="https://img.shields.io/pypi/l/s2auth" /></a>
+      <a href="https://flexiblepower.github.io/s2auth/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-2ea44f" /></a>
+        <a href="https://discord.com/invite/NyFMEPmuDw"><img src="https://img.shields.io/discord/1351281839913832510"></a>
+    </div>
+</div>
+<br />
 Python helpers for S2 Connect pairing, authentication, and connection initiation.
 
 This package implements client and server building blocks for the S2 communication-layer flows described in the official S2 specification: <https://docs.s2standard.org/docs/communication-layer/discovery-pairing-authentication/>.
@@ -385,6 +397,66 @@ ci/test_unit.sh
 ci/typecheck.sh
 ```
 
+# Release to PyPI
+
+This project uses dynamic versioning from Git tags. Create a tag like `v0.1.1` on the
+release commit; that tag becomes the published package version.
+
+## 1. Prepare and verify
+
+```bash
+git fetch --tags --force
+git status
+
+poetry run pyright
+poetry run ruff check .
+poetry run pytest
+```
+
+## 2. Tag the release
+
+```bash
+git tag -a v0.1.1 -m "Release v0.1.1"
+git push origin v0.1.1
+```
+
+## 3. Build artifacts
+
+```bash
+rm -rf dist
+poetry build
+ls -1 dist
+```
+
+## 4. Validate package metadata
+
+```bash
+python -m pip install --upgrade twine
+python -m twine check dist/*
+```
+
+## 5. Publish (recommended: TestPyPI first)
+
+```bash
+export TWINE_USERNAME=__token__
+export TWINE_PASSWORD=<your-pypi-token>
+
+# TestPyPI
+python -m twine upload --repository testpypi dist/*
+
+# PyPI
+python -m twine upload dist/*
+```
+
+## 6. Verify the published version
+
+```bash
+python -m pip install s2auth==0.1.1
+python -m pip show s2auth
+```
+
+Always prefer `python -m pip` over `pip` so the command uses the intended interpreter.
+
 # Run python
 * `python` (with your virtual environment activated)
 
@@ -442,6 +514,19 @@ Comprehensive documentation is available in the `docs/` directory. To browse it 
 ```bash
 poetry run mkdocs serve
 ```
+
+## Automatic docs generation
+
+Documentation is automatically built and deployed to GitHub Pages through the
+workflow in `.github/workflows/static.yml`.
+
+- Trigger: every push to `main`
+- Manual run: GitHub Actions `Run workflow` (workflow_dispatch)
+- Build command: `poetry run mkdocs build --strict`
+- Published artifact: `docs_html/` (from `mkdocs.yml` `site_dir`)
+
+If the workflow fails, check the `Build MkDocs site` step first for strict-mode
+warnings/errors and unresolved API doc imports.
 
 Start with:
 - `docs/index.md` for the project overview
