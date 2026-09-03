@@ -1,4 +1,4 @@
-name: S2 python auth
+name: S2auth
 on: [push]
 jobs:
   test:
