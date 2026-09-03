@@ -7,6 +7,7 @@
     </div>
     <div>
         <a href="./LICENSE.md"><img src="https://img.shields.io/pypi/l/s2auth" /></a>
+      <a href="https://flexiblepower.github.io/s2auth/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-2ea44f" /></a>
         <a href="https://discord.com/invite/NyFMEPmuDw"><img src="https://img.shields.io/discord/1351281839913832510"></a>
     </div>
 </div>

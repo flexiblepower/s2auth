@@ -40,6 +40,7 @@ classifiers = [
 
 [project.urls]
     "Source code" = "https://github.com/flexiblepower/s2-ws-json-python"
+    "Documentation" = "https://flexiblepower.github.io/s2auth/"
 
 [project.scripts]
 server = "s2auth.reference.server.run:main"
