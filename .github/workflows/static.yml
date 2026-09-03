@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -31,6 +31,9 @@ jobs:
 
       - name: Install docs dependencies
         run: poetry install --with docs --no-root
+
+      - name: Install project package
+        run: poetry run pip install -e .
 
       - name: Build MkDocs site
         run: poetry run mkdocs build --strict
