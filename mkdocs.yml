@@ -57,9 +57,13 @@ nav:
       - Client:
           - Pairing: api/client/pairing.md
           - Storage DAO: api/client/dao.md
+          - Settings: api/client/settings.md
+          - Connection Store: api/client/connection_store.md
+          - CLI: api/client/main.md
       - Server:
           - Pairing: api/server/pairing.md
           - Connection Initiation: api/server/connection_initiation.md
+          - Token Manager: api/server/token_manager.md
           - Context: api/server/context.md
           - Hooks: api/server/hooks.md
           - Settings: api/server/settings.md
