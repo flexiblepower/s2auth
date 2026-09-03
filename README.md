@@ -1,4 +1,4 @@
-# s2-python-auth
+# S2 Pairing Protocol Python Wrapper
 
 Python helpers for S2 Connect pairing, authentication, and connection initiation.
 
