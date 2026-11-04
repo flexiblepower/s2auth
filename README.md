@@ -39,18 +39,23 @@ import asyncio
 
 from s2auth.client import ClientSettings, PairingClient
 
+
 async def run_pairing_flow() -> None:
-  settings = ClientSettings()
-  client = PairingClient.from_settings(settings)
+    settings = ClientSettings()
+    client = PairingClient.from_settings(settings)
 
-  pairing_result = await client.pair()
-  print(pairing_result.pairing_s2_node_id)
+    pairing_result = await client.pair()
+    print(pairing_result.pairing_s2_node_id)
 
-  connect_result = await client.connect(pairing_s2_node_id=pairing_result.pairing_s2_node_id)
-  print(connect_result.success)
+    connect_result = await client.connect(
+        pairing_s2_node_id=pairing_result.pairing_s2_node_id
+    )
+    print(connect_result.success)
 
-  unpair_result = await client.unpair(pairing_s2_node_id=pairing_result.pairing_s2_node_id)
-  print(unpair_result.success)
+    unpair_result = await client.unpair(
+        pairing_s2_node_id=pairing_result.pairing_s2_node_id
+    )
+    print(unpair_result.success)
 
 
 asyncio.run(run_pairing_flow())
@@ -69,32 +74,32 @@ LOGGER = logging.getLogger(__name__)
 
 
 def on_start(operation: str, pairing_s2_node_id: str | None) -> None:
-  LOGGER.info(f"start operation={operation} pairing_s2_node_id={pairing_s2_node_id}")
+    LOGGER.info(f"start operation={operation} pairing_s2_node_id={pairing_s2_node_id}")
 
 
 def on_success(operation: str, result: object) -> None:
-  LOGGER.info(f"success operation={operation} result_type={type(result).__name__}")
+    LOGGER.info(f"success operation={operation} result_type={type(result).__name__}")
 
 
 def on_error(operation: str, error: Exception) -> None:
-  LOGGER.error(f"error operation={operation} error={error}")
+    LOGGER.error(f"error operation={operation} error={error}")
 
 
 async def on_http_request(request) -> None:
-  LOGGER.debug(f"HTTP request {request.method} {request.url}")
+    LOGGER.debug(f"HTTP request {request.method} {request.url}")
 
 
 async def on_http_response(response) -> None:
-  LOGGER.debug(f"HTTP response {response.status_code} {response.request.url}")
+    LOGGER.debug(f"HTTP response {response.status_code} {response.request.url}")
 
 
 settings = ClientSettings()
 hooks = PairingClientHooks(
-  on_operation_start=on_start,
-  on_operation_success=on_success,
-  on_operation_error=on_error,
-  http_request=on_http_request,
-  http_response=on_http_response,
+    on_operation_start=on_start,
+    on_operation_success=on_success,
+    on_operation_error=on_error,
+    http_request=on_http_request,
+    http_response=on_http_response,
 )
 client = PairingClient.from_settings(settings, hooks=hooks)
 ```
@@ -124,23 +129,31 @@ settings = ClientSettings()
 client_default = PairingClient.from_settings(settings)
 
 # Explicit Dao
-client_with_dao = PairingClient.from_settings(settings, storage=Dao(settings.storage_db_url))
+client_with_dao = PairingClient.from_settings(
+    settings, storage=Dao(settings.storage_db_url)
+)
+
 
 # Custom storage implementation can satisfy ConnectionStore
 class MyCustomStorage:
-  def __init__(self) -> None:
-    self._data: dict[str, dict[str, Any]] = {}
+    def __init__(self) -> None:
+        self._data: dict[str, dict[str, Any]] = {}
 
-  def store_connection_details(self, s2_node_id: str, details: dict[str, Any]) -> None:
-    self._data[s2_node_id] = details
+    def store_connection_details(
+        self, s2_node_id: str, details: dict[str, Any]
+    ) -> None:
+        self._data[s2_node_id] = details
 
-  def load_connection_details(self, s2_node_id: str) -> dict[str, Any] | None:
-    return self._data.get(s2_node_id)
+    def load_connection_details(self, s2_node_id: str) -> dict[str, Any] | None:
+        return self._data.get(s2_node_id)
 
-  def remove_connection_details(self, s2_node_id: str) -> bool:
-    return self._data.pop(s2_node_id, None) is not None
+    def remove_connection_details(self, s2_node_id: str) -> bool:
+        return self._data.pop(s2_node_id, None) is not None
 
-client_with_custom_store = PairingClient.from_settings(settings, storage=MyCustomStorage())
+
+client_with_custom_store = PairingClient.from_settings(
+    settings, storage=MyCustomStorage()
+)
 ```
 
 Common protocol models:
@@ -154,7 +167,11 @@ to access all symbols in the spec, including names that may appear in multiple s
 (for example different `ErrorMessage` enums):
 
 ```python
-from s2auth.common.model import s2_connect_common, s2_connect_pairing, s2_connect_session_init
+from s2auth.common.model import (
+    s2_connect_common,
+    s2_connect_pairing,
+    s2_connect_session_init,
+)
 
 pairing_error = s2_connect_pairing.ErrorMessage
 session_error = s2_connect_session_init.ErrorMessage
@@ -164,12 +181,12 @@ HMAC helpers:
 
 ```python
 from s2auth.common import (
-  create_pairing_code,
-  create_challenge,
-  create_response,
-  verify_response,
-  get_supported_algorithms,
-  select_algorithm,
+    create_pairing_code,
+    create_challenge,
+    create_response,
+    verify_response,
+    get_supported_algorithms,
+    select_algorithm,
 )
 ```
 
@@ -253,6 +270,7 @@ Required input:
 - Provide a `PAIRING_TOKEN` in `.env` or pass `--pairing_token` to start the pairing flow.
 - `CLIENT_DEPLOYMENT` in `.env` or `--deployment` on the CLI is optional.
 - For WAN deployments, provide `DOMAIN_NAME` in `.env` or pass `--domain`, or let the client auto-detect the domain from `--server_url`.
+- For LAN deployments, when `SERVER_URL`/`--server_url` is not provided, the client uses local discovery to find the pairing server.
 - For LAN deployments, a local certificate file is optional. The client computes the fingerprint from the TLS peer certificate in the pairing response.
 - Set `SSL_CERTFILE` in `.env` or pass `--certificate_file` only when you want to use an explicit CA/certificate bundle for TLS verification.
 
@@ -262,7 +280,7 @@ LAN security note:
 - For LAN pairing behind intermediaries, prefer TLS passthrough so the client sees the endpoint certificate directly.
 
 Useful optional arguments:
-- `--server_url` defaults to the value from `SERVER_URL`, or `http://localhost` if not configured.
+- `--server_url` defaults to the value from `SERVER_URL`; in LAN mode, if no server URL is configured, local discovery is used.
 - `--client_S2_nodeId` and `--pairing_S2_nodeId` let you provide explicit node IDs instead of auto-generated ones.
 - `--pairing_s2_node_id` defaults to `PAIRING_S2_NODE_ID` when set and can be overridden on the CLI.
 - `--certificate_file` points to a CA/certificate bundle file for TLS verification in local or test setups (optional).
