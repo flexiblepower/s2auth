@@ -7,13 +7,14 @@ discovered ``ServiceInfo`` objects in a mutable mapping provided by
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
 
 from s2auth.client.pairing_core import (
     HttpEventHooks,
-    _resolve_http_hooks,
+    resolve_http_hooks,
     build_httpx_verify,
 )
 
@@ -29,7 +30,7 @@ class S2Discovery:
     """
 
     on_service: ServiceCallback | None = None
-    services: dict[str, ServiceInfo] = field(default_factory=dict)
+    services: dict[str, ServiceInfo] = field(default_factory=dict[str, ServiceInfo])
 
     def __post_init__(self) -> None:
         # Initialize zeroconf objects once and keep references on the instance.
@@ -50,10 +51,10 @@ class S2Discovery:
         self._zeroconf.close()
 
     def __enter__(self):
-        # Context-manager support allows: ``with S2Discovery() as d: ...``
+        # Context-manager support allows: ``with S2Discovery() as d: ... in order to keep the instance alive while browsing.``
         return self
 
-    def __exit__(self, *args) -> None:
+    def __exit__(self, *args: Any) -> None:
         # Always clean up zeroconf resources when leaving context scope.
         self.close()
 
@@ -64,11 +65,11 @@ class S2Discovery:
         verify_tls: bool = True,
         ssl_certfile: str | None = None,
         http_event_hooks: HttpEventHooks | None = None,
-    ) -> object:
+    ) -> list[dict[str, Any]] :
         """Call ``<base_url>/v1/nodes`` and return the parsed JSON response."""
 
         httpx_verify = build_httpx_verify(verify_tls, ssl_certfile)
-        event_hooks = _resolve_http_hooks(http_event_hooks)
+        event_hooks = resolve_http_hooks(http_event_hooks)
 
         nodes_url = base_url.rstrip("/")
         if not nodes_url.endswith("/v1/nodes"):
@@ -92,7 +93,7 @@ class _DiscoveryListener(ServiceListener):
         self.services = services
         self.on_service = on_service
 
-    def add_service(self, zc, type_, name) -> None:
+    def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         # Resolve full ServiceInfo for newly discovered service names.
         info = zc.get_service_info(type_, name)
 
@@ -103,13 +104,13 @@ class _DiscoveryListener(ServiceListener):
                 # Callback receives current index, service name, and ServiceInfo.
                 self.on_service(list(self.services).index(name), name, info)
 
-    def update_service(self, zc, type_, name) -> None:
+    def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         # Refresh stored data when zeroconf reports changed service metadata.
         info = zc.get_service_info(type_, name)
 
         if info is not None:
             self.services[name] = info
 
-    def remove_service(self, zc, type_, name) -> None:
+    def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         # Remove service from local cache when it disappears.
         self.services.pop(name, None)
