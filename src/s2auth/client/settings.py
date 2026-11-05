@@ -17,7 +17,7 @@ class ClientSettings(BaseSettings):
         env_nested_delimiter="__",
     )
 
-    server_url: str = "http://localhost"
+    server_url: str | None = None
     pairing_token: str | None = None
     pairing_s2_node_id: str | None = None
     client_s2_node_id: str | None = None

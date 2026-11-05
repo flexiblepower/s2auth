@@ -15,6 +15,7 @@ from s2auth.reference.server import run as reference_run
 class _FakeSettings:
     ssl_certfile: str
     ssl_keyfile: str
+    server_port: int = 8000
 
 
 def _install_fake_uvicorn(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:

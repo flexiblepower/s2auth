@@ -118,7 +118,7 @@ async def _run_client():
 
     parser.add_argument(
         "--server_url",
-        default=None,
+        default=settings.server_url,
         help=f"The pairing URL of the pairing server (default: {_format_default(settings.server_url)})",
     )
 
@@ -232,17 +232,16 @@ async def _run_client():
 
     if args.deployment is not None and args.deployment.upper() == "LAN":
         if not((args.server_url is not None) == (args.pairing_token is not None) == (args.pairing_s2_node_id is not None or args.server_S2_nodeId is not None)):
-            print((args.server_url is not None) , (args.pairing_token is not None) , (args.pairing_s2_node_id is not None or args.server_S2_nodeId is not None))
             parser.error("Specify either server_url, pairing_token, and one of pairing_s2_node_id or server_S2_nodeId, or neither to allow on local discovery")
 
         def show_service(index: int, name: str, info: ServiceInfo) -> None:
             service_properties = info.decoded_properties
-            #pairingUrl: '{service_properties.get('pairingUrl', '')}', 'longpollingUrl': 'https://PC-43510.local:8000', 'deployment': 'LAN', 'e_name': 'Example full server', 'txtver': '1'
             print(f"[{index + 1}] pairingUrl: {service_properties.get('pairingUrl', '')} longpollingUrl: {service_properties.get('longpollingUrl', '')} deployment: {service_properties.get('deployment', '')}")
+
         with S2Discovery(show_service) as discovery:
             choice = await asyncio.to_thread(input, "\nATTENTION: Please select the S2 endpoint to pair with from the list of discovered endpoints.\n")
             try:
-                args.server_url = list(discovery.services.values())[int(choice) - 1].decoded_properties.get('pairingUrl', '')
+                args.server_url = discovery.services[int(choice) - 1].get('pairingUrl', '')
                 if args.server_url is not None and not args.server_url.rstrip('/').endswith("/v1"):
                         args.server_url += "/v1"
             except (IndexError, ValueError):

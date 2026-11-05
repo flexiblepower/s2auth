@@ -41,6 +41,15 @@ from s2auth.server.pairing import (
     request_pairing as handle_request_pairing,
 )
 
+
+from s2auth.common.model.s2_connect_pairing import NodeDescription
+from s2auth.server.hooks import (
+    HookRegistry,
+    get_server_node_description,
+    hook_registry,
+)
+from s2auth.server.settings import Settings, settings
+
 router = APIRouter()
 log = logging.getLogger(__name__)
 
@@ -246,3 +255,24 @@ def wait_for_pairing(
     """
     _ = s2_connect_version
     pass
+
+
+@router.get(
+    "/{s2_connect_version}/nodes",
+    response_model=list[NodeDescription],
+    tags=["LAN-LAN only extensions"],
+)
+async def get_nodes(
+    s2_connect_version: str = Depends(check_s2_connect_version),
+    hooks: HookRegistry = Depends(hook_registry),
+    server_settings: Settings = Depends(settings),
+) -> list[NodeDescription]:
+    """Return server node descriptions using the same hook path as pairing."""
+    if server_settings.cem_deployment_type.value != "LAN":
+        raise HTTPException(status_code=404, detail="Not implemented for non-LAN deployment")
+
+    # Reuse the pairing hook so /nodes and pairing expose the same server identity.
+    node_hook = hooks.get(get_server_node_description)
+    server_node = await node_hook(NodeId(root=server_settings.server_s2_node_id))
+    # The LAN extension expects a list of nodes, even when only one node is exposed.
+    return [server_node]

@@ -17,6 +17,7 @@ async def test_run_client_uses_env_backed_defaults(
     monkeypatch.setenv("SERVER_URL", "https://localhost.local:8000/v1")
     monkeypatch.setenv("SSL_CERTFILE", "./tests/localhost.chain.pem")
     monkeypatch.setenv("CLIENT_ROLE", "RM")
+    monkeypatch.setenv("CLIENT_DEPLOYMENT", "WAN")
     monkeypatch.setenv("PAIRING_S2_NODE_ID", "9e0e3a62-1b2d-4bb1-89ca-7bc0d9a7e09c")
 
     captured: dict[str, object] = {}

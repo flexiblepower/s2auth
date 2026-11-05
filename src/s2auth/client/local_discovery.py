@@ -27,7 +27,7 @@ class S2Discovery:
     """
 
     on_service: ServiceCallback | None = None
-    services: dict[str, ServiceInfo] = field(default_factory=dict[str, ServiceInfo])
+    services: list[dict[str, str | None]] = field(default_factory=list[dict[str, str | None]])
 
     def __post_init__(self) -> None:
         # Initialize zeroconf objects once and keep references on the instance.
@@ -84,7 +84,7 @@ class _DiscoveryListener(ServiceListener):
 
     def __init__(
         self,
-        services: dict[str, ServiceInfo],
+        services: list[dict[str, str | None]],
         on_service: ServiceCallback | None = None,
     ) -> None:
         self.services = services
@@ -93,21 +93,22 @@ class _DiscoveryListener(ServiceListener):
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         # Resolve full ServiceInfo for newly discovered service names.
         info = zc.get_service_info(type_, name)
+        if info is None:
+            return  # ServiceInfo resolution failed; ignore this service for now.
+        properties = info.decoded_properties
 
-        if info is not None:
-            self.services[name] = info
+        if properties not in self.services:
+            self.services.append(properties)
 
             if self.on_service:
                 # Callback receives current index, service name, and ServiceInfo.
-                self.on_service(list(self.services).index(name), name, info)
+                self.on_service(len(self.services) - 1, name, info)
 
     def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         # Refresh stored data when zeroconf reports changed service metadata.
-        info = zc.get_service_info(type_, name)
-
-        if info is not None:
-            self.services[name] = info
+        self.add_service(zc, type_, name)
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        # Remove service from local cache when it disappears.
-        self.services.pop(name, None)
+        # Ignore service removal events for now, as otherwise a user may say several services with the same index and get confused whch one they are chosing.
+        # The service will be removed from the list when the user re-runs discovery, which is a reasonable UX tradeoff.
+        pass
