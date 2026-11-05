@@ -12,11 +12,8 @@ from typing import Any
 import httpx
 from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
 
-from s2auth.client.pairing_core import (
-    HttpEventHooks,
-    resolve_http_hooks,
-    build_httpx_verify,
-)
+from s2auth.client.pairing_core import HttpEventHooks, build_httpx_verify, resolve_http_hooks
+
 
 ServiceCallback = Callable[[int, str, ServiceInfo], None]
 
@@ -59,7 +56,7 @@ class S2Discovery:
         self.close()
 
     @staticmethod
-    def fetch_nodes(
+    async def fetch_nodes(
         base_url: str,
         timeout_seconds: float = 5.0,
         verify_tls: bool = True,
@@ -77,8 +74,8 @@ class S2Discovery:
                 nodes_url += "/v1"
             nodes_url += "/nodes"
 
-        with httpx.Client(verify=httpx_verify, event_hooks=event_hooks) as client:
-            response = client.get(nodes_url, timeout=timeout_seconds)
+        async with httpx.AsyncClient(verify=httpx_verify, event_hooks=event_hooks) as client:
+            response = await client.get(nodes_url, timeout=timeout_seconds)
         return response.json()
 
 

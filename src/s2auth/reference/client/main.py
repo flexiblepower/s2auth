@@ -250,7 +250,7 @@ async def _run_client():
 
             assert args.server_url is not None, "Selected S2 endpoint does not have a pairingUrl property."
 
-            nodes: list[dict[str, Any]] = S2Discovery.fetch_nodes(args.server_url, verify_tls=not args.skip_cert_verify, ssl_certfile=args.certificate_file)
+            nodes: list[dict[str, Any]] = await S2Discovery.fetch_nodes(args.server_url, verify_tls=not args.skip_cert_verify, ssl_certfile=args.certificate_file)
             print("\nATTENTION: Please select the node to pair with from the list of discovered endpoints.")
             for i, node in enumerate(nodes):
                 node_str: str = ", ".join(f'{k}: {v}' for k, v in node.items())
