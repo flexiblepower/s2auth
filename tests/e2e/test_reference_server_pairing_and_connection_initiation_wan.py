@@ -95,8 +95,8 @@ def reference_server(
 
     port = _free_port()
     # Also set SSL cert paths for the server to use
-    monkeypatch.setenv("SSL_CERTFILE", "tests/localhost.chain.pem")
-    monkeypatch.setenv("SSL_KEYFILE", "tests/localhost.key")
+    monkeypatch.setenv("SSL_CERTFILE", "tests/localhost.local.chain.pem")
+    monkeypatch.setenv("SSL_KEYFILE", "tests/localhost.local.key")
     monkeypatch.setenv("DEFAULT_PAIRING_TOKEN", "testtoken")
 
     config = uvicorn.Config(
@@ -105,8 +105,8 @@ def reference_server(
         port=port,
         log_level="warning",
         lifespan="on",
-        ssl_certfile="tests/localhost.chain.pem",
-        ssl_keyfile="tests/localhost.key",
+        ssl_certfile="tests/localhost.local.chain.pem",
+        ssl_keyfile="tests/localhost.local.key",
     )
     def test_settings_provider() -> Settings:
         return reference_settings
@@ -257,13 +257,13 @@ def client_initiates_connection(
 ) -> None:
     assert world.connection_details_response is not None
     response = httpx.post(
-        f"{world.base_url}/pairing/{reference_settings.supported_s2_connect_versions[0]}/initiateSession",
+        f"{world.base_url}/connection/{reference_settings.supported_s2_connect_versions[0]}/initiateSession",
         headers={
             "Authorization": f"Bearer {world.connection_details_response['accessToken']}",
         },
         json={
             "clientNodeId": str(client_node_id),
-            "serverNodeId": str(reference_settings.server_s2_node_id),
+            "serverNodeId": str(reference_settings.cem_s2_node_id),
             "supportedS2MessageVersions": reference_settings.supported_s2_versions,
             "supportedCommunicationProtocols": ["WebSocket"],
         },

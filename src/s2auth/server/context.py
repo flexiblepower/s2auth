@@ -89,11 +89,13 @@ class S2InMemoryContextStorage(InMemoryContextStorage):
             del type_store[context_id]
 
 
+_S2_CONTEXT_STORAGE_SINGLETON = S2InMemoryContextStorage()
+
+
 @override_provider(context_storage_singleton)
 def s2_context_storage_singleton() -> ContextStorage:
     """Use s2auth context storage for server context providers."""
-    log.debug("Instantiating storage")
-    return S2InMemoryContextStorage()
+    return _S2_CONTEXT_STORAGE_SINGLETON
 
 
 class AuthenticationContext(BaseModel):

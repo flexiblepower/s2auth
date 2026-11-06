@@ -1,14 +1,10 @@
-from typing import Annotated
 import logging
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from s2auth.common.exceptions import AccessError, PairingNotCompleteError, VerificationError
-from s2auth.common.model.s2_connect_common import AccessToken, NodeId
+from s2auth.common.model.s2_connect_common import EndpointDescription, NodeId
 from s2auth.common.model.s2_connect_session_init import (
-    CommunicationDetailsErrorMessage,
-    InitiateSessionPostRequest,
-    InitiateSessionPostResponse,
     UnpairPostRequest,
 )
 from s2auth.common.model.s2_connect_pairing import (
@@ -34,7 +30,6 @@ from s2auth.reference.server.versions import (
     check_s2_connect_version,
     get_supported_s2_connect_versions,
 )
-from s2auth.server.connection_initiation import initiateConnection
 from s2auth.server.pairing import (
     finalize_pairing as handle_finalize_pairing,
     handle_client_response,
@@ -57,47 +52,6 @@ log = logging.getLogger(__name__)
 router.get("/", response_model=list[str], tags=["Pairing process"])(
     get_supported_s2_connect_versions
 )
-
-
-@router.post(
-    "/{s2_connect_version}/initiateSession",
-    response_model=InitiateSessionPostResponse,
-    responses={"400": {"model": CommunicationDetailsErrorMessage}},
-    tags=["Connection initiation"],
-    dependencies=[Depends(set_client_node_id_from_body_variable)],
-)
-async def initiate_session(
-    s2_connect_version: str = Depends(check_s2_connect_version),
-    authorization: Annotated[str, Header(alias="Authorization")] = "",
-    body: InitiateSessionPostRequest = None,  # pyright: ignore[reportArgumentType]
-) -> InitiateSessionPostResponse | CommunicationDetailsErrorMessage:
-    """
-    Initiate an S2 communication session (called by client after pairing).
-    """
-    access_token_str = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else authorization
-    return await initiateConnection(
-        server_node_id=body.serverNodeId,
-        access_token=AccessToken(root=access_token_str.encode("utf-8")),
-        supported_communication_protocols=body.supportedCommunicationProtocols,
-        supported_s2_versions=body.supportedS2MessageVersions,
-        selected_s2_connect_version=s2_connect_version,
-    )
-
-
-@router.post(
-    "/{s2_connect_version}/confirmAccessToken",
-    response_model=None,
-    tags=["Connection initiation"],
-)
-async def confirm_access_token(
-    s2_connect_version: str = Depends(check_s2_connect_version),
-) -> None:
-    """
-    Client confirms that it has stored a new accessToken.
-    This endpoint just acknowledges the confirmation.
-    """
-    _ = s2_connect_version
-    pass
 
 
 @router.post(
@@ -276,3 +230,19 @@ async def get_nodes(
     server_node = await node_hook(NodeId(root=server_settings.server_s2_node_id))
     # The LAN extension expects a list of nodes, even when only one node is exposed.
     return [server_node]
+
+@router.get(
+    "/{s2_connect_version}/endpoint",
+    response_model=EndpointDescription,
+    tags=["LAN-LAN only extensions"],
+)
+async def get_endpoint(
+    s2_connect_version: str = Depends(check_s2_connect_version),
+    hooks: HookRegistry = Depends(hook_registry),
+    server_settings: Settings = Depends(settings),
+) -> EndpointDescription:
+    """Return server node descriptions using the same hook path as pairing."""
+    if server_settings.cem_deployment_type.value != "LAN":
+        raise HTTPException(status_code=404, detail="Not implemented for non-LAN deployment")
+    # Reuse the pairing hook so /nodes and pairing expose the same server identity.
+    return EndpointDescription(name = server_settings.cem_model_name, logoUrl = server_settings.cem_logo_url, deployment = server_settings.cem_deployment_type)

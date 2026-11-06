@@ -304,7 +304,7 @@ def test_calculate_fingerprint_from_response_certificate_without_network_stream(
 
 
 def test_calculate_certificate_fingerprint_from_certificate_file() -> None:
-    certificate_file = Path(__file__).resolve().parents[2] / "localhost.chain.pem"
+    certificate_file = Path(__file__).resolve().parents[2] / "localhost.local.chain.pem"
     certificate_text = certificate_file.read_text(encoding="ascii")
     end_marker = "-----END CERTIFICATE-----"
     leaf_pem = certificate_text.split(end_marker, 1)[0] + end_marker

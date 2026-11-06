@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     cem_type: str
     cem_model_name: str
     cem_brand: str
+    cem_logo_url: AnyUrl | None = None
     cem_url: AnyUrl | None = None
     cem_deployment_type: Deployment = Deployment.WAN
     # If unset/empty, pairing starts with generated one-time tokens.
