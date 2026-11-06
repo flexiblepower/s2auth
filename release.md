@@ -1,5 +1,9 @@
 # Release Notes
 
+## v0.1.1
+
+Added dns-sd local network discovery
+
 ## v0.1.0
 
 First public release of the S2 Pairing Protocol Python Wrapper
