@@ -13,7 +13,8 @@ from s2auth.server.settings import Settings
 
 LOGGER = logging.getLogger(__name__)
 
-SERVICE_TYPE = "_s2connect._tcp.local."
+SERVICE_TYPE = "_cem._sub._s2connect._tcp.local."
+SERVICE_NAME_POSTFIX = "._s2connect._tcp.local."
 
 
 def _local_ipv4() -> str:
@@ -51,26 +52,24 @@ def send_local_discover(
     Returns a handle that should be closed on application shutdown.
     """
     port = server_settings.server_port
-    hostname = cfg.domain_name
-    service_name = f"{hostname}.{SERVICE_TYPE}"
-    _ = cfg
-    base_url = f"https://{hostname}:{port}/pairing"
-
-    properties: dict[str, str] = {
-        "pairingUrl": base_url,
-        "longpollingUrl": base_url,
-        "deployment": "LAN",
-        "e_name": "Example reference server",
-        "txtver": "1",
-    }
+    domain_name= cfg.domain_name
+    hostname = server_settings.server_hostname
+    server = f"{hostname}.{domain_name}"
+    service_name = f"{server}.{SERVICE_TYPE}"
+    base_url = f"https://{server}:{port}/pairing/"
 
     service_info = ServiceInfo(
         type_=SERVICE_TYPE,
-        name=service_name,
+        name=f"{hostname}{SERVICE_NAME_POSTFIX}",
         addresses=[socket.inet_aton(_local_ipv4())],
         port=port,
-        properties=properties,
-        server=hostname,
+        properties={
+            "pairingUrl": base_url,
+            "deployment": "LAN",
+            "e_name": "Example reference server",
+            "txtver": "1",
+        },
+        server=server,
     )
 
     zeroconf = Zeroconf()

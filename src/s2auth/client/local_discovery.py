@@ -1,6 +1,6 @@
 """Local DNS-SD discovery helpers for S2 services.
 
-This module wraps zeroconf browsing for ``_s2connect._tcp.local.`` and keeps
+This module wraps zeroconf browsing for ``_cem._sub._s2connect._tcp.local.`` and keeps
 discovered ``ServiceInfo`` objects in a mutable mapping provided by
 ``S2Discovery``.
 """
@@ -39,7 +39,7 @@ class S2Discovery:
         )
         self._browser = ServiceBrowser(
             self._zeroconf,
-            "_s2connect._tcp.local.",
+            "_cem._sub._s2connect._tcp.local.",
             self._listener,
         )
 
@@ -73,6 +73,7 @@ class S2Discovery:
             if not nodes_url.endswith("/v1"):
                 nodes_url += "/v1"
             nodes_url += "/nodes"
+        print(nodes_url)
 
         async with httpx.AsyncClient(verify=httpx_verify, event_hooks=event_hooks) as client:
             response = await client.get(nodes_url, timeout=timeout_seconds)

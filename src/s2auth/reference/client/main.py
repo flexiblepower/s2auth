@@ -243,7 +243,7 @@ async def _run_client():
             try:
                 args.server_url = discovery.services[int(choice) - 1].get('pairingUrl', '')
                 if args.server_url is not None and not args.server_url.rstrip('/').endswith("/v1"):
-                        args.server_url += "/v1"
+                        args.server_url = args.server_url.rstrip('/') + "/v1"
             except (IndexError, ValueError):
                 parser.error("Invalid input. Please enter a valid number corresponding to the discovered S2 endpoint.")
 

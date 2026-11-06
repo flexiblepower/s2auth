@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     )
     pairing_token_ttl_seconds: int = Field(default=300, gt=0)
     server_port: int = Field(default=8000, ge=1, le=65535)
+    server_hostname: str = Field(default="localhost")
     ssl_certfile: str = ""
     ssl_keyfile: str = ""
 

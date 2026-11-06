@@ -11,7 +11,7 @@ from fastapi import FastAPI
 import s2auth
 from s2auth.common.hmac import create_pairing_code
 from s2auth.reference.server.connection import router as connection_router
-from s2auth.reference.server.local_discovery import (
+from s2auth.server.local_discovery import (
     LocalDiscoveryRegistration,
     send_local_discover,
 )
@@ -128,3 +128,7 @@ app = FastAPI(
 
 app.include_router(pairing_router, prefix="/pairing")
 app.include_router(connection_router, prefix="/connection")
+
+## compatibility alias for the third-party client
+#app.include_router(pairing_router)
+#app.include_router(connection_router)
