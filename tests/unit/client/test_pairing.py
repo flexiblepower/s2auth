@@ -32,14 +32,14 @@ def test_client_settings_from_env(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("SERVER_URL", "https://env.example.com/v1")
     monkeypatch.setenv("CLIENT_ROLE", "CEM")
     monkeypatch.setenv("CLIENT_DEPLOYMENT", "WAN")
-    monkeypatch.setenv("SSL_CERTFILE", "./tests/localhost.chain.pem")
+    monkeypatch.setenv("SSL_CERTFILE", "./tests/localhost.local.chain.pem")
 
     settings = _make_settings()
 
     assert settings.server_url == "https://env.example.com/v1"
     assert settings.client_role == Role.CEM
     assert settings.client_deployment == Deployment.WAN
-    assert settings.ssl_certfile == "./tests/localhost.chain.pem"
+    assert settings.ssl_certfile == "./tests/localhost.local.chain.pem"
 
 
 async def test_pairing_client_pair_delegates_to_low_level(mocker: MockerFixture) -> None:
@@ -226,7 +226,7 @@ def test_detect_deployment_prefers_domain() -> None:
     deployment, reason = detect_deployment(
         pairing_url="https://localhost.local:8000/v1",
         domain_name="s2connect.example.com",
-        certificate_file="./tests/localhost.chain.pem",
+        certificate_file="./tests/localhost.local.chain.pem",
     )
 
     assert deployment == Deployment.WAN

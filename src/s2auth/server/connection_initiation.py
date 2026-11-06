@@ -47,7 +47,7 @@ from s2auth.common.connection_initiation import select_protocol, select_version
 
 @inject
 async def initiateConnection(
-    server_node_id: NodeId,
+    cem_s2_node_id: NodeId,
     access_token: AccessToken,
     supported_communication_protocols: list[CommunicationProtocol],
     supported_s2_versions: list[str],
@@ -74,7 +74,7 @@ async def initiateConnection(
     confirm it with ``confirmAccessToken`` before the old token is invalidated.
 
     Args:
-        server_node_id: Node ID of the communication server the client wants to
+        cem_s2_node_id: Node ID of the CEM server that the client is attempting to
             connect to.
         access_token: Currently active access token supplied by the
             communication client.
@@ -122,9 +122,9 @@ async def initiateConnection(
     if authentication_ctx.current_access_token != access_token:
         raise InvalidAccessTokenError("Invalid access token")
 
-    if server_settings.server_s2_node_id != server_node_id.root:
+    if server_settings.cem_s2_node_id != cem_s2_node_id.root:
         raise InvalidServerError(
-            f"Pairing was attempted with server {server_node_id.root} but we are server node {server_settings.server_s2_node_id}"
+            f"Pairing was attempted with cem {cem_s2_node_id.root} but we are cem node {server_settings.server_s2_node_id}"
         )
 
     selected_version = select_version(
@@ -168,7 +168,7 @@ async def initiateConnection(
 async def validate_access_token(
     next_access_token: AccessToken,
     authentication_ctx: AuthenticationContext = Depends[authentication_context],
-):
+)-> bool:
     """Handle ``POST /confirmAccessToken`` for a pending access token.
 
     The client calls this after successfully persisting the pending access token
@@ -187,14 +187,14 @@ async def validate_access_token(
             token for the pairing.
     """
     if next_access_token != authentication_ctx.next_access_token:
-        raise InvalidAccessTokenError("Next access token is invalid")
-
+        return False
     authentication_ctx.current_connection_token = (
         authentication_ctx.current_access_token
     )
     authentication_ctx.current_access_token = authentication_ctx.next_access_token
     authentication_ctx.next_access_token = None
     authentication_ctx.state = ClientState.CONNECTION_INITIATED
+    return True
 
 
 async def validate_s2_connection_token(

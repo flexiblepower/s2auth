@@ -3,9 +3,13 @@
 import argparse
 import asyncio
 import logging
+from typing import Any
 from uuid import UUID, uuid4
 
+from zeroconf import ServiceInfo
+
 from s2auth.client.dao import Dao
+from s2auth.client.local_discovery import S2Discovery
 from s2auth.client.pairing import PairingClient, build_pairing_settings
 from s2auth.client.settings import ClientSettings
 
@@ -226,20 +230,55 @@ async def _run_client():
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
+    if args.deployment is not None and args.deployment.upper() == "LAN":
+        if not((args.server_url is not None) == (args.pairing_token is not None) == (args.pairing_s2_node_id is not None or args.server_S2_nodeId is not None)):
+            parser.error("Specify either server_url, pairing_token, and one of pairing_s2_node_id or server_S2_nodeId, or neither to allow on local discovery")
+
+        def show_service(index: int, name: str, info: ServiceInfo) -> None:
+            service_properties = info.decoded_properties
+            print(f"[{index + 1}] pairingUrl: {service_properties.get('pairingUrl', '')} longpollingUrl: {service_properties.get('longpollingUrl', '')} deployment: {service_properties.get('deployment', '')}")
+
+        with S2Discovery(show_service) as discovery:
+            choice = await asyncio.to_thread(input, "\nATTENTION: Please select the S2 endpoint to pair with from the list of discovered endpoints.\n")
+            try:
+                args.server_url = discovery.services[int(choice) - 1].get('pairingUrl', '')
+                if args.server_url is not None and not args.server_url.rstrip('/').endswith("/v1"):
+                        args.server_url = args.server_url.rstrip('/') + "/v1"
+            except (IndexError, ValueError):
+                parser.error("Invalid input. Please enter a valid number corresponding to the discovered S2 endpoint.")
+
+            assert args.server_url is not None, "Selected S2 endpoint does not have a pairingUrl property."
+
+            nodes: list[dict[str, Any]] = await S2Discovery.fetch_nodes(args.server_url, verify_tls=not args.skip_cert_verify, ssl_certfile=args.certificate_file)
+            print("\nATTENTION: Please select the node to pair with from the list of discovered endpoints.")
+            for i, node in enumerate(nodes):
+                node_str: str = ", ".join(f'{k}: {v}' for k, v in node.items())
+                print(f'[{i + 1}] {node_str}')
+            choice = await asyncio.to_thread(input)
+            try:
+                args.pairing_s2_node_id = nodes[int(choice) - 1].get('nodeId', None)
+            except (IndexError, ValueError):
+                parser.error("Invalid input. Please enter a valid number corresponding to the discovered node.")
+
+            args.pairing_token = await asyncio.to_thread(input, "\nATTENTION: Please enter the pairing token for the selected node: ")
+
+    if args.server_url is None:
+        args.server_url = settings.server_url
+
     # generate client id if not given
     clientS2NodeId: UUID = UUID(args.client_S2_nodeId) if args.client_S2_nodeId else uuid4()
     pairing_s2_node_id: str | None = args.pairing_s2_node_id if args.pairing_s2_node_id else args.pairing_S2_nodeId
-    storage_key = pairing_s2_node_id if pairing_s2_node_id else str(clientS2NodeId)
+    storage_key = pairing_s2_node_id if pairing_s2_node_id else clientS2NodeId
 
     if args.connect:
-        await _run_connect_mode(parser, args, settings, dao, pairing_s2_node_id, storage_key)
+        await _run_connect_mode(parser, args, settings, dao, pairing_s2_node_id, str(storage_key))
         return
 
     if args.unpair:
         await _run_unpair_mode(parser, args, settings, dao, pairing_s2_node_id)
         return
 
-    await _run_pairing_mode(args, settings, dao, pairing_s2_node_id, clientS2NodeId, storage_key)
+    await _run_pairing_mode(args, settings, dao, pairing_s2_node_id, clientS2NodeId, str(storage_key))
 
 
 def main() -> None:

@@ -1,20 +1,26 @@
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 import logging
+import asyncio
 import select
 import sys
 import threading
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 import s2auth
 from s2auth.common.hmac import create_pairing_code
 from s2auth.reference.server.connection import router as connection_router
-from s2auth.reference.server.logging import setupLogging, LogLevel
+from s2auth.server.local_discovery import (
+    LocalDiscoveryRegistration,
+    send_local_discover,
+)
+from s2auth.reference.server.logging import LogLevel, setupLogging
 from s2auth.reference.server.pairing import router as pairing_router
-from s2auth.server.config import Config
 from s2auth.server import setup as setup_s2auth_server
-from s2auth.server.settings import Settings, settings as get_settings
+from s2auth.server.config import Config
+from s2auth.server.settings import Settings
+from s2auth.server.settings import settings as get_settings
 from s2auth.server.token_manager import (
     prime_default_pairing_token,
     set_pending_pairing_token,
@@ -25,7 +31,7 @@ log = logging.getLogger(__name__)
 
 def _startup_base_url(server_settings: Settings, cfg: Config) -> str:
     _ = server_settings
-    return f"https://{cfg.domain_name}:8000"
+    return f"https://{cfg.domain_name}:{server_settings.server_port}"
 
 
 def _primary_s2_connect_version(server_settings: Settings) -> str:
@@ -34,7 +40,10 @@ def _primary_s2_connect_version(server_settings: Settings) -> str:
         return "v1"
     return supported_versions[0]
 
-def _keyboard_watcher(stop_event: threading.Event, pairing_token_ttl_seconds: int) -> None:
+
+def _keyboard_watcher(
+    stop_event: threading.Event, pairing_token_ttl_seconds: int
+) -> None:
     """Background thread: press P (+ Enter) to generate a one-time pairing token."""
     while not stop_event.is_set():
         try:
@@ -61,23 +70,36 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     prime_default_pairing_token(server_settings)
     cfg = Config()
     log.info(
-        "Server startup config: DOMAIN_NAME=%s, PAIRING_NODE_ID=%s, SERVER_S2_NODE_ID=%s",
+        "Server startup config: DOMAIN_NAME=%s, PAIRING_NODE_ID=%s, CEM_S2_NODE_ID=%s, SERVER_S2_NODE_ID=%s",
         cfg.domain_name,
         server_settings.pairing_node_id,
+        server_settings.cem_s2_node_id,
         server_settings.server_s2_node_id,
     )
+    local_discovery: LocalDiscoveryRegistration | None = None
+    if server_settings.cem_deployment_type.value == "LAN":
+        log.info("Starting dns-sd local discovery.")
+        local_discovery = await asyncio.to_thread(
+            send_local_discover,
+            cfg,
+            server_settings,
+        )
+
     base_url = _startup_base_url(server_settings, cfg)
     s2_connect_version = _primary_s2_connect_version(server_settings)
     log.info(
-        "Uvicorn binds to https://0.0.0.0:8000, but clients should connect to %s",
+        "Uvicorn binds to https://0.0.0.0:%s, but clients should connect to %s",
+        server_settings.server_port,
         base_url,
     )
     log.info(
-        "Pairing endpoints: requestPairing=%s/pairing/%s/requestPairing finalizePairing=%s/pairing/%s/finalizePairing (or use https://localhost:8000 if domain name doesn't resolve)",
+        "Pairing endpoints: requestPairing=%s/pairing/%s/requestPairing finalizePairing=%s/pairing/%s/finalizePairing (or use https://%s:%s if domain name doesn't resolve)",
         base_url,
         s2_connect_version,
         base_url,
         s2_connect_version,
+        cfg.domain_name,
+        server_settings.server_port,
     )
 
     stop_event = threading.Event()
@@ -88,6 +110,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     watcher.start()
     yield
+    if local_discovery is not None:
+        await asyncio.to_thread(local_discovery.close)
     stop_event.set()
 
 
@@ -104,3 +128,7 @@ app = FastAPI(
 
 app.include_router(pairing_router, prefix="/pairing")
 app.include_router(connection_router, prefix="/connection")
+
+## compatibility alias for the third-party client
+#app.include_router(pairing_router)
+#app.include_router(connection_router)

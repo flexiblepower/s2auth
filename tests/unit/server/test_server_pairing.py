@@ -110,7 +110,7 @@ def server_settings_lan() -> Settings:
         cem_url=AnyUrl("https://cem.example.com/connection/"),
         cem_deployment_type=Deployment.LAN,
         pairing_token_ttl_seconds=300,
-        ssl_certfile="tests/localhost.chain.pem",
+        ssl_certfile="tests/localhost.local.chain.pem",
     )
 
 
@@ -754,6 +754,7 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
 
     assert connection_details.accessToken == access_token_value
     assert str(connection_details.initiateSessionUrl) == "https://cem.example.com/connection/"
+    assert connection_details.certificateFingerprint == {}
     assert auth_ctx.current_access_token == access_token_value
     assert auth_ctx.next_access_token is None
     assert auth_ctx.state == ClientState.PAIRING
@@ -779,6 +780,10 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
     assert pairing_ctx.server_hmac_challenge is not None
     fingerprint = calculate_certificate_fingerprint_from_certificate_file(
         server_cfg.ssl_certfile
+    )
+    root_fingerprint = calculate_certificate_fingerprint_from_certificate_file(
+        server_cfg.ssl_certfile,
+        root=True,
     )
     response = create_response(
         pairing_token=PAIRING_TOKEN,
@@ -809,6 +814,9 @@ async def test_handle_client_response_verifies_hmac_and_returns_connection_detai
 
     assert connection_details.accessToken == access_token_value
     assert str(connection_details.initiateSessionUrl) == "https://cem.example.com/connection/"
+    assert connection_details.certificateFingerprint == {
+        "SHA256": root_fingerprint.hex()
+    }
     assert auth_ctx.current_access_token == access_token_value
     assert auth_ctx.next_access_token is None
     assert auth_ctx.state == ClientState.PAIRING

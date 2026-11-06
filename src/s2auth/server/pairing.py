@@ -91,13 +91,15 @@ def _effective_fingerprint(
     deployment: Deployment,
     cfg: Config,
     server_settings: Settings,
+    root: bool = False,
 ) -> bytes | None:
     if deployment != Deployment.LAN:
         return None
     if not server_settings.ssl_certfile:
         return None
     return calculate_certificate_fingerprint_from_certificate_file(
-        server_settings.ssl_certfile
+        server_settings.ssl_certfile,
+        root=root
     )
 
 
@@ -317,6 +319,7 @@ async def handle_client_response(
         raise AccessError("Pairing token has expired.")
     deployment = _effective_deployment(auth_ctx, server_settings)
     fingerprint = _effective_fingerprint(deployment, cfg, server_settings)
+    root_fingerprint = _effective_fingerprint(deployment, cfg, server_settings, root=True)
     verify_response(
         pairing_token=pairing_context.pairing_token,
         algorithm=pairing_context.algorithm,
@@ -335,8 +338,13 @@ async def handle_client_response(
     auth_ctx.current_access_token = access_token
     auth_ctx.next_access_token = None
     pairing_context.state = PairingState.COMPLETED
+    certificate_fingerprint = {}
+    if root_fingerprint is not None:
+        certificate_fingerprint = {"SHA256": root_fingerprint.hex()}
     return ConnectionDetails(
-        initiateSessionUrl=server_endpoint, accessToken=access_token
+        initiateSessionUrl=server_endpoint,
+        accessToken=access_token,
+        certificateFingerprint=certificate_fingerprint,
     )
 
 

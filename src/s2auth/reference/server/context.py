@@ -1,7 +1,6 @@
 from contextvars import ContextVar
 import logging
 from typing import Any, Annotated, cast
-from uuid import UUID
 
 from fastapi import Header, Request
 from wepositive_di import register_provider
@@ -72,13 +71,6 @@ async def set_client_node_id_from_first_body_item(request: Request) -> None:
     body = await _json_body(request)
     if body:
         await set_client_node_id(NodeId(root=_root_value(body[0]["clientNodeId"])))
-
-
-async def set_client_node_id_from_headers(
-    client_node_id: Annotated[str, Header(alias="clientNodeId")],
-) -> None:
-    """Set client node context from the clientNodeId header."""
-    await set_client_node_id(NodeId(root=UUID(client_node_id)))
 
 
 async def set_pairing_attempt_id_from_headers(

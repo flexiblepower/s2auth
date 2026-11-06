@@ -34,7 +34,7 @@ def main() -> None:
     uvicorn.run(
         "s2auth.reference.server.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=s.server_port,
         reload=True,
         ssl_certfile=s.ssl_certfile,
         ssl_keyfile=s.ssl_keyfile,

@@ -48,11 +48,11 @@ class ConnectionDetails(BaseModel):
     initiateSessionUrl: AnyUrl
     accessToken: AccessToken
     certificateFingerprint: Annotated[
-        dict[str, str] | None,
+        dict[str, str],
         Field(
             description='A map containing the fingerprints of the CA certificate that is being used by the server for communication. The key of the map is the hashing algorithm used to create the fingerprint, the value is the fingerprint itself. All fingerprints must refer to the same CA certificate. The key "SHA265" must always be provided. The property certificateFingerprint is mandatory when the pairing client will be come the communication server.'
         ),
-    ] = None
+    ] = {}
 
 
 class HmacHashingAlgorithm(str, Enum):

@@ -76,7 +76,7 @@ async def test_initiate_connection_generates_pending_token_and_returns_negotiate
         {settings: test_settings_provider, generate_access_token: new_access_token}
     ):
         response = await initiateConnection(
-            server_node_id=NodeId(root=server_settings.server_s2_node_id),
+            cem_s2_node_id=NodeId(root=server_settings.cem_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
             supported_s2_versions=["v1", "v0.02-beta"],
@@ -106,7 +106,7 @@ async def test_initiate_connection_rejects_unsupported_s2_connect_version() -> N
 
     with pytest.raises(NoCompatibleS2ConnectVersionError):
         await initiateConnection(
-            server_node_id=NodeId(root=server_settings.server_s2_node_id),
+            cem_s2_node_id=NodeId(root=server_settings.cem_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
             supported_s2_versions=["v1"],
@@ -129,7 +129,7 @@ async def test_initiate_connection_requires_completed_pairing() -> None:
 
     with pytest.raises(PairingNotCompleteError):
         await initiateConnection(
-            server_node_id=NodeId(root=server_settings.server_s2_node_id),
+            cem_s2_node_id=NodeId(root=server_settings.cem_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
             supported_s2_versions=["v1"],
@@ -147,7 +147,7 @@ async def test_initiate_connection_rejects_invalid_access_token() -> None:
 
     with pytest.raises(InvalidAccessTokenError):
         await initiateConnection(
-            server_node_id=NodeId(root=server_settings.server_s2_node_id),
+            cem_s2_node_id=NodeId(root=server_settings.cem_s2_node_id),
             access_token=access_token(b"wrong-token-wrong-token-wrong123"),
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
             supported_s2_versions=["v1"],
@@ -165,7 +165,7 @@ async def test_initiate_connection_rejects_wrong_server_node_id() -> None:
 
     with pytest.raises(InvalidServerError):
         await initiateConnection(
-            server_node_id=NodeId(root=uuid4()),
+            cem_s2_node_id=NodeId(root=uuid4()),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
             supported_s2_versions=["v1"],
@@ -183,7 +183,7 @@ async def test_initiate_connection_rejects_incompatible_s2_versions() -> None:
 
     with pytest.raises(NoCompatibleS2VersionError):
         await initiateConnection(
-            server_node_id=NodeId(root=server_settings.server_s2_node_id),
+            cem_s2_node_id=NodeId(root=server_settings.cem_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
             supported_s2_versions=["v0.01-beta"],
@@ -202,7 +202,7 @@ async def test_initiate_connection_rejects_incompatible_protocols() -> None:
 
     with pytest.raises(NoCompatibleCommunitcationProtocol):
         await initiateConnection(
-            server_node_id=NodeId(root=server_settings.server_s2_node_id),
+            cem_s2_node_id=NodeId(root=server_settings.cem_s2_node_id),
             access_token=current_token,
             supported_communication_protocols=[CommunicationProtocol.WebSocket],
             supported_s2_versions=["v1"],
@@ -232,11 +232,12 @@ async def test_validate_access_token_rejects_unknown_pending_token() -> None:
     auth_ctx = authentication_context(access_token(b"current-token-current-token-1234"))
     auth_ctx.next_access_token = access_token(b"next-token-next-token-next-token12")
 
-    with pytest.raises(InvalidAccessTokenError):
-        await validate_access_token(
-            access_token(b"wrong-token-wrong-token-wrong123"),
-            authentication_ctx=auth_ctx,
-        )
+    result = await validate_access_token(
+        access_token(b"wrong-token-wrong-token-wrong123"),
+        authentication_ctx=auth_ctx,
+    )
+
+    assert result is False
 
 
 async def test_validate_s2_connection_token_invalidates_one_time_token() -> None:

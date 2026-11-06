@@ -130,13 +130,44 @@ def _leaf_certificate_bytes(certificate_bytes: bytes) -> bytes:
 
     return ssl.PEM_cert_to_DER_cert(leaf_pem_text)
 
+def _certificate_bytes(certificate_bytes: bytes) -> bytes:
+    """Return root/CA certificate bytes from a cert payload.
+
+    For PEM chain files this extracts and converts the last certificate block
+    (typically the root/CA certificate) to DER bytes. For non-PEM inputs,
+    bytes are returned unchanged.
+    """
+    pem_begin = b"-----BEGIN CERTIFICATE-----"
+    pem_end = b"-----END CERTIFICATE-----"
+
+    begin_index = certificate_bytes.rfind(pem_begin)
+    if begin_index == -1:
+        return certificate_bytes
+
+    end_index = certificate_bytes.find(pem_end, begin_index)
+    if end_index == -1:
+        raise ValueError("Malformed PEM certificate file: missing END CERTIFICATE marker.")
+    end_index += len(pem_end)
+
+    root_pem_bytes = certificate_bytes[begin_index:end_index]
+    try:
+        root_pem_text = root_pem_bytes.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Malformed PEM certificate file: non-ASCII certificate block.") from exc
+
+    return ssl.PEM_cert_to_DER_cert(root_pem_text)
+
 
 def calculate_certificate_fingerprint_from_certificate_file(
     certificate_file: str | Path,
+    root: bool = False,
 ) -> bytes:
     """Read a certificate file and return the SHA-256 fingerprint of the leaf certificate."""
     cert_bytes = Path(certificate_file).read_bytes()
-    return calculate_certificate_fingerprint(_leaf_certificate_bytes(cert_bytes))
+    if not root:
+        return calculate_certificate_fingerprint(_leaf_certificate_bytes(cert_bytes))
+    else:
+        return calculate_certificate_fingerprint(_certificate_bytes(cert_bytes))
 
 
 def calculate_fingerprint_from_response_certificate(response: httpx.Response) -> bytes | None:

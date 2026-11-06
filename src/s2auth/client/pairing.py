@@ -78,7 +78,6 @@ def detect_deployment(
 def build_pairing_settings(
     base_settings: ClientSettings,
     *,
-    server_url: str,
     pairing_token: str | None,
     pairing_s2_node_id: str | None,
     client_s2_node_id: str,
@@ -93,6 +92,7 @@ def build_pairing_settings(
     brand: str,
     client_device_type: str,
     client_model_name: str,
+    server_url: str | None = None
 ) -> tuple[ClientSettings, list[str]]:
     """Resolve effective pairing settings from defaults plus overrides."""
 
@@ -106,7 +106,8 @@ def build_pairing_settings(
         algorithm.value for algorithm in base_settings.supported_hmac_hashing_algorithms
     ]
 
-    normalized_server_url = strip_pairing_url(server_url)
+    normalized_server_url = strip_pairing_url(server_url) if server_url is not None else base_settings.server_url
+    assert normalized_server_url is not None, "server_url must be provided"
     effective_domain = domain_name
 
     if deployment is None:
@@ -225,6 +226,7 @@ class PairingClient:
 
     async def pair(self) -> PairingResult:
         self._emit_operation_start("pair", self.settings.pairing_s2_node_id)
+        assert self.settings.server_url is not None, "server_url must be set for pairing"
         pairing_uri = strip_pairing_url(self.settings.server_url)
         deployment, domain_name = self._resolve_deployment_domain(pairing_uri)
         client_node_id = self._resolve_client_node_id_for_pairing()

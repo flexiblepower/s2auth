@@ -68,7 +68,7 @@ async def _log_response(response: httpx.Response) -> None:
 HTTPX_HOOKS: HttpEventHooks = {"request": [_log_request], "response": [_log_response]}
 
 
-def _resolve_http_hooks(
+def resolve_http_hooks(
     http_event_hooks: HttpEventHooks | None,
 ) -> HttpEventHooks | None:
     # Custom hooks fully override default debug hooks when provided.
@@ -121,7 +121,7 @@ async def perform_pairing(pairing_uri: str,
     # In any case, store the connection details in the database.
 
     httpx_verify = build_httpx_verify(verify_tls, ssl_certfile)
-    event_hooks = _resolve_http_hooks(http_event_hooks)
+    event_hooks = resolve_http_hooks(http_event_hooks)
 
     # If no id given use id from client
     s2_role: Role = Role(role)
@@ -291,7 +291,7 @@ async def request_connection_details(pairing_uri: str,
         serverHmacChallangeResponse: the response to the hmac challange received from the server
         httpx_verify: httpx verify parameter for TLS verification
     """
-    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=_resolve_http_hooks(http_event_hooks)) as client:
+    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=resolve_http_hooks(http_event_hooks)) as client:
         payload: RequestConnectionDetailsPostRequest = RequestConnectionDetailsPostRequest(
             serverHmacChallengeResponse=hmacChallangeResponse
         )
@@ -327,7 +327,7 @@ async def post_connection_details(pairing_uri: str,
         serverHmacChallengeResponse=HmacChallengeResponse(serverHmacChallangeResponse.model_dump()),
         connectionDetails=connection_details,
     )
-    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=_resolve_http_hooks(http_event_hooks)) as client:
+    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=resolve_http_hooks(http_event_hooks)) as client:
         body = payload.model_dump_json(exclude_none=True)
         headers = add_header(token=attempt_id)
         response = await client.post(
@@ -355,7 +355,7 @@ async def finalize_pairing(pairing_uri: str,
     """
     finalize_pairing_postRequest = FinalizePairingPostRequest(success=success)
 
-    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=_resolve_http_hooks(http_event_hooks)) as client:
+    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=resolve_http_hooks(http_event_hooks)) as client:
         body = finalize_pairing_postRequest.model_dump_json(exclude_none=True)
         headers = add_header(token=attempt_id)
         response = await client.post(f'{pairing_uri}/finalizePairing',
@@ -391,7 +391,7 @@ async def connect(storage: ConnectionStore,
         )
 
     httpx_verify = build_httpx_verify(verify_tls, ssl_certfile)
-    event_hooks = _resolve_http_hooks(http_event_hooks)
+    event_hooks = resolve_http_hooks(http_event_hooks)
     async with httpx.AsyncClient(verify=httpx_verify, event_hooks=event_hooks) as client:
         init_payload: InitiateSessionPostRequest = InitiateSessionPostRequest(
             clientNodeId=NodeId(UUID(client_s2_node_id)),
@@ -446,7 +446,7 @@ async def confirmToken(pairing_uri: str,
         pemding_token: the pending token to send
         httpx_verify: httpx verify parameter for TLS verification
     """
-    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=_resolve_http_hooks(http_event_hooks)) as client:
+    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=resolve_http_hooks(http_event_hooks)) as client:
         body = '{"accessToken": "' + pemding_token + '"}'
         headers = add_header(token=pemding_token)
         response = await client.post(f'{pairing_uri}/confirmAccessToken',
@@ -482,7 +482,7 @@ async def unpair(storage: ConnectionStore,
     }
 
     httpx_verify = build_httpx_verify(bool(verify_tls), ssl_certfile)
-    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=_resolve_http_hooks(http_event_hooks)) as client:
+    async with httpx.AsyncClient(verify=httpx_verify, event_hooks=resolve_http_hooks(http_event_hooks)) as client:
         headers = add_header(token=access_token)
         response = await client.post(f'{pairing_uri}/unpair',
                                      headers=headers,

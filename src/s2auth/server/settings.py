@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     cem_type: str
     cem_model_name: str
     cem_brand: str
+    cem_logo_url: AnyUrl | None = None
     cem_url: AnyUrl | None = None
     cem_deployment_type: Deployment = Deployment.WAN
     # If unset/empty, pairing starts with generated one-time tokens.
@@ -39,6 +40,8 @@ class Settings(BaseSettings):
         exclude=True,
     )
     pairing_token_ttl_seconds: int = Field(default=300, gt=0)
+    server_port: int = Field(default=8000, ge=1, le=65535)
+    server_hostname: str = Field(default="localhost")
     ssl_certfile: str = ""
     ssl_keyfile: str = ""
 

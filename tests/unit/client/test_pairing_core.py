@@ -110,7 +110,7 @@ async def test_paiting_wrong_url(dao: Dao, s2_client_description: NodeDescriptio
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description,
                           domain_name=DOMAIN_NAME,
-                          ssl_certfile="./tests/localhost.chain.pem")
+                          ssl_certfile="./tests/localhost.local.chain.pem")
     assert 'No address associated with hostname' in str(excinfo.value)
 
 
@@ -161,7 +161,7 @@ async def test_paiting_404(dao: Dao, mock_AsyncClient_404: tuple[MagicMock, Magi
                           supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                           s2_client_description=s2_client_description,
                           domain_name=DOMAIN_NAME,
-                          ssl_certfile="./tests/localhost.chain.pem")
+                          ssl_certfile="./tests/localhost.local.chain.pem")
     assert "Client error '404 Not Found'" in str(excinfo.value)
 
 
@@ -308,7 +308,7 @@ async def test_paiting_rm(dao: Dao,
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
                       domain_name=DOMAIN_NAME,
-                      ssl_certfile="./tests/localhost.chain.pem")
+                      ssl_certfile="./tests/localhost.local.chain.pem")
     request_connection_details_spy.assert_awaited_once()
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_not_awaited()
@@ -340,7 +340,7 @@ async def test_pairing_uuid_node_id_is_sent_as_node_id(
         s2_client_description=s2_client_description,
         domain_name=DOMAIN_NAME,
         pairingS2NodeId=uuid_node_id,
-        ssl_certfile="./tests/localhost.chain.pem",
+        ssl_certfile="./tests/localhost.local.chain.pem",
     )
 
     request_calls = [
@@ -372,7 +372,7 @@ async def test_paiting_cem(dao: Dao, mocker: MockerFixture, mock_AsyncClient: tu
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
                       domain_name=DOMAIN_NAME,
-                      ssl_certfile="./tests/localhost.chain.pem")
+                      ssl_certfile="./tests/localhost.local.chain.pem")
     request_connection_details_spy.assert_not_awaited()
     finalize_pairing_spy.assert_awaited_once()
     post_connection_details_spy.assert_awaited_once()
@@ -392,7 +392,7 @@ async def test_get_pairing_token_str(dao: Dao,
                       supportedHmacHashingAlgorithms=[HmacHashingAlgorithm.SHA256],
                       s2_client_description=s2_client_description,
                       domain_name=DOMAIN_NAME,
-                      ssl_certfile="./tests/localhost.chain.pem")
+                      ssl_certfile="./tests/localhost.local.chain.pem")
 
     client_s2_node_id = str(s2_client_description.id.model_dump(exclude_none=True))
     connection_details: dict[str, Any] | None = dao.load_connection_details(client_s2_node_id)
@@ -427,7 +427,7 @@ async def test_unpair(dao: Dao, mock_AsyncClient: tuple[MagicMock, MagicMock],
             "pairing_server_url": "http://s2server.example.com/v1",
             "access_token": "token-value",
             "verify_tls": True,
-            "ssl_certfile": "./tests/localhost.chain.pem"
+            "ssl_certfile": "./tests/localhost.local.chain.pem"
         },
     )
     assert await unpair(dao, pairing_s2_node_id)
