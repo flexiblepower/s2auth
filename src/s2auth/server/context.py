@@ -35,8 +35,19 @@ log = logging.getLogger(__name__)
 
 # Type aliases for the root types
 ClientNodeId = UUID
-PairingAttemptId = UUID
+PairingAttemptId = str
 ContextTypeT = TypeVar("ContextTypeT", bound=BaseModel)
+
+
+def _as_storage_context_id(context_id: UUID | str) -> UUID:
+    """Adapt local context IDs to wepositive-di storage typing.
+
+    `wepositive-di` currently annotates `ContextStorage` IDs as UUID, while at
+    runtime its in-memory store keys are hashable values. Pairing attempt IDs are
+    spec-compliant opaque strings, so we keep string IDs in this module and only
+    cast at the storage API boundary.
+    """
+    return cast(UUID, context_id)
 
 # Context variables
 s2_client_node_id_var: ContextVar[NodeId | None] = ContextVar(
@@ -76,17 +87,18 @@ class S2InMemoryContextStorage(InMemoryContextStorage):
         ]
 
     async def delete_context(
-        self, ctx_type: type[ContextTypeT], context_id: UUID
+        self, ctx_type: type[ContextTypeT], context_id: UUID | str
     ) -> None:
         """Delete a stored context for the requested type and ID."""
+        typed_context_id = _as_storage_context_id(context_id)
         lock = await self._get_lock(  # pyright: ignore[reportPrivateUsage]
-            ctx_type, context_id
+            ctx_type, typed_context_id
         )
         async with lock:
             type_store = self._states.get(ctx_type, {})  # pyright: ignore[reportPrivateUsage]
-            if context_id not in type_store:
+            if typed_context_id not in type_store:
                 raise KeyError(f"No {ctx_type.__name__} context known for {context_id}")
-            del type_store[context_id]
+            del type_store[typed_context_id]
 
 
 _S2_CONTEXT_STORAGE_SINGLETON = S2InMemoryContextStorage()
@@ -171,7 +183,7 @@ def pairing_attempt_id() -> PairingAttemptId:
     p_id = pairing_attempt_id_var.get()
     if p_id is None:
         raise ValueError("pairing_attempt_id not set in context")
-    return UUID(b64decode(p_id.root).decode("utf-8"))
+    return b64decode(p_id.root).decode("utf-8")
 
 
 @register_provider()
@@ -220,7 +232,7 @@ async def pairing_attempt_context(
     """
     try:
         async with storage.get_context(
-            PairingAttemptContext, pairing_attempt_id
+            PairingAttemptContext, _as_storage_context_id(pairing_attempt_id)
         ) as ctx:
             yield ctx
     except KeyError as exc:
@@ -241,7 +253,7 @@ async def pairing_attempt_context_by_client_node_id(
     for ctx in await storage.list_contexts(PairingAttemptContext):
         if ctx.client_node_id == client_node_id:
             async with storage.get_context(
-                PairingAttemptContext, ctx.pairing_attempt_id
+                PairingAttemptContext, _as_storage_context_id(ctx.pairing_attempt_id)
             ) as stored_ctx:
                 yield stored_ctx
                 return
@@ -258,7 +270,7 @@ async def authentication_context_by_pairing_attempt_context(
     """Retrieve authentication context through the current pairing attempt."""
     try:
         async with storage.get_context(
-            PairingAttemptContext, pairing_attempt_id
+            PairingAttemptContext, _as_storage_context_id(pairing_attempt_id)
         ) as pairing_context:
             client_node_id = pairing_context.client_node_id
     except KeyError as exc:
@@ -322,7 +334,9 @@ async def store_pairing_attempt_context(
 
     async def store_context(context: PairingAttemptContext) -> None:
         await storage.store_context(
-            PairingAttemptContext, context.pairing_attempt_id, context
+            PairingAttemptContext,
+            _as_storage_context_id(context.pairing_attempt_id),
+            context,
         )
 
     return store_context

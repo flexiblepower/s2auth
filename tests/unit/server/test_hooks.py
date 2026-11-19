@@ -48,7 +48,7 @@ async def test_pairing_attempt_request_default():
         client_node_id=client_id, state=ClientState.PAIRING
     )
     pairing_ctx = ReadOnlyPairingAttemptContext(
-        pairing_attempt_id=uuid4(),
+        pairing_attempt_id=str(uuid4()),
         pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",  # base64 encoded "test_token"
         state=PairingState.INITIATED,
@@ -191,7 +191,7 @@ async def test_pairing_attempt_request_override_raises_error():
         state=ClientState.PAIRING,
     )
     pairing_ctx = ReadOnlyPairingAttemptContext(
-        pairing_attempt_id=uuid4(),
+        pairing_attempt_id=str(uuid4()),
         pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",
         state=PairingState.INITIATED,
@@ -220,7 +220,7 @@ async def test_pairing_attempt_request_override_raises_error():
 async def test_pairing_attempt_request_context_values():
     """Test that the hook receives correct context values."""
     client_node_id = uuid4()
-    pairing_attempt_id = uuid4()
+    pairing_attempt_id = str(uuid4())
 
     client_ctx = AuthenticationContext(client_node_id=client_node_id, state=ClientState.PAIRING)
     pairing_ctx = PairingAttemptContext(
@@ -295,7 +295,7 @@ async def test_readonly_contexts_are_immutable():
 
     client_ctx = ReadOnlyAuthenticationContext(client_node_id=uuid4(), state=ClientState.PAIRING)
     pairing_ctx = ReadOnlyPairingAttemptContext(
-        pairing_attempt_id=uuid4(),
+        pairing_attempt_id=str(uuid4()),
         pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",
         state=PairingState.INITIATED,
@@ -409,7 +409,7 @@ async def test_register_hook_decorator():
     # Call it to verify it works
     client_ctx = ReadOnlyAuthenticationContext(client_node_id=custom_node_id, state=ClientState.PAIRING)
     pairing_ctx = ReadOnlyPairingAttemptContext(
-        pairing_attempt_id=uuid4(),
+        pairing_attempt_id=str(uuid4()),
         pairing_node_id=NodeIdAlias(root="PAIR123"),
         pairing_token="dGVzdF90b2tlbg==",
         state=PairingState.INITIATED,

@@ -1,5 +1,12 @@
 # Release Notes
 
+## v0.1.2
+
+- Updated pairing attempt handling to treat `PairingAttemptId` as an opaque string (not UUID-only), aligned with the S2 Connect spec.
+- Updated LAN DNS-SD advertisement to use the spec base service type `_s2connect._tcp.local.`.
+- Added compatibility DNS-SD advertisement for clients browsing subtype directly via `_cem._sub._s2connect._tcp.local.`.
+  This improves interoperability with implementations that discover services by subtype first instead of following the spec's primary base-type discovery pattern.
+
 ## v0.1.1
 
 Added dns-sd local network discovery

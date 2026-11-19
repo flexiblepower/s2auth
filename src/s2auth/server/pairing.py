@@ -2,8 +2,9 @@
 
 from base64 import b64encode
 from datetime import timezone, datetime, timedelta
-from typing import Awaitable, Callable
-from uuid import uuid4
+from secrets import token_bytes
+from typing import Awaitable, Callable, cast
+from uuid import UUID
 from s2auth.common.exceptions import AccessError, PairingNotCompleteError
 from s2auth.common.model.s2_connect_pairing import (
     ConnectionDetails,
@@ -120,8 +121,8 @@ async def initiate_pairing(
     """
     log.info("Initiating pairing for client %s", client_node_id)
     log.info("Generated pairing token for client %s: %s", client_node_id, pairing_token)
-    pairing_attempt_id: PairingAttemptId = uuid4()
-    # Encode UUID string as base64 bytes for S2PairingAttemptId (str)
+    pairing_attempt_id: PairingAttemptId = b64encode(token_bytes(24)).decode("utf-8")
+    # Encode internal ID as base64 for the wire-format PairingAttemptId model.
     pairing_attempt_id_b64 = b64encode(str(pairing_attempt_id).encode("utf-8")).decode("utf-8")
     pairing_attempt_id_var.set(S2PairingAttemptId(root=pairing_attempt_id_b64))
     pairing_node_id = server_settings.pairing_node_id
@@ -226,8 +227,10 @@ async def request_pairing(
     if pairing_attempt_id is None:
         raise RuntimeError("Failed to initialize pairing attempt context")
 
+    # ContextStorage is typed for UUID keys; pairing attempt IDs are opaque strings.
+    # Cast only at this API boundary to preserve spec-compliant string IDs internally.
     async with storage.get_context(
-        PairingAttemptContext, pairing_attempt_id
+        PairingAttemptContext, cast(UUID, pairing_attempt_id)
     ) as pairing_context:
         auth_ctx = AuthenticationContext(
             client_node_id=client_node_id,
