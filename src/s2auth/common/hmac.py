@@ -165,9 +165,11 @@ def calculate_certificate_fingerprint_from_certificate_file(
     """Read a certificate file and return the SHA-256 fingerprint of the leaf certificate."""
     cert_bytes = Path(certificate_file).read_bytes()
     if not root:
-        return calculate_certificate_fingerprint(_leaf_certificate_bytes(cert_bytes))
+        fingerprint =  calculate_certificate_fingerprint(_leaf_certificate_bytes(cert_bytes))
     else:
-        return calculate_certificate_fingerprint(_certificate_bytes(cert_bytes))
+        fingerprint = calculate_certificate_fingerprint(_certificate_bytes(cert_bytes))
+    LOGGER.debug(f"Calculated fingerprint (using root: {root}) from certificate file {certificate_file}: {fingerprint.hex()}")
+    return fingerprint
 
 
 def calculate_fingerprint_from_response_certificate(response: httpx.Response) -> bytes | None:
@@ -205,6 +207,7 @@ def create_response(pairing_token: str,
         raise VerificationError(str(e)) from e
     if deployment == Deployment.LAN:
         assert fingerprint is not None
+        LOGGER.info(f"fingerorint  {fingerprint}")
         LOGGER.debug(f"Creating LAN HMAC response with fingerprint: fingerprint=CertificateHash(Sha256({list(fingerprint)}))")
         return hmac_response_lan(pairing_token.encode('utf-8'), challenge.root, fingerprint, digestmod)
     else:

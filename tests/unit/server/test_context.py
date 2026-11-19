@@ -1,5 +1,6 @@
 from base64 import b64encode
-from typing import Awaitable, Callable
+from datetime import datetime, timezone
+from typing import Awaitable, Callable, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -37,6 +38,10 @@ from s2auth.server.context import (
     store_authentication_context,
     store_pairing_attempt_context,
 )
+
+
+def _as_storage_context_id(context_id: str) -> UUID:
+    return cast(UUID, context_id)
 
 
 @pytest.mark.skip_wire
@@ -78,7 +83,7 @@ async def test_client_node_id_provider_without_contextvar() -> None:
 
 @pytest.mark.skip_wire
 async def test_pairing_attempt_id_provider_with_contextvar_set() -> None:
-    test_pairing_id = uuid4()
+    test_pairing_id = str(uuid4())
 
     @inject
     def get_pairing_attempt_id(
@@ -90,6 +95,30 @@ async def test_pairing_attempt_id_provider_with_contextvar_set() -> None:
 
     token = pairing_attempt_id_var.set(
         S2PairingAttemptId(root=b64encode(str(test_pairing_id).encode("utf-8")).decode("utf-8"))
+    )
+    try:
+        assert get_pairing_attempt_id() == test_pairing_id
+    finally:
+        pairing_attempt_id_var.reset(token)
+
+
+@pytest.mark.skip_wire
+async def test_pairing_attempt_id_provider_accepts_non_uuid_string() -> None:
+    # PairingAttemptId is an opaque string in S2 Connect; it does not need UUID format.
+    test_pairing_id = f"pairing-{datetime.now(timezone.utc).isoformat()}"
+
+    @inject
+    def get_pairing_attempt_id(
+        p_id: PairingAttemptId = Depends[pairing_attempt_id],
+    ) -> PairingAttemptId:
+        return p_id
+
+    setup()
+
+    token = pairing_attempt_id_var.set(
+        S2PairingAttemptId(
+            root=b64encode(test_pairing_id.encode("utf-8")).decode("utf-8")
+        )
     )
     try:
         assert get_pairing_attempt_id() == test_pairing_id
@@ -182,12 +211,12 @@ async def test_authentication_context_provider_raises_keyerror_for_unknown_id() 
 
 @pytest.mark.skip_wire
 async def test_pairing_attempt_context_provider_returns_stored_context() -> None:
-    test_pairing_id = uuid4()
+    test_pairing_id = str(uuid4())
     test_uuid = UUID("00000000-0000-0000-0000-000000000099")
     storage = InMemoryContextStorage()
     await storage.store_context(
         PairingAttemptContext,
-        test_pairing_id,
+        _as_storage_context_id(test_pairing_id),
         PairingAttemptContext(
             state=PairingState.INITIATED,
             client_node_id=test_uuid,
@@ -225,7 +254,7 @@ async def test_pairing_attempt_context_provider_returns_stored_context() -> None
 async def test_pairing_attempt_context_provider_raises_keyerror_for_unknown_id() -> (
     None
 ):
-    test_pairing_id = uuid4()
+    test_pairing_id = str(uuid4())
     storage = InMemoryContextStorage()
 
     def test_context_storage() -> ContextStorage:
@@ -305,7 +334,7 @@ async def test_store_authentication_context_provider_requires_client_node_id() -
 
 @pytest.mark.skip_wire
 async def test_store_pairing_attempt_context_provider_stores_by_pairing_id() -> None:
-    test_pairing_id = uuid4()
+    test_pairing_id = str(uuid4())
     storage = InMemoryContextStorage()
 
     def test_context_storage() -> ContextStorage:
@@ -331,18 +360,20 @@ async def test_store_pairing_attempt_context_provider_stores_by_pairing_id() -> 
     with provider_overrides({context_storage_singleton: test_context_storage}):
         await store_context()
 
-    stored = await storage.get_context_snapshot(PairingAttemptContext, test_pairing_id)
+    stored = await storage.get_context_snapshot(
+        PairingAttemptContext, _as_storage_context_id(test_pairing_id)
+    )
     assert stored.state == PairingState.INITIATED
 
 
 async def test_s2_in_memory_context_storage_lists_contexts_by_type() -> None:
     storage = S2InMemoryContextStorage()
-    first_pairing_id = uuid4()
-    second_pairing_id = uuid4()
+    first_pairing_id = str(uuid4())
+    second_pairing_id = str(uuid4())
 
     await storage.store_context(
         PairingAttemptContext,
-        first_pairing_id,
+        _as_storage_context_id(first_pairing_id),
         PairingAttemptContext(
             pairing_attempt_id=first_pairing_id,
             pairing_node_id=NodeIdAlias(root="first"),
@@ -351,7 +382,7 @@ async def test_s2_in_memory_context_storage_lists_contexts_by_type() -> None:
     )
     await storage.store_context(
         PairingAttemptContext,
-        second_pairing_id,
+        _as_storage_context_id(second_pairing_id),
         PairingAttemptContext(
             pairing_attempt_id=second_pairing_id,
             pairing_node_id=NodeIdAlias(root="second"),
@@ -409,11 +440,11 @@ async def test_pairing_attempt_context_by_client_node_id_returns_matching_contex
     None
 ):
     storage = S2InMemoryContextStorage()
-    pairing_id = uuid4()
+    pairing_id = str(uuid4())
     matching_client_node_id = uuid4()
     await storage.store_context(
         PairingAttemptContext,
-        pairing_id,
+        _as_storage_context_id(pairing_id),
         PairingAttemptContext(
             pairing_attempt_id=pairing_id,
             client_node_id=matching_client_node_id,
@@ -422,10 +453,10 @@ async def test_pairing_attempt_context_by_client_node_id_returns_matching_contex
             state=PairingState.INITIATED,
         ),
     )
-    other_pairing_id = uuid4()
+    other_pairing_id = str(uuid4())
     await storage.store_context(
         PairingAttemptContext,
-        other_pairing_id,
+        _as_storage_context_id(other_pairing_id),
         PairingAttemptContext(
             pairing_attempt_id=other_pairing_id,
             client_node_id=uuid4(),
@@ -498,11 +529,11 @@ async def test_pairing_attempt_context_by_client_node_id_raises_for_missing_cont
 @pytest.mark.skip_wire
 async def test_authentication_context_by_pairing_attempt_context_returns_context() -> None:
     storage = InMemoryContextStorage()
-    pairing_id = uuid4()
+    pairing_id = str(uuid4())
     client_node_id = uuid4()
     await storage.store_context(
         PairingAttemptContext,
-        pairing_id,
+        _as_storage_context_id(pairing_id),
         PairingAttemptContext(
         pairing_attempt_id=pairing_id,
         client_node_id=client_node_id,
@@ -551,10 +582,10 @@ async def test_authentication_context_by_pairing_attempt_context_requires_client
     None
 ):
     storage = InMemoryContextStorage()
-    pairing_id = uuid4()
+    pairing_id = str(uuid4())
     await storage.store_context(
         PairingAttemptContext,
-        pairing_id,
+        _as_storage_context_id(pairing_id),
         PairingAttemptContext(
             pairing_attempt_id=pairing_id,
             pairing_node_id=NodeIdAlias(root="pairing"),
@@ -594,11 +625,11 @@ async def test_authentication_context_by_pairing_attempt_context_raises_for_miss
     None
 ):
     storage = InMemoryContextStorage()
-    pairing_id = uuid4()
+    pairing_id = str(uuid4())
     client_node_id = uuid4()
     await storage.store_context(
         PairingAttemptContext,
-        pairing_id,
+        _as_storage_context_id(pairing_id),
         PairingAttemptContext(
             pairing_attempt_id=pairing_id,
             client_node_id=client_node_id,
